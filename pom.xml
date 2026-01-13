@@ -60,6 +60,12 @@
       <artifactId>kotlin-stdlib</artifactId>
       <version>1.9.22</version>
     </dependency>
+        <!-- MapDB for Logging -->
+        <dependency>
+            <groupId>org.mapdb</groupId>
+            <artifactId>mapdb</artifactId>
+            <version>3.0.9</version>
+        </dependency>
     </dependencies>
 
     <build>

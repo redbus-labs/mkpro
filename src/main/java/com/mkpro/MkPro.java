@@ -320,6 +320,44 @@ public class MkPro {
             }
         };
 
+        Session session = sessionService.createSession("mkpro-cli", "user").blockingGet();
+
+        ActionLogger logger = new ActionLogger("mkpro_logs.db");
+
+        // Define Get Action Logs Tool
+        BaseTool getActionLogsTool = new BaseTool(
+                "get_action_logs",
+                "Retrieves the history of user actions and agent responses."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Collections.emptyMap()) // No parameters needed
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                System.out.println("[DEBUG] Tool invoked: get_action_logs");
+                return Single.fromCallable(() -> {
+                    try {
+                        StringBuilder logsBuilder = new StringBuilder();
+                        for (String log : logger.getLogs()) {
+                            logsBuilder.append(log).append("\n");
+                        }
+                        return Collections.singletonMap("logs", logsBuilder.toString());
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Error retrieving logs: " + e.getMessage());
+                    }
+                });
+            }
+        };
+
         LlmAgent agent = LlmAgent.builder()
                 .name("mkpro")
                 .description("A helpful coding and research assistant.")
@@ -331,12 +369,14 @@ public class MkPro {
                         + "- run_shell: Execute shell commands (git, etc).\n"
                         + "- list_directory: List files in folders.\n"
                         + "- fetch_url: Access external websites to read documentation. USE THIS when given a URL.\n"
-                        + "- google_search: Search Google for general information.\n\n"
+                        + "- google_search: Search Google for general information.\n"
+                        + "- get_action_logs: Retrieve history of interactions.\n\n"
                         + "IMPORTANT: Before using write_file to modify code, you MUST use run_shell to 'git add .' and 'git commit' to save the current state.\n"
                         + "Always prefer concise answers.")
                 //.model("gemini-2.0-flash-exp")
                 .model(new OllamaBaseLM("devstral-small-2","http://localhost:11434"))
-                .tools(readFileTool, writeFileTool, runShellTool, listDirTool, urlFetchTool)//, GoogleSearchTool.INSTANCE
+                .tools(readFileTool, writeFileTool, runShellTool, listDirTool, urlFetchTool, getActionLogsTool)//, GoogleSearchTool.INSTANCE
+                .planning(true)
                 .build();
 
         Runner runner = Runner.builder()
@@ -347,18 +387,18 @@ public class MkPro {
                 .memoryService(memoryService)
                 .build();
 
-        Session session = sessionService.createSession("mkpro-cli", "user").blockingGet();
-
         if (useUI) {
             System.out.println("Launching Swing Companion UI...");
             SwingCompanion gui = new SwingCompanion(runner, session, sessionService);
             gui.show();
         } else {
-            runConsoleLoop(runner, session);
+            runConsoleLoop(runner, session, logger);
         }
+        
+        logger.close();
     }
 
-    private static void runConsoleLoop(Runner runner, Session session) {
+    private static void runConsoleLoop(Runner runner, Session session, ActionLogger logger) {
         System.out.println("mkpro ready! Type 'exit' to quit.");
         System.out.print("> ");
 
@@ -369,12 +409,15 @@ public class MkPro {
                 break;
             }
 
+            logger.log("USER", line);
+
             Content content = Content.builder()
                     .role("user")
                     .parts(Collections.singletonList(Part.builder().text(line).build()))
                     .build();
 
             try {
+                StringBuilder responseBuilder = new StringBuilder();
                 runner.runAsync("user", session.id(), content)
                         .filter(event -> event.content().isPresent())
                         .blockingForEach(event -> {
@@ -382,13 +425,18 @@ public class MkPro {
                                 .flatMap(Content::parts)
                                 .orElse(Collections.emptyList())
                                 .forEach(part -> 
-                                    part.text().ifPresent(text -> System.out.print(text))
+                                    part.text().ifPresent(text -> {
+                                        System.out.print(text);
+                                        responseBuilder.append(text);
+                                    })
                                 );
                         });
                 System.out.println();
+                logger.log("AGENT", responseBuilder.toString());
             } catch (Exception e) {
                 System.err.println("Error processing request: " + e.getMessage());
                 e.printStackTrace();
+                logger.log("ERROR", e.getMessage());
             }
 
             System.out.print("> ");

@@ -112,8 +112,8 @@ public class MkPro {
 
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] Tool invoked: read_file" + ANSI_RESET);
                 String filePath = (String) args.get("file_path");
+                System.out.println(ANSI_BLUE + "[Tool] Reading file: " + filePath + ANSI_RESET);
                 try {
                     Path path = Paths.get(filePath);
                     if (!Files.exists(path)) {
@@ -155,8 +155,8 @@ public class MkPro {
 
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] Tool invoked: list_directory" + ANSI_RESET);
                 String dirPath = (String) args.get("dir_path");
+                System.out.println(ANSI_BLUE + "[Tool] Listing directory: " + dirPath + ANSI_RESET);
                 try {
                      Path path = Paths.get(dirPath);
                     if (!Files.exists(path) || !Files.isDirectory(path)) {
@@ -209,11 +209,11 @@ public class MkPro {
 
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] Tool invoked: fetch_url" + ANSI_RESET);
                 String url = (String) args.get("url");
+                System.out.println(ANSI_BLUE + "[Tool] Fetching URL: " + url + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
-                        if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] Fetching URL: " + url + ANSI_RESET);
+                        if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] HTTP Request: " + url + ANSI_RESET);
                         HttpRequest request = HttpRequest.newBuilder()
                                 .uri(URI.create(url))
                                 .timeout(Duration.ofSeconds(20))
@@ -271,8 +271,8 @@ public class MkPro {
 
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] Tool invoked: read_image" + ANSI_RESET);
                 String filePath = (String) args.get("file_path");
+                System.out.println(ANSI_BLUE + "[Tool] Analyzing image: " + filePath + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         Path path = Paths.get(filePath);
@@ -325,8 +325,8 @@ public class MkPro {
 
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] Tool invoked: write_file" + ANSI_RESET);
                 String filePath = (String) args.get("file_path");
+                System.out.println(ANSI_BLUE + "[Tool] Writing file: " + filePath + ANSI_RESET);
                 String content = (String) args.get("content");
                 return Single.fromCallable(() -> {
                     try {
@@ -368,8 +368,8 @@ public class MkPro {
 
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] Tool invoked: run_shell" + ANSI_RESET);
                 String command = (String) args.get("command");
+                System.out.println(ANSI_BLUE + "[Tool] Executing: " + command + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         ProcessBuilder pb;

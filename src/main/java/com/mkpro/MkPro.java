@@ -284,7 +284,7 @@ public class MkPro {
                         String mimeType = "image/jpeg";
                         if (filePath.toLowerCase().endsWith(".png")) mimeType = "image/png";
                         else if (filePath.toLowerCase().endsWith(".webp")) mimeType = "image/webp";
-                        
+
                         return ImmutableMap.of(
                             "mime_type", mimeType,
                             "data", base64
@@ -498,9 +498,48 @@ public class MkPro {
 
             logger.log("USER", line);
 
+            java.util.List<Part> parts = new java.util.ArrayList<>();
+            parts.add(Part.fromText(line));
+
+            // Detect image paths in the input
+            String[] tokens = line.split("\\s+");
+            for (String token : tokens) {
+                String lowerToken = token.toLowerCase();
+                if (lowerToken.endsWith(".jpg") || lowerToken.endsWith(".jpeg") || 
+                    lowerToken.endsWith(".png") || lowerToken.endsWith(".webp")) {
+                    try {
+                        Path imagePath = Paths.get(token);
+                        if (Files.exists(imagePath)) {
+                            if (verbose) System.out.println(ANSI_BLUE + "[DEBUG] Feeding image to agent: " + token + ANSI_RESET);
+                            byte[] rawBytes = Files.readAllBytes(imagePath);
+                            
+                            // User previously suggested Base64, but "failed to process inputs: image: unknown format"
+                            // strongly suggests the backend received double-encoded data or expects raw bytes.
+                            // Let's try sending RAW BYTES. Part.fromBytes usually expects raw data.
+                            
+                            if (verbose) {
+                                System.out.print(ANSI_BLUE + "[DEBUG] First 10 bytes: ");
+                                for(int i=0; i<Math.min(10, rawBytes.length); i++) {
+                                    System.out.printf("%02X ", rawBytes[i]);
+                                }
+                                System.out.println(ANSI_RESET);
+                            }
+
+                            String mimeType = "image/jpeg";
+                            if (lowerToken.endsWith(".png")) mimeType = "image/png";
+                            else if (lowerToken.endsWith(".webp")) mimeType = "image/webp";
+                            
+                            parts.add(Part.fromBytes(rawBytes, mimeType));
+                        }
+                    } catch (Exception e) {
+                        if (verbose) System.err.println(ANSI_BLUE + "Warning: Could not read image file " + token + ": " + e.getMessage() + ANSI_RESET);
+                    }
+                }
+            }
+
             Content content = Content.builder()
                     .role("user")
-                    .parts(Collections.singletonList(Part.builder().text(line).build()))
+                    .parts(parts)
                     .build();
 
             // Start Spinner

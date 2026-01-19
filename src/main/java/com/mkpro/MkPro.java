@@ -36,6 +36,11 @@ import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 
+import java.util.function.Function;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Arrays;
+
 public class MkPro {
 
     // ANSI Color Constants
@@ -48,7 +53,7 @@ public class MkPro {
         // Check for flags
         boolean useUI = false;
         boolean verbose = false;
-        String modelName = "devstral-small-2";
+        String initialModelName = "devstral-small-2";
 
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -58,12 +63,13 @@ public class MkPro {
                 verbose = true;
             } else if ("-m".equalsIgnoreCase(arg) || "--model".equalsIgnoreCase(arg)) {
                 if (i + 1 < args.length) {
-                    modelName = args[i + 1];
+                    initialModelName = args[i + 1];
                     i++; // Skip next arg
                 }
             }
         }
-
+        
+        final String modelName = initialModelName;
         final boolean isVerbose = verbose;
 
         if (isVerbose) {
@@ -94,6 +100,8 @@ public class MkPro {
         } catch (IOException e) {
             System.err.println(ANSI_BLUE + "Warning: Could not read session_summary.txt" + ANSI_RESET);
         }
+        
+        final String finalSummaryContext = summaryContext;
 
         InMemorySessionService sessionService = new InMemorySessionService();
         InMemoryArtifactService artifactService = new InMemoryArtifactService();
@@ -451,7 +459,19 @@ public class MkPro {
             }
         };
 
-        LlmAgent agent = LlmAgent.builder()
+        // Collection of tools
+        List<BaseTool> tools = new ArrayList<>();
+        tools.add(readFileTool);
+        tools.add(readImageTool);
+        tools.add(writeFileTool);
+        tools.add(runShellTool);
+        tools.add(listDirTool);
+        tools.add(urlFetchTool);
+        tools.add(getActionLogsTool);
+
+        // Factory to create Runner with specific model
+        Function<String, Runner> runnerFactory = (currentModelName) -> {
+            LlmAgent agent = LlmAgent.builder()
                 .name("mkpro")
                 .description("A helpful coding and research assistant.")
                 .instruction("You are mkpro, a powerful coding assistant. "
@@ -468,34 +488,39 @@ public class MkPro {
                         + "- get_action_logs: Retrieve history of interactions.\n\n"
                         + "IMPORTANT: Before using write_file to modify code, you MUST use run_shell to 'git add .' and 'git commit' to save the current state.\n"
                         + "Always prefer concise answers."
-                        + summaryContext)
-                //.model("gemini-2.0-flash-exp")
-                .model(new OllamaBaseLM(modelName, "http://localhost:11434"))
-                .tools(readFileTool, readImageTool, writeFileTool, runShellTool, listDirTool, urlFetchTool, getActionLogsTool)//, GoogleSearchTool.INSTANCE
+                        + finalSummaryContext)
+                .model(new OllamaBaseLM(currentModelName, "http://localhost:11434"))
+                .tools(tools)
                 .planning(true)
                 .build();
 
-        Runner runner = Runner.builder()
+            return Runner.builder()
                 .agent(agent)
                 .appName("mkpro-cli")
                 .sessionService(sessionService)
                 .artifactService(artifactService)
                 .memoryService(memoryService)
                 .build();
+        };
 
         if (useUI) {
             if (isVerbose) System.out.println(ANSI_BLUE + "Launching Swing Companion UI..." + ANSI_RESET);
+            // UI uses initial model
+            Runner runner = runnerFactory.apply(modelName);
             SwingCompanion gui = new SwingCompanion(runner, session, sessionService);
             gui.show();
         } else {
-            runConsoleLoop(runner, session, sessionService, logger, isVerbose);
+            runConsoleLoop(runnerFactory, modelName, session, sessionService, logger, isVerbose);
         }
         
         logger.close();
     }
 
-    private static void runConsoleLoop(Runner runner, Session initialSession, InMemorySessionService sessionService, ActionLogger logger, boolean verbose) {
+    private static void runConsoleLoop(Function<String, Runner> runnerFactory, String initialModelName, Session initialSession, InMemorySessionService sessionService, ActionLogger logger, boolean verbose) {
+        String currentModelName = initialModelName;
+        Runner runner = runnerFactory.apply(currentModelName);
         Session currentSession = initialSession;
+        
         if (verbose) {
             System.out.println(ANSI_BLUE + "mkpro ready! Type 'exit' to quit." + ANSI_RESET);
         }
@@ -514,6 +539,7 @@ public class MkPro {
             if ("/h".equalsIgnoreCase(line.trim()) || "/help".equalsIgnoreCase(line.trim())) {
                 System.out.println(ANSI_BLUE + "Available Commands:" + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /models     - List available local Ollama models." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /model      - Change the current Ollama model." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /reset      - Reset the session (clears memory)." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /compact    - Compact the session (summarize history and start fresh)." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /summarize  - Generate a summary of the session to 'session_summary.txt'." + ANSI_RESET);
@@ -547,6 +573,83 @@ public class MkPro {
                         }
                         if (!found) {
                             System.out.println(ANSI_BLUE + "  No models found." + ANSI_RESET);
+                        }
+                    } else {
+                        System.err.println(ANSI_BLUE + "Error: Ollama returned status " + response.statusCode() + ANSI_RESET);
+                    }
+                } catch (Exception e) {
+                    System.err.println(ANSI_BLUE + "Error fetching models: " + e.getMessage() + ANSI_RESET);
+                }
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+            
+            if ("/model".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "Fetching available models for selection..." + ANSI_RESET);
+                try {
+                    HttpClient client = HttpClient.newHttpClient();
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create("http://localhost:11434/api/tags"))
+                            .timeout(Duration.ofSeconds(10))
+                            .GET()
+                            .build();
+
+                    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                    if (response.statusCode() == 200) {
+                        String body = response.body();
+                        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\"name\":\"([^\"]+)\"");
+                        java.util.regex.Matcher matcher = pattern.matcher(body);
+                        
+                        List<String> availableModels = new ArrayList<>();
+                        while (matcher.find()) {
+                            availableModels.add(matcher.group(1));
+                        }
+                        
+                        if (availableModels.isEmpty()) {
+                            System.out.println(ANSI_BLUE + "No models found." + ANSI_RESET);
+                        } else {
+                            System.out.println(ANSI_BLUE + "Select a model:" + ANSI_RESET);
+                            int defaultIndex = -1;
+                            for (int i = 0; i < availableModels.size(); i++) {
+                                String m = availableModels.get(i);
+                                String marker = "";
+                                if (m.equals(currentModelName)) {
+                                    marker = " (current)";
+                                    defaultIndex = i + 1;
+                                }
+                                System.out.println(ANSI_BRIGHT_GREEN + "[" + (i + 1) + "] " + m + marker + ANSI_RESET);
+                            }
+                            
+                            System.out.print(ANSI_BLUE + "Enter selection (default " + (defaultIndex != -1 ? defaultIndex : "none") + "): " + ANSI_YELLOW);
+                            String selection = scanner.nextLine().trim();
+                            System.out.print(ANSI_RESET);
+                            
+                            if (selection.isEmpty()) {
+                                if (defaultIndex != -1) {
+                                    System.out.println(ANSI_BLUE + "Keeping current model: " + currentModelName + ANSI_RESET);
+                                } else {
+                                    System.out.println(ANSI_BLUE + "No selection made." + ANSI_RESET);
+                                }
+                            } else {
+                                try {
+                                    int index = Integer.parseInt(selection);
+                                    if (index >= 1 && index <= availableModels.size()) {
+                                        String newModel = availableModels.get(index - 1);
+                                        if (!newModel.equals(currentModelName)) {
+                                            System.out.println(ANSI_BLUE + "Switching model to: " + newModel + "..." + ANSI_RESET);
+                                            currentModelName = newModel;
+                                            runner = runnerFactory.apply(currentModelName);
+                                            System.out.println(ANSI_BLUE + "Model switched successfully." + ANSI_RESET);
+                                        } else {
+                                            System.out.println(ANSI_BLUE + "Model already selected." + ANSI_RESET);
+                                        }
+                                    } else {
+                                        System.out.println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
+                                    }
+                                } catch (NumberFormatException e) {
+                                    System.out.println(ANSI_BLUE + "Invalid input." + ANSI_RESET);
+                                }
+                            }
                         }
                     } else {
                         System.err.println(ANSI_BLUE + "Error: Ollama returned status " + response.statusCode() + ANSI_RESET);

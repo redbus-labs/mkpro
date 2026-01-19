@@ -83,6 +83,18 @@ public class MkPro {
             System.exit(1);
         }
 
+        // Load previous session summary if available
+        String summaryContext = "";
+        try {
+            Path summaryPath = Paths.get("session_summary.txt");
+            if (Files.exists(summaryPath)) {
+                if (isVerbose) System.out.println(ANSI_BLUE + "Loading previous session summary..." + ANSI_RESET);
+                summaryContext = "\n\nPREVIOUS SESSION CONTEXT:\n" + Files.readString(summaryPath);
+            }
+        } catch (IOException e) {
+            System.err.println(ANSI_BLUE + "Warning: Could not read session_summary.txt" + ANSI_RESET);
+        }
+
         InMemorySessionService sessionService = new InMemorySessionService();
         InMemoryArtifactService artifactService = new InMemoryArtifactService();
         InMemoryMemoryService memoryService = new InMemoryMemoryService();
@@ -455,7 +467,8 @@ public class MkPro {
                         + "- google_search: Search Google for general information.\n"
                         + "- get_action_logs: Retrieve history of interactions.\n\n"
                         + "IMPORTANT: Before using write_file to modify code, you MUST use run_shell to 'git add .' and 'git commit' to save the current state.\n"
-                        + "Always prefer concise answers.")
+                        + "Always prefer concise answers."
+                        + summaryContext)
                 //.model("gemini-2.0-flash-exp")
                 .model(new OllamaBaseLM(modelName, "http://localhost:11434"))
                 .tools(readFileTool, readImageTool, writeFileTool, runShellTool, listDirTool, urlFetchTool, getActionLogsTool)//, GoogleSearchTool.INSTANCE
@@ -475,16 +488,18 @@ public class MkPro {
             SwingCompanion gui = new SwingCompanion(runner, session, sessionService);
             gui.show();
         } else {
-            runConsoleLoop(runner, session, logger, isVerbose);
+            runConsoleLoop(runner, session, sessionService, logger, isVerbose);
         }
         
         logger.close();
     }
 
-    private static void runConsoleLoop(Runner runner, Session session, ActionLogger logger, boolean verbose) {
+    private static void runConsoleLoop(Runner runner, Session initialSession, InMemorySessionService sessionService, ActionLogger logger, boolean verbose) {
+        Session currentSession = initialSession;
         if (verbose) {
             System.out.println(ANSI_BLUE + "mkpro ready! Type 'exit' to quit." + ANSI_RESET);
         }
+        System.out.println(ANSI_BLUE + "Type '/help' for a list of commands." + ANSI_RESET);
         System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW); // Prompt Blue, Input Yellow
 
         Scanner scanner = new Scanner(System.in);
@@ -494,6 +509,111 @@ public class MkPro {
             
             if ("exit".equalsIgnoreCase(line.trim())) {
                 break;
+            }
+
+            if ("/h".equalsIgnoreCase(line.trim()) || "/help".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "Available Commands:" + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /models     - List available local Ollama models." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /reset      - Reset the session (clears memory)." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /compact    - Compact the session (summarize history and start fresh)." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /summarize  - Generate a summary of the session to 'session_summary.txt'." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  exit        - Quit the application." + ANSI_RESET);
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/models".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "Fetching available models..." + ANSI_RESET);
+                try {
+                    HttpClient client = HttpClient.newHttpClient();
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create("http://localhost:11434/api/tags"))
+                            .timeout(Duration.ofSeconds(10))
+                            .GET()
+                            .build();
+
+                    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                    if (response.statusCode() == 200) {
+                        System.out.println(ANSI_BLUE + "Ollama Models:" + ANSI_RESET);
+                        String body = response.body();
+                        // Simple manual parsing since we don't want to add big dependencies for one list
+                        // The format is like {"models":[{"name":"llama3:latest",...}]}
+                        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\"name\":\"([^\"]+)\"");
+                        java.util.regex.Matcher matcher = pattern.matcher(body);
+                        boolean found = false;
+                        while (matcher.find()) {
+                            System.out.println(ANSI_BRIGHT_GREEN + "  - " + matcher.group(1) + ANSI_RESET);
+                            found = true;
+                        }
+                        if (!found) {
+                            System.out.println(ANSI_BLUE + "  No models found." + ANSI_RESET);
+                        }
+                    } else {
+                        System.err.println(ANSI_BLUE + "Error: Ollama returned status " + response.statusCode() + ANSI_RESET);
+                    }
+                } catch (Exception e) {
+                    System.err.println(ANSI_BLUE + "Error fetching models: " + e.getMessage() + ANSI_RESET);
+                }
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/reset".equalsIgnoreCase(line.trim())) {
+                currentSession = sessionService.createSession("mkpro-cli", "user").blockingGet();
+                System.out.println(ANSI_BLUE + "System: Session reset. New session ID: " + currentSession.id() + ANSI_RESET);
+                logger.log("SYSTEM", "Session reset by user.");
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/compact".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "System: Compacting session..." + ANSI_RESET);
+                
+                // 1. Request Summary from Current Session
+                StringBuilder summaryBuilder = new StringBuilder();
+                Content summaryRequest = Content.builder()
+                        .role("user")
+                        .parts(Collections.singletonList(Part.fromText(
+                            "Summarize our conversation so far, focusing on key technical decisions, " +
+                            "user preferences, and current state. " +
+                            "This summary will be used to initialize a new, compacted session."
+                        )))
+                        .build();
+
+                try {
+                    runner.runAsync("user", currentSession.id(), summaryRequest)
+                        .filter(event -> event.content().isPresent())
+                        .blockingForEach(event -> 
+                            event.content().flatMap(Content::parts).orElse(Collections.emptyList())
+                                .forEach(p -> p.text().ifPresent(summaryBuilder::append))
+                        );
+                } catch (Exception e) {
+                     System.err.println(ANSI_BLUE + "Error generating summary: " + e.getMessage() + ANSI_RESET);
+                     System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                     continue;
+                }
+                
+                String summary = summaryBuilder.toString();
+                if (summary.isBlank()) {
+                     System.err.println(ANSI_BLUE + "Error: Agent returned empty summary." + ANSI_RESET);
+                     System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                     continue;
+                }
+
+                // 2. Create New Session
+                currentSession = sessionService.createSession("mkpro-cli", "user").blockingGet();
+                String newSessionId = currentSession.id();
+                
+                System.out.println(ANSI_BLUE + "System: Session compacted. New Session ID: " + newSessionId + ANSI_RESET);
+                logger.log("SYSTEM", "Session compacted. Summary: " + summary);
+                
+                // 3. Seed New Session by updating 'line' and falling through
+                line = "Here is the summary of the previous session. Please use this as context for our continued conversation:\n\n" + summary;
+            }
+
+            if ("/summarize".equalsIgnoreCase(line.trim())) {
+                 line = "Retrieve the action logs using the 'get_action_logs' tool. Then, summarize the key technical context, user preferences, and important decisions from these logs. Finally, write this summary to a file named 'session_summary.txt' using the 'write_file' tool. The summary should be concise and suitable for priming a future session.";
+                 System.out.println(ANSI_BLUE + "System: Requesting session summary..." + ANSI_RESET);
             }
 
             logger.log("USER", line);
@@ -559,7 +679,7 @@ public class MkPro {
             try {
                 StringBuilder responseBuilder = new StringBuilder();
                 
-                runner.runAsync("user", session.id(), content)
+                runner.runAsync("user", currentSession.id(), content)
                         .filter(event -> event.content().isPresent())
                         .blockingForEach(event -> {
                             if (isThinking.getAndSet(false)) {

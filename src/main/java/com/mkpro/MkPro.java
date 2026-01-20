@@ -970,21 +970,168 @@ public class MkPro {
             }
             
             if ("/status".equalsIgnoreCase(line.trim())) {
-                System.out.println(ANSI_BLUE + "Current Agent Configuration:" + ANSI_RESET);
-                for (Map.Entry<String, AgentConfig> entry : agentConfigs.entrySet()) {
-                    System.out.printf(ANSI_BRIGHT_GREEN + "  %-12s: [%s] %s%n" + ANSI_RESET, 
-                        entry.getKey(), entry.getValue().provider, entry.getValue().modelName);
+                System.out.println(ANSI_BLUE + "+--------------+------------+------------------------------------------+" + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "| Agent        | Provider   | Model                                    |" + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "+--------------+------------+------------------------------------------+" + ANSI_RESET);
+                
+                List<String> sortedNames = new ArrayList<>(agentConfigs.keySet());
+                Collections.sort(sortedNames);
+                
+                for (String name : sortedNames) {
+                    AgentConfig ac = agentConfigs.get(name);
+                    System.out.printf(ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-12s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-10s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-40s " + ANSI_BLUE + "|%n" + ANSI_RESET, 
+                        name, ac.provider, ac.modelName);
                 }
+                System.out.println(ANSI_BLUE + "+--------------+------------+------------------------------------------+" + ANSI_RESET);
+                
+                // Memory Status
+                System.out.println("");
+                System.out.println(ANSI_BLUE + "Memory Status:" + ANSI_RESET);
+                System.out.println(ANSI_BRIGHT_GREEN + "  Local Session ID : " + currentSession.id() + ANSI_RESET);
+                try {
+                    String centralPath = Paths.get(System.getProperty("user.home"), ".mkpro", "central_memory.db").toString();
+                    Map<String, String> memories = centralMemory.getAllMemories();
+                    System.out.println(ANSI_BRIGHT_GREEN + "  Central Store    : " + centralPath + ANSI_RESET);
+                    System.out.println(ANSI_BRIGHT_GREEN + "  Stored Projects  : " + memories.size() + ANSI_RESET);
+                } catch (Exception e) {
+                    System.out.println(ANSI_BRIGHT_GREEN + "  Central Store    : [Error accessing DB] " + e.getMessage() + ANSI_RESET);
+                }
+                
                 System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
                 continue;
             }
 
             if (line.trim().toLowerCase().startsWith("/config")) {
                 String[] parts = line.trim().split("\\s+");
-                if (parts.length < 3) {
-                    System.out.println(ANSI_BLUE + "Usage: /config <AgentName> <Provider> [ModelName]" + ANSI_RESET);
-                    System.out.println(ANSI_BLUE + "Example: /config Coder GEMINI gemini-2.0-flash" + ANSI_RESET);
-                } else {
+                
+                // Interactive Mode
+                if (parts.length == 1) {
+                    // 1. Select Agent
+                    System.out.println(ANSI_BLUE + "Select Agent to configure:" + ANSI_RESET);
+                    List<String> agentNames = new ArrayList<>(agentConfigs.keySet());
+                    // Sort for consistent display order
+                    Collections.sort(agentNames); 
+                    for (int i = 0; i < agentNames.size(); i++) {
+                        AgentConfig ac = agentConfigs.get(agentNames.get(i));
+                        System.out.printf(ANSI_BRIGHT_GREEN + "  [%d] %s (Current: %s - %s)%n" + ANSI_RESET, 
+                            i + 1, agentNames.get(i), ac.provider, ac.modelName);
+                    }
+                    System.out.print(ANSI_BLUE + "Enter selection (number): " + ANSI_YELLOW);
+                    String agentSelection = scanner.nextLine().trim();
+                    System.out.print(ANSI_RESET);
+                    
+                    if (agentSelection.isEmpty()) continue;
+                    
+                    String selectedAgent = null;
+                    try {
+                        int idx = Integer.parseInt(agentSelection) - 1;
+                        if (idx >= 0 && idx < agentNames.size()) {
+                            selectedAgent = agentNames.get(idx);
+                        }
+                    } catch (NumberFormatException e) {}
+                    
+                    if (selectedAgent == null) {
+                        System.out.println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
+                        System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                        continue;
+                    }
+
+                    // 2. Select Provider
+                    System.out.println(ANSI_BLUE + "Select Provider for " + selectedAgent + ":" + ANSI_RESET);
+                    Provider[] providers = Provider.values();
+                    for (int i = 0; i < providers.length; i++) {
+                        System.out.printf(ANSI_BRIGHT_GREEN + "  [%d] %s%n" + ANSI_RESET, i + 1, providers[i]);
+                    }
+                    System.out.print(ANSI_BLUE + "Enter selection (number): " + ANSI_YELLOW);
+                    String providerSelection = scanner.nextLine().trim();
+                    System.out.print(ANSI_RESET);
+                    
+                    if (providerSelection.isEmpty()) continue;
+                    
+                    Provider selectedProvider = null;
+                    try {
+                        int idx = Integer.parseInt(providerSelection) - 1;
+                        if (idx >= 0 && idx < providers.length) {
+                            selectedProvider = providers[idx];
+                        }
+                    } catch (NumberFormatException e) {}
+                    
+                    if (selectedProvider == null) {
+                        System.out.println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
+                        System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                        continue;
+                    }
+
+                    // 3. Select Model
+                    List<String> availableModels = new ArrayList<>();
+                    if (selectedProvider == Provider.GEMINI) {
+                        availableModels.addAll(GEMINI_MODELS);
+                    } else if (selectedProvider == Provider.BEDROCK) {
+                        availableModels.addAll(BEDROCK_MODELS);
+                    } else if (selectedProvider == Provider.OLLAMA) {
+                        System.out.println(ANSI_BLUE + "Fetching available Ollama models..." + ANSI_RESET);
+                        try {
+                            HttpClient client = HttpClient.newHttpClient();
+                            HttpRequest request = HttpRequest.newBuilder()
+                                    .uri(URI.create("http://localhost:11434/api/tags"))
+                                    .timeout(Duration.ofSeconds(5))
+                                    .GET()
+                                    .build();
+                            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                            if (response.statusCode() == 200) {
+                                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\"name\":\"([^\"]+)\"").matcher(response.body());
+                                while (matcher.find()) availableModels.add(matcher.group(1));
+                            }
+                        } catch (Exception e) {
+                            System.out.println(ANSI_BLUE + "Could not fetch Ollama models. You can type the model name manually." + ANSI_RESET);
+                        }
+                    }
+
+                    String selectedModel = null;
+                    if (!availableModels.isEmpty()) {
+                        System.out.println(ANSI_BLUE + "Select Model:" + ANSI_RESET);
+                        for (int i = 0; i < availableModels.size(); i++) {
+                            System.out.printf(ANSI_BRIGHT_GREEN + "  [%d] %s%n" + ANSI_RESET, i + 1, availableModels.get(i));
+                        }
+                        System.out.println(ANSI_BRIGHT_GREEN + "  [M] Manual Entry" + ANSI_RESET);
+                        
+                        System.out.print(ANSI_BLUE + "Enter selection: " + ANSI_YELLOW);
+                        String modelSel = scanner.nextLine().trim();
+                        System.out.print(ANSI_RESET);
+                        
+                        if (!"M".equalsIgnoreCase(modelSel)) {
+                            try {
+                                int idx = Integer.parseInt(modelSel) - 1;
+                                if (idx >= 0 && idx < availableModels.size()) {
+                                    selectedModel = availableModels.get(idx);
+                                }
+                            } catch (NumberFormatException e) {}
+                        }
+                    }
+
+                    if (selectedModel == null) {
+                        System.out.print(ANSI_BLUE + "Enter model name manually: " + ANSI_YELLOW);
+                        selectedModel = scanner.nextLine().trim();
+                        System.out.print(ANSI_RESET);
+                    }
+
+                    if (selectedModel.isEmpty()) {
+                         System.out.println(ANSI_BLUE + "Model selection cancelled." + ANSI_RESET);
+                         System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                         continue;
+                    }
+
+                    // Apply Configuration
+                    agentConfigs.put(selectedAgent, new AgentConfig(selectedProvider, selectedModel));
+                    System.out.println(ANSI_BLUE + "Updated " + selectedAgent + " to [" + selectedProvider + "] " + selectedModel + ANSI_RESET);
+                    
+                    if ("Coordinator".equalsIgnoreCase(selectedAgent)) {
+                        runner = runnerFactory.apply(agentConfigs);
+                        System.out.println(ANSI_BLUE + "Coordinator runner rebuilt." + ANSI_RESET);
+                    }
+
+                } else if (parts.length >= 3) {
+                    // Command Line Mode (legacy)
                     String agentName = parts[1];
                     String providerStr = parts[2].toUpperCase();
                     
@@ -995,7 +1142,6 @@ public class MkPro {
                             Provider newProvider = Provider.valueOf(providerStr);
                             String newModel = (parts.length > 3) ? parts[3] : agentConfigs.get(agentName).modelName; 
                             
-                            // Safe defaults if switching providers and no model specified
                             if (parts.length == 3 && newProvider != agentConfigs.get(agentName).provider) {
                                 if (newProvider == Provider.GEMINI) newModel = "gemini-1.5-flash";
                                 else if (newProvider == Provider.BEDROCK) newModel = "anthropic.claude-3-sonnet-20240229-v1:0";
@@ -1005,7 +1151,6 @@ public class MkPro {
                             agentConfigs.put(agentName, new AgentConfig(newProvider, newModel));
                             System.out.println(ANSI_BLUE + "Updated " + agentName + " to [" + newProvider + "] " + newModel + ANSI_RESET);
                             
-                            // Rebuild runner if Coordinator changed
                             if ("Coordinator".equalsIgnoreCase(agentName)) {
                                 runner = runnerFactory.apply(agentConfigs);
                             }
@@ -1013,6 +1158,8 @@ public class MkPro {
                             System.out.println(ANSI_BLUE + "Invalid provider: " + providerStr + ". Use OLLAMA, GEMINI, or BEDROCK." + ANSI_RESET);
                         }
                     }
+                } else {
+                     System.out.println(ANSI_BLUE + "Usage: /config (interactive) OR /config <Agent> <Provider> [Model]" + ANSI_RESET);
                 }
                 System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
                 continue;

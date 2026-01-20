@@ -91,6 +91,18 @@ public class AgentManager {
         securityAuditorTools.addAll(coderTools); // Read/Analyze code
         securityAuditorTools.add(MkProTools.createRunShellTool()); // Run audit tools
 
+        List<BaseTool> architectTools = new ArrayList<>();
+        architectTools.add(MkProTools.createReadFileTool());
+        architectTools.add(MkProTools.createListDirTool());
+        architectTools.add(MkProTools.createReadImageTool());
+
+        List<BaseTool> databaseTools = new ArrayList<>();
+        databaseTools.addAll(coderTools); // Read/Write SQL files, schemas
+
+        List<BaseTool> devOpsTools = new ArrayList<>();
+        devOpsTools.addAll(coderTools); // Read/Write configs (Dockerfiles, k8s, etc.)
+        devOpsTools.add(MkProTools.createRunShellTool()); // Execute cloud CLIs, docker commands
+
         // Delegation Tools
         List<BaseTool> coordinatorTools = new ArrayList<>();
         
@@ -134,6 +146,30 @@ public class AgentManager {
             agentConfigs, securityAuditorTools, contextInfo
         ));
 
+        coordinatorTools.add(createDelegationTool(
+            "ask_architect", 
+            "Delegates high-level design and review tasks to the Architect agent.",
+            "Architect",
+            "You are the Software Architect. Your goal is to ensure system integrity, scalability, and adherence to design patterns. You review code structure, analyze dependencies, and propose refactoring. You do NOT write implementation code or run it. Focus on the 'big picture', cohesion, and coupling.",
+            agentConfigs, architectTools, contextInfo
+        ));
+
+        coordinatorTools.add(createDelegationTool(
+            "ask_database_admin", 
+            "Delegates database tasks to the Database Admin agent (SQL, schema, migrations).",
+            "DatabaseAdmin",
+            "You are the Database Administrator. Your goal is to manage data persistence. You can write SQL queries, create schema migration files, and analyze database structures. You do NOT run the database itself but manage the code and scripts related to it.",
+            agentConfigs, databaseTools, contextInfo
+        ));
+
+        coordinatorTools.add(createDelegationTool(
+            "ask_devops", 
+            "Delegates DevOps and Cloud infrastructure tasks to the DevOps agent.",
+            "DevOps",
+            "You are the DevOps Engineer. Your goal is to manage infrastructure, deployment, and CI/CD pipelines. You can write Dockerfiles, Kubernetes manifests, and CI configs. You can also run shell commands to interact with cloud CLIs (AWS, GCP, Azure) and container tools.",
+            agentConfigs, devOpsTools, contextInfo
+        ));
+
         // Add Coordinator-specific tools
         coordinatorTools.add(MkProTools.createUrlFetchTool());
         coordinatorTools.add(MkProTools.createGetActionLogsTool(logger));
@@ -146,12 +182,15 @@ public class AgentManager {
             .name("Coordinator")
             .description("The main orchestrator agent.")
             .instruction("You are the Coordinator. You interface with the user and manage the workflow. "
-                    + "You have five specialized sub-agents: \n" 
+                    + "You have eight specialized sub-agents: \n" 
                     + "1. **Coder**: Handles all file operations (read, write, analyze images). \n" 
                     + "2. **SysAdmin**: Handles all shell command executions. \n" 
                     + "3. **Tester**: specialized in writing and running unit tests. \n" 
                     + "4. **DocWriter**: specialized in writing and updating documentation. \n" 
                     + "5. **SecurityAuditor**: specialized in finding vulnerabilities and running security scans. \n" 
+                    + "6. **Architect**: specialized in high-level design review and structural analysis. \n" 
+                    + "7. **DatabaseAdmin**: specialized in SQL, schemas, and migrations. \n" 
+                    + "8. **DevOps**: specialized in infrastructure, Docker, and CI/CD. \n" 
                     + "Delegate tasks appropriately. Do not try to write files or run commands yourself; you don't have those tools. " 
                     + "You DO have tools to fetch URLs and manage long-term memory. " 
                     + "Always prefer concise answers."

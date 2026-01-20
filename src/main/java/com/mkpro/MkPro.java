@@ -133,6 +133,9 @@ public class MkPro {
             uiConfigs.put("Tester", new AgentConfig(Provider.OLLAMA, modelName));
             uiConfigs.put("DocWriter", new AgentConfig(Provider.OLLAMA, modelName));
             uiConfigs.put("SecurityAuditor", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("Architect", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("DatabaseAdmin", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("DevOps", new AgentConfig(Provider.OLLAMA, modelName));
             
             Runner runner = runnerFactory.apply(uiConfigs);
             SwingCompanion gui = new SwingCompanion(runner, mkSession, sessionService);
@@ -156,6 +159,9 @@ public class MkPro {
         agentConfigs.put("Tester", new AgentConfig(initialProvider, initialModelName));
         agentConfigs.put("DocWriter", new AgentConfig(initialProvider, initialModelName));
         agentConfigs.put("SecurityAuditor", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("Architect", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("DatabaseAdmin", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("DevOps", new AgentConfig(initialProvider, initialModelName));
 
         // Load overrides from Central Memory
         try {

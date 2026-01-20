@@ -1,32 +1,35 @@
 # mkpro - AI Coding & Research Assistant
 
-`mkpro` is a powerful CLI-based AI assistant built using the Google Agent Development Kit (ADK). It allows you to chat with LLMs (via Ollama or Gemini) directly from your terminal while giving the AI access to your local project files and the internet for research.
+`mkpro` is a sophisticated CLI-based AI assistant built using the Google Agent Development Kit (ADK). It features a multi-agent architecture and supports both local models (via Ollama) and cloud models (via Gemini API).
 
 ## Features
 
-- 📂 **Local File Access**: The agent can read files, list directories, and **write files** (`write_file`) to modify your codebase.
-- 💻 **Shell Execution**: Run shell commands (`run_shell`) directly (e.g., git commands, builds).
-- 🖼️ **Image Analysis**: Analyze local image files by referencing them in your prompt.
-- 📝 **Action Logging**: All user interactions and agent responses are logged locally using MapDB.
-- 🔄 **Session Management**: Reset, compact, or summarize your session context on the fly.
-- 🤖 **Multi-Model Support**: Switch between local Ollama models dynamically.
-- 🌐 **Web Research**: Perform searches and fetch URL content.
-- 🚀 **Native Executable**: Runs as a standalone `.exe` on Windows (via Launch4j).
+- 🤖 **Multi-Agent Architecture**:
+    - **Coordinator**: Orchestrates the workflow, performs research, and manages long-term memory.
+    - **Coder**: Specialized in reading/writing files and analyzing project structure.
+    - **SysAdmin**: Handles shell command execution and system-level tasks.
+- 🏢 **Central Memory**: Persist project summaries across sessions in a central database located in your home directory (`~/.mkpro/central_memory.db`).
+- 🌐 **Dual Provider Support**: Seamlessly switch between **Ollama** (local) and **Gemini** (cloud) providers.
+- 📂 **Local File Access**: Full capability to read and modify your codebase safely.
+- 💻 **Shell Execution**: Run shell commands directly with automatic state saving via Git.
+- 🖼️ **Image Analysis**: Analyze local image files by referencing them in your prompts.
+- 📅 **Context Aware**: Agents are automatically aware of the current date and working directory.
+- 🔄 **Context Management**: Reset or compact sessions to manage the LLM's context window effectively.
 
 ## Prerequisites
 
 - **Java 17+**: Required for building and running.
 - **Maven**: Required for building.
-- **Ollama**: Required for running local models. Ensure it is running on `http://localhost:11434`.
-- **Google API Key**: (Optional if using Gemini models) Set `GOOGLE_API_KEY`.
+- **Ollama**: (Optional) For running local models. Ensure it is running on `http://localhost:11434`.
+- **Google API Key**: (Optional) Required for Gemini models. Set the `GOOGLE_API_KEY` environment variable.
 
 ## Setup
 
-1. **Set your API Key** (if needed):
+1. **Set your API Key**:
    - **Windows (PowerShell)**: `$env:GOOGLE_API_KEY="your_api_key_here"`
    - **Windows (CMD)**: `set GOOGLE_API_KEY=your_api_key_here`
 
-2. **Start Ollama**:
+2. **Start Ollama** (if using local models):
    Ensure your local Ollama instance is running.
 
 ## Building
@@ -55,27 +58,31 @@ java -jar target/mkpro-1.4-SNAPSHOT-shaded.jar
 
 ## Commands
 
-Inside the application, you can use the following commands:
+Inside the CLI, you can use the following commands:
 
-- **/help** (or **/h**): Display the list of available commands.
-- **/reset**: Clear the current session memory and start fresh.
-- **/compact**: Summarize the current conversation history and start a new session with that summary as context (saves context window).
-- **/summarize**: Ask the agent to generate a detailed summary of the session into `session_summary.txt`.
-- **/models**: List all available local Ollama models.
-- **/model**: Switch the active LLM model interactively.
+- **/help** (or **/h**): Display available commands.
+- **/provider**: Interactively switch between **OLLAMA** and **GEMINI** providers.
+- **/models**: List models available for the active provider.
+- **/model**: Select a model numerically (current model is marked as default).
+- **/init**: Initialize project memory in the central database (if not already present).
+- **/re-init**: Refresh/Update the project summary in the central database.
+- **/remember**: Manually trigger a project analysis and save to central memory.
+- **/compact**: Summarize current history and start a fresh session with that summary (saves tokens).
+- **/reset**: Clear the current session memory entirely.
+- **/summarize**: Export a session summary to `session_summary.txt`.
 - **exit**: Quit the application.
 
 ## Usage Examples
 
 Once the `> ` prompt appears, you can try:
 
-- **Analyze Code**: "Read src/main/java/com/mkpro/MkPro.java and explain how the tools are registered."
-- **Modify Code**: "Add a comment to the main method in MkPro.java explaining it's the entry point." (The agent will use `git` to save state before modifying).
-- **Image Input**: "What is this image? diagram.png" (Ensure the file path is correct).
-- **Project Overview**: "List the files in the current directory."
-- **Research**: "Read this page and summarize the main points: https://google.github.io/adk-docs/"
-- **Manage Context**: If the conversation gets too long, type `/compact` to tidy up.
+- **Initialize Project**: `/init` (Let the agents learn your project structure).
+- **Coding Task**: "Add a logger to the main method in MkPro.java."
+- **System Task**: "Run a maven build and tell me if it passes."
+- **Multi-Agent delegation**: The Coordinator will automatically ask the Coder to read files and the SysAdmin to run tests.
+- **Recall Memory**: "What do you know about other projects in my central store?"
+- **Switch Models**: `/provider` followed by `/model` to try different LLMs.
 
 ## Maintenance
 
-The agent configuration is located in `src/main/java/com/mkpro/MkPro.java`. You can modify the system instructions or add new tools there. Logs are stored in `mkpro_logs.db`.
+The agent configuration and system prompts are located in `src/main/java/com/mkpro/MkPro.java`. Interaction logs are stored in `mkpro_logs.db`.

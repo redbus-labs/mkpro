@@ -3,12 +3,16 @@ package com.mkpro;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.mapdb.HTreeMap;
+import org.mapdb.IndexTreeList;
 import org.mapdb.Serializer;
+import com.mkpro.models.AgentStat;
 
 import java.io.File;
 import java.nio.file.Paths;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class CentralMemory {
@@ -93,6 +97,24 @@ public class CentralMemory {
             Map<String, String> copy = new HashMap<>();
             configs.forEach((k, v) -> copy.put((String)k, (String)v));
             return copy;
+        }
+    }
+
+    public void saveAgentStat(AgentStat stat) {
+        try (DB db = openDB()) {
+            IndexTreeList<AgentStat> stats = (IndexTreeList<AgentStat>) db.indexTreeList("agent_stats", Serializer.JAVA)
+                    .createOrOpen();
+            stats.add(stat);
+            db.commit();
+        }
+    }
+
+    public List<AgentStat> getAgentStats() {
+        try (DB db = openDB()) {
+            IndexTreeList<AgentStat> stats = (IndexTreeList<AgentStat>) db.indexTreeList("agent_stats", Serializer.JAVA)
+                    .createOrOpen();
+            // Return a copy to avoid concurrency issues after db close
+            return new ArrayList<>(stats);
         }
     }
 }

@@ -9,6 +9,7 @@ import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 
 import com.mkpro.models.AgentConfig;
+import com.mkpro.models.AgentStat;
 import com.mkpro.models.Provider;
 import com.mkpro.agents.AgentManager;
 
@@ -209,6 +210,7 @@ public class MkPro {
                 System.out.println(ANSI_BLUE + "  /models     - List available models (for Coordinator's provider)." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /model      - Change Coordinator model (shortcut)." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /status     - Show current configuration for all agents." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /stats      - Show agent usage statistics (latency, tokens)." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /init       - Initialize project memory (if not exists)." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /re-init    - Re-initialize/Update project memory." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /remember   - Analyze project and save summary to central memory." + ANSI_RESET);
@@ -246,6 +248,38 @@ public class MkPro {
                     System.out.println(ANSI_BRIGHT_GREEN + "  Stored Projects  : " + memories.size() + ANSI_RESET);
                 } catch (Exception e) {
                     System.out.println(ANSI_BRIGHT_GREEN + "  Central Store    : [Error accessing DB] " + e.getMessage() + ANSI_RESET);
+                }
+                
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/stats".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "Agent Usage Statistics:" + ANSI_RESET);
+                try {
+                    List<AgentStat> stats = centralMemory.getAgentStats();
+                    if (stats.isEmpty()) {
+                        System.out.println(ANSI_BRIGHT_GREEN + "  No statistics recorded yet." + ANSI_RESET);
+                    } else {
+                        System.out.println(ANSI_BLUE + "+---------------------+------------------+------------+--------------------------------+--------+-----------+" + ANSI_RESET);
+                        System.out.println(ANSI_BLUE + "| Timestamp           | Agent            | Provider   | Model                          | Time   | In/Out    |" + ANSI_RESET);
+                        System.out.println(ANSI_BLUE + "+---------------------+------------------+------------+--------------------------------+--------+-----------+" + ANSI_RESET);
+                        
+                        // Show last 20 stats
+                        int start = Math.max(0, stats.size() - 20);
+                        for (int i = start; i < stats.size(); i++) {
+                            AgentStat s = stats.get(i);
+                            String timeStr = s.getTimestamp().toString().substring(0, 19).replace("T", " ");
+                            System.out.printf(ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-19s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-16s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-10s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-30s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-6d " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-4d/%-4d " + ANSI_BLUE + "|%n" + ANSI_RESET, 
+                                timeStr, s.getAgentName(), s.getProvider(), 
+                                (s.getModel().length() > 30 ? s.getModel().substring(0, 27) + "..." : s.getModel()), 
+                                s.getDurationMs(), s.getInputLength(), s.getOutputLength());
+                        }
+                        System.out.println(ANSI_BLUE + "+---------------------+------------------+------------+--------------------------------+--------+-----------+" + ANSI_RESET);
+                        System.out.println(ANSI_BLUE + "Showing last " + (stats.size() - start) + " of " + stats.size() + " records." + ANSI_RESET);
+                    }
+                } catch (Exception e) {
+                    System.out.println(ANSI_BRIGHT_GREEN + "  Error loading stats: " + e.getMessage() + ANSI_RESET);
                 }
                 
                 System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);

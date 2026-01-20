@@ -22,6 +22,7 @@ import io.reactivex.rxjava3.core.Single;
 
 import com.mkpro.models.AgentConfig;
 import com.mkpro.models.AgentRequest;
+import com.mkpro.models.AgentStat;
 import com.mkpro.models.Provider;
 import com.mkpro.tools.MkProTools;
 import com.mkpro.ActionLogger;
@@ -263,6 +264,10 @@ public class AgentManager {
     }
 
     private String executeSubAgent(AgentRequest request) {
+        long startTime = System.currentTimeMillis();
+        boolean success = true;
+        StringBuilder output = new StringBuilder();
+        
         try {
             Session subSession = sessionService.createSession(request.getAgentName(), "user").blockingGet();
             
@@ -285,7 +290,6 @@ public class AgentManager {
                 .memoryService(memoryService)
                 .build();
 
-            StringBuilder output = new StringBuilder();
             Content content = Content.builder().role("user").parts(List.of(Part.fromText(request.getUserPrompt()))).build();
             
             subRunner.runAsync("user", subSession.id(), content)
@@ -294,9 +298,30 @@ public class AgentManager {
                       e.content().flatMap(Content::parts).orElse(Collections.emptyList())
                        .forEach(p -> p.text().ifPresent(output::append))
                   );
+            
             return output.toString();
         } catch (Exception e) {
+            success = false;
             return "Error executing sub-agent " + request.getAgentName() + ": " + e.getMessage();
+        } finally {
+            long duration = System.currentTimeMillis() - startTime;
+            int inputLen = request.getUserPrompt().length();
+            int outputLen = output.length();
+            
+            try {
+                AgentStat stat = new AgentStat(
+                    request.getAgentName(), 
+                    request.getProvider().name(), 
+                    request.getModelName(), 
+                    duration, 
+                    success, 
+                    inputLen, 
+                    outputLen
+                );
+                centralMemory.saveAgentStat(stat);
+            } catch (Exception e) {
+                System.err.println("Failed to save agent stats: " + e.getMessage());
+            }
         }
     }
 }

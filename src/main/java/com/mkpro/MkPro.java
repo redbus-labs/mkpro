@@ -1,25 +1,17 @@
 package com.mkpro;
 
-import com.google.adk.agents.LlmAgent;
-import com.google.adk.artifacts.InMemoryArtifactService;
-import com.google.adk.memory.InMemoryMemoryService;
-import com.google.adk.models.OllamaBaseLM;
-import com.google.adk.models.Gemini;
-import com.google.adk.models.BedrockBaseLM;
-import com.google.adk.models.BaseLlm;
 import com.google.adk.runner.Runner;
 import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.Session;
-import com.google.adk.tools.BaseTool;
-import com.google.adk.tools.GoogleSearchTool;
-import com.google.adk.tools.ToolContext;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
+import com.google.adk.artifacts.InMemoryArtifactService;
+import com.google.adk.memory.InMemoryMemoryService;
 import com.google.genai.types.Content;
-import com.google.genai.types.FunctionDeclaration;
 import com.google.genai.types.Part;
-import com.google.genai.types.Schema;
-import io.reactivex.rxjava3.core.Single;
+
+import com.mkpro.models.AgentConfig;
+import com.mkpro.models.Provider;
+import com.mkpro.agents.AgentManager;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -29,60 +21,28 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
-import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.HashMap;
 import java.util.Scanner;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
+
 import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 
-import java.util.function.Function;
-import java.util.function.BiFunction;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Arrays;
-
 public class MkPro {
 
-    public enum Provider {
-        OLLAMA,
-        GEMINI,
-        BEDROCK
-    }
+    // ANSI Color Constants
+    public static final String ANSI_RESET = "\u001b[0m";
+    public static final String ANSI_BRIGHT_GREEN = "\u001b[92m";
+    public static final String ANSI_YELLOW = "\u001b[33m"; // Closest to Orange
+    public static final String ANSI_BLUE = "\u001b[34m";
 
-    private static class AgentConfig {
-        Provider provider;
-        String modelName;
-
-        public AgentConfig(Provider provider, String modelName) {
-            this.provider = provider;
-            this.modelName = modelName;
-        }
-    }
-
-    // Helper class to pass data to subAgentRunner
-    private static class AgentRequest {
-        String agentName;
-        String instruction;
-        String modelName;
-        Provider provider;
-        String userPrompt;
-        List<BaseTool> tools;
-
-        public AgentRequest(String agentName, String instruction, String modelName, Provider provider, String userPrompt, List<BaseTool> tools) {
-            this.agentName = agentName;
-            this.instruction = instruction;
-            this.modelName = modelName;
-            this.provider = provider;
-            this.userPrompt = userPrompt;
-            this.tools = tools;
-        }
-    }
-    
     private static final List<String> GEMINI_MODELS = Arrays.asList(
         "gemini-2.0-flash",
         "gemini-2.0-flash-lite",
@@ -100,12 +60,6 @@ public class MkPro {
         "meta.llama3-8b-instruct-v1:0",
         "amazon.titan-text-express-v1"
     );
-
-    // ANSI Color Constants
-    public static final String ANSI_RESET = "\u001b[0m";
-    public static final String ANSI_BRIGHT_GREEN = "\u001b[92m";
-    public static final String ANSI_YELLOW = "\u001b[33m"; // Closest to Orange
-    public static final String ANSI_BLUE = "\u001b[34m";
 
     public static void main(String[] args) {
         // Check for flags
@@ -164,746 +118,14 @@ public class MkPro {
         Session mkSession = sessionService.createSession("mkpro-cli", "user").blockingGet();
         ActionLogger logger = new ActionLogger("mkpro_logs.db");
 
-        // --- DEFINE TOOLS ---
-
-        BaseTool readFileTool = new BaseTool(
-                "read_file",
-                "Reads the content of a file from the local filesystem."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "file_path", Schema.builder() 
-                                                .type("STRING")
-                                                .description("The path to the file to read.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("file_path"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String filePath = (String) args.get("file_path");
-                System.out.println(ANSI_BLUE + "[Coder] Reading file: " + filePath + ANSI_RESET);
-                try {
-                    Path path = Paths.get(filePath);
-                    if (!Files.exists(path)) {
-                         return Single.just(Collections.singletonMap("error", "File not found: " + filePath));
-                    }
-                    String content = Files.readString(path);
-                    if (content.length() > 10000) {
-                        content = content.substring(0, 10000) + "\n...[truncated]";
-                    }
-                    return Single.just(Collections.singletonMap("content", content));
-                } catch (IOException e) {
-                    return Single.just(Collections.singletonMap("error", "Error reading file: " + e.getMessage()));
-                }
-            }
-        };
-        
-        BaseTool listDirTool = new BaseTool(
-                "list_directory",
-                "Lists the files and directories in a given path."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "dir_path", Schema.builder()
-                                                .type("STRING")
-                                                .description("The path to the directory to list.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("dir_path"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String dirPath = (String) args.get("dir_path");
-                System.out.println(ANSI_BLUE + "[Coder] Listing directory: " + dirPath + ANSI_RESET);
-                try {
-                     Path path = Paths.get(dirPath);
-                    if (!Files.exists(path) || !Files.isDirectory(path)) {
-                         return Single.just(Collections.singletonMap("error", "Directory not found: " + dirPath));
-                    }
-                    
-                    StringBuilder listing = new StringBuilder();
-                    Files.list(path).forEach(p -> {
-                        listing.append(p.getFileName().toString());
-                        if (Files.isDirectory(p)) {
-                            listing.append("/");
-                        }
-                        listing.append("\n");
-                    });
-                    
-                    return Single.just(Collections.singletonMap("listing", listing.toString()));
-                } catch (IOException e) {
-                    return Single.just(Collections.singletonMap("error", "Error listing directory: " + e.getMessage()));
-                }
-            }
-        };
-
-        BaseTool urlFetchTool = new BaseTool(
-                "fetch_url",
-                "Fetches and extracts text content from a given URL."
-        ) {
-            private final HttpClient client = HttpClient.newBuilder()
-                    .followRedirects(HttpClient.Redirect.NORMAL)
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
-
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "url", Schema.builder()
-                                                .type("STRING")
-                                                .description("The full URL to fetch content from.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("url"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String url = (String) args.get("url");
-                System.out.println(ANSI_BLUE + "[Coordinator] Fetching URL: " + url + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        HttpRequest request = HttpRequest.newBuilder()
-                                .uri(URI.create(url))
-                                .timeout(Duration.ofSeconds(20))
-                                .GET()
-                                .build();
-
-                        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-                        
-                        if (response.statusCode() >= 400) {
-                            return Collections.singletonMap("error", "HTTP Error: " + response.statusCode());
-                        }
-
-                        String html = response.body();
-                        // Basic stripping
-                        String text = html.replaceAll("(?s)<style.*?>.*?</style>", "")
-                                          .replaceAll("(?s)<script.*?>.*?</script>", "")
-                                          .replaceAll("<[^>]+>", " ")
-                                          .replaceAll("\\s+", " ")
-                                          .trim();
-                        
-                        if (text.length() > 20000) {
-                            text = text.substring(0, 20000) + "\n...[truncated]";
-                        }
-                        
-                        return Collections.singletonMap("content", text);
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Failed to fetch URL: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        BaseTool readImageTool = new BaseTool(
-                "read_image",
-                "Reads an image file and returns its Base64 encoded content. Use this to analyze images."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "file_path", Schema.builder()
-                                                .type("STRING")
-                                                .description("The path to the image file.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("file_path"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String filePath = (String) args.get("file_path");
-                System.out.println(ANSI_BLUE + "[Coder] Analyzing image: " + filePath + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        Path path = Paths.get(filePath);
-                        if (!Files.exists(path)) {
-                            return Collections.singletonMap("error", "File not found: " + filePath);
-                        }
-                        byte[] bytes = Files.readAllBytes(path);
-                        String base64 = java.util.Base64.getEncoder().encodeToString(bytes);
-                        String mimeType = "image/jpeg";
-                        if (filePath.toLowerCase().endsWith(".png")) mimeType = "image/png";
-                        else if (filePath.toLowerCase().endsWith(".webp")) mimeType = "image/webp";
-
-                        return ImmutableMap.of(
-                            "mime_type", mimeType,
-                            "data", base64
-                        );
-                    } catch (IOException e) {
-                        return Collections.singletonMap("error", "Error reading image: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        BaseTool writeFileTool = new BaseTool(
-                "write_file",
-                "Writes content to a file, overwriting it."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                 return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "file_path", Schema.builder()
-                                                .type("STRING")
-                                                .description("The path to the file.")
-                                                .build(),
-                                        "content", Schema.builder()
-                                                .type("STRING")
-                                                .description("The content to write.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("file_path", "content"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String filePath = (String) args.get("file_path");
-                System.out.println(ANSI_BLUE + "[Coder] Writing file: " + filePath + ANSI_RESET);
-                String content = (String) args.get("content");
-                return Single.fromCallable(() -> {
-                    try {
-                        Path path = Paths.get(filePath);
-                        if (path.getParent() != null) {
-                            Files.createDirectories(path.getParent());
-                        }
-                        Files.writeString(path, content, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                        return Collections.singletonMap("status", "File written successfully: " + filePath);
-                    } catch (IOException e) {
-                        return Collections.singletonMap("error", "Error writing file: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        BaseTool runShellTool = new BaseTool(
-                "run_shell",
-                "Executes a shell command."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "command", Schema.builder()
-                                                .type("STRING")
-                                                .description("The command to execute.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("command"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String command = (String) args.get("command");
-                System.out.println(ANSI_BLUE + "[SysAdmin] Executing: " + command + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        ProcessBuilder pb;
-                        String os = System.getProperty("os.name").toLowerCase();
-                        if (os.contains("win")) {
-                            pb = new ProcessBuilder("cmd.exe", "/c", command);
-                        } else {
-                            pb = new ProcessBuilder("sh", "-c", command);
-                        }
-                        pb.redirectErrorStream(true);
-                        Process process = pb.start();
-                        
-                        String output = new String(process.getInputStream().readAllBytes());
-                        boolean exited = process.waitFor(10, TimeUnit.SECONDS);
-                        if (!exited) {
-                             process.destroy();
-                             output += "\n[Timeout]";
-                        }
-                        int exitCode = exited ? process.exitValue() : -1;
-
-                        return ImmutableMap.of(
-                            "exit_code", exitCode,
-                            "output", output
-                        );
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Command failed: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        BaseTool getActionLogsTool = new BaseTool(
-                "get_action_logs",
-                "Retrieves the history of user actions and agent responses."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(Collections.emptyMap()) // No parameters needed
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                return Single.fromCallable(() -> {
-                    try {
-                        StringBuilder logsBuilder = new StringBuilder();
-                        for (String log : logger.getLogs()) {
-                            logsBuilder.append(log).append("\n");
-                        }
-                        return Collections.singletonMap("logs", logsBuilder.toString());
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Error retrieving logs: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        BaseTool saveMemoryTool = new BaseTool(
-                "save_central_memory",
-                "Saves a summary or memory of the current project to the user's central database."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "content", Schema.builder()
-                                                .type("STRING")
-                                                .description("The summary content to save.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("content"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String content = (String) args.get("content");
-                String currentPath = Paths.get("").toAbsolutePath().toString();
-                System.out.println(ANSI_BLUE + "[Coordinator] Saving to central memory for: " + currentPath + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        centralMemory.saveMemory(currentPath, content);
-                        return Collections.singletonMap("status", "Memory saved successfully for " + currentPath);
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Error saving memory: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        BaseTool readMemoryTool = new BaseTool(
-                "read_central_memory",
-                "Reads the stored memory for a project. If no path is provided, reads the current project's memory."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "project_path", Schema.builder()
-                                                .type("STRING")
-                                                .description("Optional absolute path to the project. Defaults to current directory.")
-                                                .build()
-                                ))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String pathArg = (String) args.get("project_path");
-                String currentPath = (pathArg != null && !pathArg.isBlank()) ? pathArg : Paths.get("").toAbsolutePath().toString();
-                
-                System.out.println(ANSI_BLUE + "[Coordinator] Reading central memory for: " + currentPath + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        String memory = centralMemory.getMemory(currentPath);
-                        if (memory == null) {
-                            return Collections.singletonMap("memory", "No memory found for this project.");
-                        }
-                        return Collections.singletonMap("memory", memory);
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Error reading memory: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        BaseTool listProjectsTool = new BaseTool(
-                "list_central_memory_projects",
-                "Lists all project paths that have data stored in the central memory database."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(Collections.emptyMap())
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                System.out.println(ANSI_BLUE + "[Coordinator] Listing central memory projects..." + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        Map<String, String> memories = centralMemory.getAllMemories();
-                        if (memories.isEmpty()) {
-                             return Collections.singletonMap("projects", "No projects found in central memory.");
-                        }
-                        return Collections.singletonMap("projects", String.join("\n", memories.keySet()));
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Error listing projects: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        // --- SUB-AGENT RUNNER HELPER ---
-        
-        Function<AgentRequest, String> subAgentRunner = (request) -> {
-            try {
-                // Reuse sessionService but create new session for sub-task to keep context clean
-                Session subSession = sessionService.createSession(request.agentName, "user").blockingGet();
-                
-                BaseLlm model;
-                if (request.provider == Provider.GEMINI) {
-                    model = new Gemini(request.modelName, apiKey);
-                } else if (request.provider == Provider.BEDROCK) {
-                     // Using default region 'us-east-1' if not specified, or relying on SDK default chain.
-                     // The constructor provided in instruction was new BedrockBaseLM(bedrockModelId, bedrockUrl)
-                     // Passing null or standard endpoint if needed. 
-                     // Assuming standard region endpoint construction if URL is required.
-                     // Let's assume typical usage or null for default region handling by SDK.
-                     model = new BedrockBaseLM(request.modelName, null);
-                } else {
-                    model = new OllamaBaseLM(request.modelName, "http://localhost:11434");
-                }
-                
-                LlmAgent subAgent = LlmAgent.builder()
-                    .name(request.agentName)
-                    .instruction(request.instruction)
-                    .model(model)
-                    .tools(request.tools)
-                    .planning(true) // Enable planning for sub-agents too
-                    .build();
-
-                Runner subRunner = Runner.builder()
-                    .agent(subAgent)
-                    .appName(request.agentName) // Match Session app name
-                    .sessionService(sessionService)
-                    .artifactService(artifactService)
-                    .memoryService(memoryService)
-                    .build();
-
-                StringBuilder output = new StringBuilder();
-                Content content = Content.builder().role("user").parts(List.of(Part.fromText(request.userPrompt))).build();
-                
-                subRunner.runAsync("user", subSession.id(), content)
-                      .filter(e -> e.content().isPresent())
-                      .blockingForEach(e -> 
-                          e.content().flatMap(Content::parts).orElse(Collections.emptyList())
-                           .forEach(p -> p.text().ifPresent(output::append))
-                      );
-                return output.toString();
-            } catch (Exception e) {
-                return "Error executing sub-agent " + request.agentName + ": " + e.getMessage();
-            }
-        };
-
-        // --- DELEGATION TOOLS ---
-
-        // We will move tool creation into the factory to capture 'currentModelName'
+        AgentManager agentManager = new AgentManager(sessionService, artifactService, memoryService, apiKey, logger, centralMemory);
 
         // Factory to create Runner with specific model
-        Function<Map<String, AgentConfig>, Runner> runnerFactory = (agentConfigs) -> {
-            
-            String contextInfo = "\nCurrent Date: " + LocalDate.now() + "\nCurrent Working Directory: " + Paths.get("").toAbsolutePath().toString();
-
-            // Coordinator Model
-            AgentConfig coordConfig = agentConfigs.get("Coordinator");
-            BaseLlm model;
-            if (coordConfig.provider == Provider.GEMINI) {
-                model = new Gemini(coordConfig.modelName, apiKey);
-            } else if (coordConfig.provider == Provider.BEDROCK) {
-                model = new BedrockBaseLM(coordConfig.modelName, null);
-            } else {
-                model = new OllamaBaseLM(coordConfig.modelName, "http://localhost:11434");
-            }
-
-            // --- Re-define Delegation Tools to capture currentModelName ---
-            
-            BaseTool scopedAskCoderTool = new BaseTool(
-                "ask_coder",
-                "Delegates coding tasks to the Coder agent (read/write files, list dirs)."
-            ) {
-                @Override
-                public Optional<FunctionDeclaration> declaration() {
-                    return Optional.of(FunctionDeclaration.builder()
-                            .name(name())
-                            .description(description())
-                            .parameters(Schema.builder()
-                                    .type("OBJECT")
-                                    .properties(ImmutableMap.of(
-                                            "instruction", Schema.builder().type("STRING").description("Instructions for Coder.").build()
-                                    ))
-                                    .required(ImmutableList.of("instruction"))
-                                    .build())
-                            .build());
-                }
-
-                @Override
-                public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                    String instruction = (String) args.get("instruction");
-                    System.out.println(ANSI_BLUE + ">> Delegating to Coder..." + ANSI_RESET);
-                    AgentConfig coderConfig = agentConfigs.get("Coder");
-                    return Single.fromCallable(() -> {
-                        String result = subAgentRunner.apply(new AgentRequest(
-                            "Coder", 
-                            "You are the Coder. You specialize in software engineering. " +
-                            "You can read files, write files, list directories, and analyze images. " +
-                            "You CANNOT execute shell commands directly. " +
-                            "Perform the requested task and provide a concise report." +
-                            contextInfo,
-                            coderConfig.modelName,
-                            coderConfig.provider,
-                            instruction,
-                            List.of(readFileTool, writeFileTool, listDirTool, readImageTool)
-                        ));
-                        return Collections.singletonMap("result", result);
-                    });
-                }
-            };
-
-            BaseTool scopedAskSysAdminTool = new BaseTool(
-                "ask_sysadmin",
-                "Delegates system command execution to the SysAdmin agent (shell commands)."
-            ) {
-                @Override
-                public Optional<FunctionDeclaration> declaration() {
-                    return Optional.of(FunctionDeclaration.builder()
-                            .name(name())
-                            .description(description())
-                            .parameters(Schema.builder()
-                                    .type("OBJECT")
-                                    .properties(ImmutableMap.of(
-                                            "instruction", Schema.builder().type("STRING").description("Instructions for SysAdmin.").build()
-                                    ))
-                                    .required(ImmutableList.of("instruction"))
-                                    .build())
-                            .build());
-                }
-
-                @Override
-                public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                    String instruction = (String) args.get("instruction");
-                    System.out.println(ANSI_BLUE + ">> Delegating to SysAdmin..." + ANSI_RESET);
-                    AgentConfig sysAdminConfig = agentConfigs.get("SysAdmin");
-                    return Single.fromCallable(() -> {
-                        String result = subAgentRunner.apply(new AgentRequest(
-                            "SysAdmin", 
-                            "You are the System Administrator. " +
-                            "You specialize in executing shell commands safely. " +
-                            "You can use 'run_shell'. Execute the requested commands and report the output." +
-                            contextInfo,
-                            sysAdminConfig.modelName,
-                            sysAdminConfig.provider,
-                            instruction,
-                            List.of(runShellTool)
-                        ));
-                        return Collections.singletonMap("result", result);
-                    });
-                }
-            };
-
-            BaseTool scopedAskTesterTool = new BaseTool(
-                "ask_tester",
-                "Delegates testing tasks to the QA/Tester agent (write/run tests)."
-            ) {
-                @Override
-                public Optional<FunctionDeclaration> declaration() {
-                    return Optional.of(FunctionDeclaration.builder()
-                            .name(name())
-                            .description(description())
-                            .parameters(Schema.builder()
-                                    .type("OBJECT")
-                                    .properties(ImmutableMap.of(
-                                            "instruction", Schema.builder().type("STRING").description("Instructions for the Tester.").build()
-                                    ))
-                                    .required(ImmutableList.of("instruction"))
-                                    .build())
-                            .build());
-                }
-
-                @Override
-                public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                    String instruction = (String) args.get("instruction");
-                    System.out.println(ANSI_BLUE + ">> Delegating to Tester..." + ANSI_RESET);
-                    AgentConfig testerConfig = agentConfigs.get("Tester");
-                    return Single.fromCallable(() -> {
-                        String result = subAgentRunner.apply(new AgentRequest(
-                            "Tester", 
-                            "You are the QA / Tester Agent. " +
-                            "Your goal is to ensure code quality. " +
-                            "You can read/write files (to create tests) and run shell commands (to execute test runners). " +
-                            "Always analyze the code first, then write a test case, then run it. Report the results." +
-                            contextInfo,
-                            testerConfig.modelName,
-                            testerConfig.provider,
-                            instruction,
-                            List.of(readFileTool, writeFileTool, listDirTool, runShellTool)
-                        ));
-                        return Collections.singletonMap("result", result);
-                    });
-                }
-            };
-
-            BaseTool scopedAskDocWriterTool = new BaseTool(
-                "ask_doc_writer",
-                "Delegates documentation tasks to the DocWriter agent (read code, write docs)."
-            ) {
-                @Override
-                public Optional<FunctionDeclaration> declaration() {
-                    return Optional.of(FunctionDeclaration.builder()
-                            .name(name())
-                            .description(description())
-                            .parameters(Schema.builder()
-                                    .type("OBJECT")
-                                    .properties(ImmutableMap.of(
-                                            "instruction", Schema.builder().type("STRING").description("Instructions for the DocWriter.").build()
-                                    ))
-                                    .required(ImmutableList.of("instruction"))
-                                    .build())
-                            .build());
-                }
-
-                @Override
-                public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                    String instruction = (String) args.get("instruction");
-                    System.out.println(ANSI_BLUE + ">> Delegating to DocWriter..." + ANSI_RESET);
-                    AgentConfig docWriterConfig = agentConfigs.get("DocWriter");
-                    return Single.fromCallable(() -> {
-                        String result = subAgentRunner.apply(new AgentRequest(
-                            "DocWriter", 
-                            "You are the Documentation Writer. " +
-                            "Your goal is to maintain project documentation. " +
-                            "You can read codebase structure and files, and write documentation (README.md, Javadocs, etc.). " +
-                            "You do NOT run code. Focus on clarity, accuracy, and keeping docs in sync with code." +
-                            contextInfo,
-                            docWriterConfig.modelName,
-                            docWriterConfig.provider,
-                            instruction,
-                            List.of(readFileTool, writeFileTool, listDirTool)
-                        ));
-                        return Collections.singletonMap("result", result);
-                    });
-                }
-            };
-
-            // Coordinator Tools
-            List<BaseTool> coordinatorTools = new ArrayList<>();
-            coordinatorTools.add(scopedAskCoderTool);
-            coordinatorTools.add(scopedAskSysAdminTool);
-            coordinatorTools.add(scopedAskTesterTool);
-            coordinatorTools.add(scopedAskDocWriterTool);
-            coordinatorTools.add(urlFetchTool);
-            coordinatorTools.add(getActionLogsTool);
-            coordinatorTools.add(saveMemoryTool);
-            coordinatorTools.add(readMemoryTool);
-            coordinatorTools.add(listProjectsTool);
-            coordinatorTools.add(listDirTool); 
-
-            LlmAgent coordinatorAgent = LlmAgent.builder()
-                .name("Coordinator")
-                .description("The main orchestrator agent.")
-                .instruction("You are the Coordinator. You interface with the user and manage the workflow. "
-                        + "You have four specialized sub-agents: \n" 
-                        + "1. **Coder**: Handles all file operations (read, write, analyze images). \n" 
-                        + "2. **SysAdmin**: Handles all shell command executions. \n" 
-                        + "3. **Tester**: specialized in writing and running unit tests. \n" 
-                        + "4. **DocWriter**: specialized in writing and updating documentation (README, Javadocs). \n" 
-                        + "Delegate tasks appropriately. Do not try to write files or run commands yourself; you don't have those tools. " 
-                        + "You DO have tools to fetch URLs and manage long-term memory. " 
-                        + "Always prefer concise answers."
-                        + contextInfo
-                        + finalSummaryContext)
-                .model(model)
-                .tools(coordinatorTools)
-                .planning(true)
-                .build();
-
-            return Runner.builder()
-                .agent(coordinatorAgent)
-                .appName("mkpro-cli") // MATCHING APP NAME
-                .sessionService(sessionService)
-                .artifactService(artifactService)
-                .memoryService(memoryService)
-                .build();
-        };
+        Function<Map<String, AgentConfig>, Runner> runnerFactory = (agentConfigs) -> 
+            agentManager.createRunner(agentConfigs, finalSummaryContext);
 
         if (useUI) {
             if (isVerbose) System.out.println(ANSI_BLUE + "Launching Swing Companion UI..." + ANSI_RESET);
-            // UI uses initial model, defaults to OLLAMA for now unless arg changes (TODO: add arg for provider)
-            // Need to wrap config in map for UI too if we want full parity, but simpler to adapt factory or hardcode for UI for now.
-            // But runnerFactory now expects Map.
             Map<String, AgentConfig> uiConfigs = new java.util.HashMap<>();
             uiConfigs.put("Coordinator", new AgentConfig(Provider.OLLAMA, modelName));
             uiConfigs.put("Coder", new AgentConfig(Provider.OLLAMA, modelName));
@@ -916,14 +138,13 @@ public class MkPro {
             gui.show();
         } else {
             // Default provider OLLAMA
-            runConsoleLoop(runnerFactory, modelName, Provider.OLLAMA, mkSession, sessionService, centralMemory, logger, isVerbose, apiKey);
+            runConsoleLoop(runnerFactory, modelName, Provider.OLLAMA, mkSession, sessionService, centralMemory, logger, isVerbose);
         }
         
         logger.close();
-        // centralMemory.close(); // removed as it is not Closeable
     }
 
-    private static void runConsoleLoop(Function<Map<String, AgentConfig>, Runner> runnerFactory, String initialModelName, Provider initialProvider, Session initialSession, InMemorySessionService sessionService, CentralMemory centralMemory, ActionLogger logger, boolean verbose, String apiKey) {
+    private static void runConsoleLoop(Function<Map<String, AgentConfig>, Runner> runnerFactory, String initialModelName, Provider initialProvider, Session initialSession, InMemorySessionService sessionService, CentralMemory centralMemory, ActionLogger logger, boolean verbose) {
         // Initialize default configs for all agents
         Map<String, AgentConfig> agentConfigs = new java.util.HashMap<>();
         
@@ -980,7 +201,7 @@ public class MkPro {
                 for (String name : sortedNames) {
                     AgentConfig ac = agentConfigs.get(name);
                     System.out.printf(ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-12s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-10s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-40s " + ANSI_BLUE + "|%n" + ANSI_RESET, 
-                        name, ac.provider, ac.modelName);
+                        name, ac.getProvider(), ac.getModelName());
                 }
                 System.out.println(ANSI_BLUE + "+--------------+------------+------------------------------------------+" + ANSI_RESET);
                 
@@ -1009,12 +230,11 @@ public class MkPro {
                     // 1. Select Agent
                     System.out.println(ANSI_BLUE + "Select Agent to configure:" + ANSI_RESET);
                     List<String> agentNames = new ArrayList<>(agentConfigs.keySet());
-                    // Sort for consistent display order
                     Collections.sort(agentNames); 
                     for (int i = 0; i < agentNames.size(); i++) {
                         AgentConfig ac = agentConfigs.get(agentNames.get(i));
                         System.out.printf(ANSI_BRIGHT_GREEN + "  [%d] %s (Current: %s - %s)%n" + ANSI_RESET, 
-                            i + 1, agentNames.get(i), ac.provider, ac.modelName);
+                            i + 1, agentNames.get(i), ac.getProvider(), ac.getModelName());
                     }
                     System.out.print(ANSI_BLUE + "Enter selection (number): " + ANSI_YELLOW);
                     String agentSelection = scanner.nextLine().trim();
@@ -1140,9 +360,9 @@ public class MkPro {
                     } else {
                         try {
                             Provider newProvider = Provider.valueOf(providerStr);
-                            String newModel = (parts.length > 3) ? parts[3] : agentConfigs.get(agentName).modelName; 
+                            String newModel = (parts.length > 3) ? parts[3] : agentConfigs.get(agentName).getModelName(); 
                             
-                            if (parts.length == 3 && newProvider != agentConfigs.get(agentName).provider) {
+                            if (parts.length == 3 && newProvider != agentConfigs.get(agentName).getProvider()) {
                                 if (newProvider == Provider.GEMINI) newModel = "gemini-1.5-flash";
                                 else if (newProvider == Provider.BEDROCK) newModel = "anthropic.claude-3-sonnet-20240229-v1:0";
                                 else if (newProvider == Provider.OLLAMA) newModel = "devstral-small-2";
@@ -1167,7 +387,7 @@ public class MkPro {
 
             if ("/provider".equalsIgnoreCase(line.trim())) {
                 AgentConfig coordConfig = agentConfigs.get("Coordinator");
-                System.out.println(ANSI_BLUE + "Current Coordinator Provider: " + coordConfig.provider + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "Current Coordinator Provider: " + coordConfig.getProvider() + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "Select new provider for Coordinator:" + ANSI_RESET);
                 System.out.println(ANSI_BRIGHT_GREEN + "[1] OLLAMA" + ANSI_RESET);
                 System.out.println(ANSI_BRIGHT_GREEN + "[2] GEMINI" + ANSI_RESET);
@@ -1177,7 +397,7 @@ public class MkPro {
                 System.out.print(ANSI_RESET);
                 
                 Provider newProvider = null;
-                String newModel = coordConfig.modelName;
+                String newModel = coordConfig.getModelName();
 
                 if ("1".equals(selection)) {
                     newProvider = Provider.OLLAMA;
@@ -1227,15 +447,15 @@ public class MkPro {
 
             if ("/models".equalsIgnoreCase(line.trim())) {
                 AgentConfig coordConfig = agentConfigs.get("Coordinator");
-                if (coordConfig.provider == Provider.GEMINI) {
+                if (coordConfig.getProvider() == Provider.GEMINI) {
                     System.out.println(ANSI_BLUE + "Gemini Models:" + ANSI_RESET);
                     for (String m : GEMINI_MODELS) {
-                        System.out.println(ANSI_BRIGHT_GREEN + "  - " + m + (m.equals(coordConfig.modelName) ? " (current)" : "") + ANSI_RESET);
+                        System.out.println(ANSI_BRIGHT_GREEN + "  - " + m + (m.equals(coordConfig.getModelName()) ? " (current)" : "") + ANSI_RESET);
                     }
-                } else if (coordConfig.provider == Provider.BEDROCK) {
+                } else if (coordConfig.getProvider() == Provider.BEDROCK) {
                     System.out.println(ANSI_BLUE + "Bedrock Models:" + ANSI_RESET);
                     for (String m : BEDROCK_MODELS) {
-                        System.out.println(ANSI_BRIGHT_GREEN + "  - " + m + (m.equals(coordConfig.modelName) ? " (current)" : "") + ANSI_RESET);
+                        System.out.println(ANSI_BRIGHT_GREEN + "  - " + m + (m.equals(coordConfig.getModelName()) ? " (current)" : "") + ANSI_RESET);
                     }
                 } else {
                     System.out.println(ANSI_BLUE + "Fetching available Ollama models..." + ANSI_RESET);
@@ -1256,7 +476,7 @@ public class MkPro {
                             boolean found = false;
                             while (matcher.find()) {
                                 String m = matcher.group(1);
-                                System.out.println(ANSI_BRIGHT_GREEN + "  - " + m + (m.equals(coordConfig.modelName) ? " (current)" : "") + ANSI_RESET);
+                                System.out.println(ANSI_BRIGHT_GREEN + "  - " + m + (m.equals(coordConfig.getModelName()) ? " (current)" : "") + ANSI_RESET);
                                 found = true;
                             }
                             if (!found) {
@@ -1276,9 +496,9 @@ public class MkPro {
             if ("/model".equalsIgnoreCase(line.trim())) {
                 AgentConfig coordConfig = agentConfigs.get("Coordinator");
                 List<String> availableModels = new ArrayList<>();
-                if (coordConfig.provider == Provider.GEMINI) {
+                if (coordConfig.getProvider() == Provider.GEMINI) {
                     availableModels.addAll(GEMINI_MODELS);
-                } else if (coordConfig.provider == Provider.BEDROCK) {
+                } else if (coordConfig.getProvider() == Provider.BEDROCK) {
                     availableModels.addAll(BEDROCK_MODELS);
                 } else {
                     System.out.println(ANSI_BLUE + "Fetching available Ollama models for selection..." + ANSI_RESET);
@@ -1309,12 +529,12 @@ public class MkPro {
                 if (availableModels.isEmpty()) {
                     System.out.println(ANSI_BLUE + "No models available for selection." + ANSI_RESET);
                 } else {
-                    System.out.println(ANSI_BLUE + "Select a model (" + coordConfig.provider + "):" + ANSI_RESET);
+                    System.out.println(ANSI_BLUE + "Select a model (" + coordConfig.getProvider() + ")" + ANSI_RESET);
                     int defaultIndex = -1;
                     for (int i = 0; i < availableModels.size(); i++) {
                         String m = availableModels.get(i);
                         String marker = "";
-                        if (m.equals(coordConfig.modelName)) {
+                        if (m.equals(coordConfig.getModelName())) {
                             marker = " (current)";
                             defaultIndex = i + 1;
                         }
@@ -1327,7 +547,7 @@ public class MkPro {
                     
                     if (selection.isEmpty()) {
                         if (defaultIndex != -1) {
-                            System.out.println(ANSI_BLUE + "Keeping current model: " + coordConfig.modelName + ANSI_RESET);
+                            System.out.println(ANSI_BLUE + "Keeping current model: " + coordConfig.getModelName() + ANSI_RESET);
                         } else {
                             System.out.println(ANSI_BLUE + "No selection made." + ANSI_RESET);
                         }
@@ -1336,9 +556,9 @@ public class MkPro {
                             int index = Integer.parseInt(selection);
                             if (index >= 1 && index <= availableModels.size()) {
                                 String newModel = availableModels.get(index - 1);
-                                if (!newModel.equals(coordConfig.modelName)) {
+                                if (!newModel.equals(coordConfig.getModelName())) {
                                     System.out.println(ANSI_BLUE + "Switching Coordinator model to: " + newModel + "..." + ANSI_RESET);
-                                    agentConfigs.put("Coordinator", new AgentConfig(coordConfig.provider, newModel));
+                                    agentConfigs.put("Coordinator", new AgentConfig(coordConfig.getProvider(), newModel));
                                     runner = runnerFactory.apply(agentConfigs);
                                     System.out.println(ANSI_BLUE + "Model switched successfully." + ANSI_RESET);
                                 } else {

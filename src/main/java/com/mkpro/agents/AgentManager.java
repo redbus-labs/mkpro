@@ -87,6 +87,10 @@ public class AgentManager {
         docWriterTools.add(MkProTools.createWriteFileTool());
         docWriterTools.add(MkProTools.createListDirTool());
 
+        List<BaseTool> securityAuditorTools = new ArrayList<>();
+        securityAuditorTools.addAll(coderTools); // Read/Analyze code
+        securityAuditorTools.add(MkProTools.createRunShellTool()); // Run audit tools
+
         // Delegation Tools
         List<BaseTool> coordinatorTools = new ArrayList<>();
         
@@ -122,6 +126,14 @@ public class AgentManager {
             agentConfigs, docWriterTools, contextInfo
         ));
 
+        coordinatorTools.add(createDelegationTool(
+            "ask_security_auditor", 
+            "Delegates security analysis tasks to the Security Auditor agent (scan code, run audit tools).",
+            "SecurityAuditor",
+            "You are the Security Auditor. Your goal is to identify vulnerabilities. You can read code to find flaws (SQLi, XSS, hardcoded secrets) and run shell commands to execute security scanners (e.g., npm audit, mvn dependency:analyze). Report findings and suggest fixes.",
+            agentConfigs, securityAuditorTools, contextInfo
+        ));
+
         // Add Coordinator-specific tools
         coordinatorTools.add(MkProTools.createUrlFetchTool());
         coordinatorTools.add(MkProTools.createGetActionLogsTool(logger));
@@ -134,11 +146,12 @@ public class AgentManager {
             .name("Coordinator")
             .description("The main orchestrator agent.")
             .instruction("You are the Coordinator. You interface with the user and manage the workflow. "
-                    + "You have four specialized sub-agents: \n" 
+                    + "You have five specialized sub-agents: \n" 
                     + "1. **Coder**: Handles all file operations (read, write, analyze images). \n" 
                     + "2. **SysAdmin**: Handles all shell command executions. \n" 
                     + "3. **Tester**: specialized in writing and running unit tests. \n" 
-                    + "4. **DocWriter**: specialized in writing and updating documentation (README, Javadocs). \n" 
+                    + "4. **DocWriter**: specialized in writing and updating documentation. \n" 
+                    + "5. **SecurityAuditor**: specialized in finding vulnerabilities and running security scans. \n" 
                     + "Delegate tasks appropriately. Do not try to write files or run commands yourself; you don't have those tools. " 
                     + "You DO have tools to fetch URLs and manage long-term memory. " 
                     + "Always prefer concise answers."

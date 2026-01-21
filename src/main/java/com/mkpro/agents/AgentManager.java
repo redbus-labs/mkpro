@@ -104,6 +104,10 @@ public class AgentManager {
         devOpsTools.addAll(coderTools); // Read/Write configs (Dockerfiles, k8s, etc.)
         devOpsTools.add(MkProTools.createRunShellTool()); // Execute cloud CLIs, docker commands
 
+        List<BaseTool> dataAnalystTools = new ArrayList<>();
+        dataAnalystTools.addAll(coderTools); // Read/Write Python scripts and data files
+        dataAnalystTools.add(MkProTools.createRunShellTool()); // Execute python scripts
+
         // Delegation Tools
         List<BaseTool> coordinatorTools = new ArrayList<>();
         
@@ -171,6 +175,14 @@ public class AgentManager {
             agentConfigs, devOpsTools, contextInfo
         ));
 
+        coordinatorTools.add(createDelegationTool(
+            "ask_data_analyst", 
+            "Delegates data analysis tasks to the Data Analyst agent (Python stats, data processing).",
+            "DataAnalyst",
+            "You are the Data Analyst. Your goal is to analyze data sets and perform statistical analysis. You primarily write Python scripts (using pandas, numpy, etc.) to process data files (CSV, JSON) and produce insights. You can execute these scripts using the shell. Focus on data accuracy and clear interpretation of results.",
+            agentConfigs, dataAnalystTools, contextInfo
+        ));
+
         // Add Coordinator-specific tools
         coordinatorTools.add(MkProTools.createUrlFetchTool());
         coordinatorTools.add(MkProTools.createGetActionLogsTool(logger));
@@ -183,7 +195,7 @@ public class AgentManager {
             .name("Coordinator")
             .description("The main orchestrator agent.")
             .instruction("You are the Coordinator. You interface with the user and manage the workflow. "
-                    + "You have eight specialized sub-agents: \n" 
+                    + "You have nine specialized sub-agents: \n" 
                     + "1. **Coder**: Handles all file operations (read, write, analyze images). \n" 
                     + "2. **SysAdmin**: Handles all shell command executions. \n" 
                     + "3. **Tester**: specialized in writing and running unit tests. \n" 
@@ -192,6 +204,7 @@ public class AgentManager {
                     + "6. **Architect**: specialized in high-level design review and structural analysis. \n" 
                     + "7. **DatabaseAdmin**: specialized in SQL, schemas, and migrations. \n" 
                     + "8. **DevOps**: specialized in infrastructure, Docker, and CI/CD. \n" 
+                    + "9. **DataAnalyst**: specialized in Python-based data analysis and statistics. \n" 
                     + "Delegate tasks appropriately. Do not try to write files or run commands yourself; you don't have those tools. " 
                     + "You DO have tools to fetch URLs and manage long-term memory. " 
                     + "Always prefer concise answers."

@@ -7,6 +7,9 @@ import com.google.adk.models.OllamaBaseLM;
 import com.google.adk.models.Gemini;
 import com.google.adk.models.BedrockBaseLM;
 import com.google.adk.models.BaseLlm;
+import com.google.adk.runner.InMemoryRunner;
+import com.google.adk.runner.MapDbRunner;
+import com.google.adk.runner.PostgresRunner;
 import com.google.adk.runner.Runner;
 import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.Session;
@@ -24,6 +27,7 @@ import com.mkpro.models.AgentConfig;
 import com.mkpro.models.AgentRequest;
 import com.mkpro.models.AgentStat;
 import com.mkpro.models.Provider;
+import com.mkpro.models.RunnerType;
 import com.mkpro.tools.MkProTools;
 import com.mkpro.ActionLogger;
 import com.mkpro.CentralMemory;
@@ -44,6 +48,7 @@ public class AgentManager {
     private final String apiKey;
     private final ActionLogger logger;
     private final CentralMemory centralMemory;
+    private final RunnerType runnerType;
 
     public static final String ANSI_RESET = "\u001b[0m";
     public static final String ANSI_BLUE = "\u001b[34m";
@@ -53,13 +58,15 @@ public class AgentManager {
                         InMemoryMemoryService memoryService, 
                         String apiKey,
                         ActionLogger logger,
-                        CentralMemory centralMemory) {
+                        CentralMemory centralMemory,
+                        RunnerType runnerType) {
         this.sessionService = sessionService;
         this.artifactService = artifactService;
         this.memoryService = memoryService;
         this.apiKey = apiKey;
         this.logger = logger;
         this.centralMemory = centralMemory;
+        this.runnerType = runnerType;
     }
 
     public Runner createRunner(Map<String, AgentConfig> agentConfigs, String summaryContext) {
@@ -70,6 +77,7 @@ public class AgentManager {
         BaseLlm model = createModel(coordConfig);
 
         // Core Tools
+        // ... (tools logic stays same)
         List<BaseTool> coderTools = new ArrayList<>();
         coderTools.add(MkProTools.createReadFileTool());
         coderTools.add(MkProTools.createWriteFileTool());
@@ -215,13 +223,35 @@ public class AgentManager {
             .planning(true)
             .build();
 
-        return Runner.builder()
-            .agent(coordinatorAgent)
-            .appName("mkpro-cli")
-            .sessionService(sessionService)
-            .artifactService(artifactService)
-            .memoryService(memoryService)
-            .build();
+        return buildRunner(coordinatorAgent, "mkpro-cli");
+    }
+
+    private Runner buildRunner(LlmAgent agent, String appName) {
+        switch (runnerType) {
+            case MAP_DB:
+                try {
+                    return new MapDbRunner(agent);
+                } catch (Exception e) {
+                    System.err.println("Error creating MapDbRunner: " + e.getMessage());
+                    // Fallback to InMemory
+                }
+            case POSTGRES:
+                try {
+                    return new PostgresRunner(agent);
+                } catch (Exception e) {
+                    System.err.println("Error creating PostgresRunner: " + e.getMessage());
+                    // Fallback to InMemory
+                }
+            case IN_MEMORY:
+            default:
+                return Runner.builder()
+                    .agent(agent)
+                    .appName(appName)
+                    .sessionService(sessionService)
+                    .artifactService(artifactService)
+                    .memoryService(memoryService)
+                    .build();
+        }
     }
 
     private BaseLlm createModel(AgentConfig config) {
@@ -282,8 +312,6 @@ public class AgentManager {
         StringBuilder output = new StringBuilder();
         
         try {
-            Session subSession = sessionService.createSession(request.getAgentName(), "user").blockingGet();
-            
             AgentConfig config = new AgentConfig(request.getProvider(), request.getModelName());
             BaseLlm model = createModel(config);
             
@@ -295,13 +323,12 @@ public class AgentManager {
                 .planning(true)
                 .build();
 
-            Runner subRunner = Runner.builder()
-                .agent(subAgent)
-                .appName(request.getAgentName())
-                .sessionService(sessionService)
-                .artifactService(artifactService)
-                .memoryService(memoryService)
-                .build();
+            // 1. Build the runner (which might create its own SessionService)
+            Runner subRunner = buildRunner(subAgent, request.getAgentName());
+
+            // 2. Use the runner's session service to create the session
+            // This ensures the session exists in the correct store (InMemory, MapDB, Postgres)
+            Session subSession = subRunner.sessionService().createSession(request.getAgentName(), "user").blockingGet();
 
             Content content = Content.builder().role("user").parts(List.of(Part.fromText(request.getUserPrompt()))).build();
             

@@ -11,6 +11,7 @@ import com.google.genai.types.Part;
 import com.mkpro.models.AgentConfig;
 import com.mkpro.models.AgentStat;
 import com.mkpro.models.Provider;
+import com.mkpro.models.RunnerType;
 import com.mkpro.agents.AgentManager;
 
 import java.io.IOException;
@@ -67,6 +68,7 @@ public class MkPro {
         boolean useUI = false;
         boolean verbose = false;
         String initialModelName = "devstral-small-2";
+        RunnerType initialRunnerType = null;
 
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -77,9 +79,43 @@ public class MkPro {
             } else if ("-m".equalsIgnoreCase(arg) || "--model".equalsIgnoreCase(arg)) {
                 if (i + 1 < args.length) {
                     initialModelName = args[i + 1];
-                    i++; // Skip next arg
+                    i++;
+                }
+            } else if ("-r".equalsIgnoreCase(arg) || "--runner".equalsIgnoreCase(arg)) {
+                if (i + 1 < args.length) {
+                    try {
+                        initialRunnerType = RunnerType.valueOf(args[i + 1].toUpperCase());
+                    } catch (IllegalArgumentException e) {
+                        System.err.println("Invalid runner type: " + args[i+1] + ". Valid options: IN_MEMORY, MAP_DB, POSTGRES.");
+                    }
+                    i++;
                 }
             }
+        }
+        
+        if (initialRunnerType == null && !useUI) {
+            System.out.println(ANSI_BLUE + "Select Execution Runner:" + ANSI_RESET);
+            System.out.println(ANSI_BRIGHT_GREEN + "[1] IN_MEMORY (Default, fast, ephemeral)" + ANSI_RESET);
+            System.out.println(ANSI_BRIGHT_GREEN + "[2] MAP_DB (Persistent file-based)" + ANSI_RESET);
+            System.out.println(ANSI_BRIGHT_GREEN + "[3] POSTGRES (Persistent relational DB)" + ANSI_RESET);
+            System.out.print(ANSI_BLUE + "Enter selection [1]: " + ANSI_YELLOW);
+            
+            Scanner startupScanner = new Scanner(System.in);
+            if (startupScanner.hasNextLine()) {
+                String choice = startupScanner.nextLine().trim();
+                if ("2".equals(choice)) {
+                    initialRunnerType = RunnerType.MAP_DB;
+                } else if ("3".equals(choice)) {
+                    initialRunnerType = RunnerType.POSTGRES;
+                } else {
+                    initialRunnerType = RunnerType.IN_MEMORY;
+                }
+            } else {
+                initialRunnerType = RunnerType.IN_MEMORY;
+            }
+            System.out.print(ANSI_RESET);
+        } else if (initialRunnerType == null) {
+            initialRunnerType = RunnerType.IN_MEMORY;
         }
         
         final String modelName = initialModelName;
@@ -118,12 +154,17 @@ public class MkPro {
         CentralMemory centralMemory = new CentralMemory();
         Session mkSession = sessionService.createSession("mkpro-cli", "user").blockingGet();
         ActionLogger logger = new ActionLogger("mkpro_logs.db");
+        java.util.concurrent.atomic.AtomicReference<RunnerType> currentRunnerType = new java.util.concurrent.atomic.AtomicReference<>(initialRunnerType);
 
-        AgentManager agentManager = new AgentManager(sessionService, artifactService, memoryService, apiKey, logger, centralMemory);
+        // Factory to create Runner with specific model and runner type
+        java.util.function.BiFunction<Map<String, AgentConfig>, RunnerType, Runner> runnerBuilder = (agentConfigs, rType) -> {
+            AgentManager am = new AgentManager(sessionService, artifactService, memoryService, apiKey, logger, centralMemory, rType);
+            return am.createRunner(agentConfigs, finalSummaryContext);
+        };
 
-        // Factory to create Runner with specific model
+        // Function for backward compatibility or simple use cases
         Function<Map<String, AgentConfig>, Runner> runnerFactory = (agentConfigs) -> 
-            agentManager.createRunner(agentConfigs, finalSummaryContext);
+            runnerBuilder.apply(agentConfigs, currentRunnerType.get());
 
         if (useUI) {
             if (isVerbose) System.out.println(ANSI_BLUE + "Launching Swing Companion UI..." + ANSI_RESET);
@@ -139,18 +180,18 @@ public class MkPro {
             uiConfigs.put("DevOps", new AgentConfig(Provider.OLLAMA, modelName));
             uiConfigs.put("DataAnalyst", new AgentConfig(Provider.OLLAMA, modelName));
             
-            Runner runner = runnerFactory.apply(uiConfigs);
+            Runner runner = runnerBuilder.apply(uiConfigs, currentRunnerType.get());
             SwingCompanion gui = new SwingCompanion(runner, mkSession, sessionService);
             gui.show();
         } else {
             // Default provider OLLAMA
-            runConsoleLoop(runnerFactory, modelName, Provider.OLLAMA, mkSession, sessionService, centralMemory, logger, isVerbose);
+            runConsoleLoop(runnerBuilder, currentRunnerType, modelName, Provider.OLLAMA, mkSession, sessionService, centralMemory, logger, isVerbose);
         }
         
         logger.close();
     }
 
-    private static void runConsoleLoop(Function<Map<String, AgentConfig>, Runner> runnerFactory, String initialModelName, Provider initialProvider, Session initialSession, InMemorySessionService sessionService, CentralMemory centralMemory, ActionLogger logger, boolean verbose) {
+    private static void runConsoleLoop(java.util.function.BiFunction<Map<String, AgentConfig>, RunnerType, Runner> runnerBuilder, java.util.concurrent.atomic.AtomicReference<RunnerType> currentRunnerType, String initialModelName, Provider initialProvider, Session initialSession, InMemorySessionService sessionService, CentralMemory centralMemory, ActionLogger logger, boolean verbose) {
         // Initialize default configs for all agents
         Map<String, AgentConfig> agentConfigs = new java.util.HashMap<>();
         
@@ -187,8 +228,8 @@ public class MkPro {
             System.err.println(ANSI_BLUE + "Warning: Failed to load agent configs from central memory: " + e.getMessage() + ANSI_RESET);
         }
 
-        Runner runner = runnerFactory.apply(agentConfigs);
-        Session currentSession = initialSession;
+        Runner runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
+        Session currentSession = runner.sessionService().createSession(runner.appName(), "user").blockingGet();
         
         if (verbose) {
             System.out.println(ANSI_BLUE + "mkpro ready! Type 'exit' to quit." + ANSI_RESET);
@@ -207,24 +248,70 @@ public class MkPro {
 
             if ("/h".equalsIgnoreCase(line.trim()) || "/help".equalsIgnoreCase(line.trim())) {
                 System.out.println(ANSI_BLUE + "Available Commands:" + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /config     - Configure a specific agent (e.g., '/config Coder GEMINI gemini-1.5-pro')." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /config     - Configure a specific agent." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /runner     - Change the execution runner (InMemory, MapDB, Postgres)." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /provider   - Switch Coordinator provider (shortcut)." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /models     - List available models (for Coordinator's provider)." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /model      - Change Coordinator model (shortcut)." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /models     - List available models." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /model      - Change Coordinator model." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /status     - Show current configuration for all agents." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /stats      - Show agent usage statistics (latency, tokens)." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /init       - Initialize project memory (if not exists)." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /re-init    - Re-initialize/Update project memory." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /remember   - Analyze project and save summary to central memory." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /reset      - Reset the session (clears memory)." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /compact    - Compact the session (summarize history and start fresh)." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  /summarize  - Generate a summary of the session to 'session_summary.txt'." + ANSI_RESET);
-                System.out.println(ANSI_BLUE + "  exit        - Quit the application." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /stats      - Show agent usage statistics." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /init       - Initialize project memory." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /re-init    - Re-initialize project memory." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /remember   - Analyze and save summary." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /reset      - Reset the session." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /compact    - Compact the session." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /summarize  - Generate session summary." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  exit        - Quit." + ANSI_RESET);
                 System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
                 continue;
             }
             
+            if ("/runner".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "Current Runner: " + currentRunnerType.get() + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "Select new Runner Type:" + ANSI_RESET);
+                RunnerType[] types = RunnerType.values();
+                for (int i = 0; i < types.length; i++) {
+                    System.out.println(ANSI_BRIGHT_GREEN + "[" + (i + 1) + "] " + types[i] + ANSI_RESET);
+                }
+                System.out.print(ANSI_BLUE + "Enter selection: " + ANSI_YELLOW);
+                String selection = scanner.nextLine().trim();
+                System.out.print(ANSI_RESET);
+
+                try {
+                    int idx = Integer.parseInt(selection) - 1;
+                    if (idx >= 0 && idx < types.length) {
+                        RunnerType newType = types[idx];
+                        if (newType == currentRunnerType.get()) {
+                            System.out.println(ANSI_BLUE + "Already using " + newType + "." + ANSI_RESET);
+                        } else {
+                            System.out.println(ANSI_BLUE + "WARNING: Switching to " + newType + " will start a NEW session." + ANSI_RESET);
+                            System.out.println(ANSI_BLUE + "Current conversation history will not be carried over." + ANSI_RESET);
+                            System.out.print(ANSI_BLUE + "Do you want to continue? (y/N): " + ANSI_YELLOW);
+                            String confirm = scanner.nextLine().trim();
+                            System.out.print(ANSI_RESET);
+                            
+                            if ("y".equalsIgnoreCase(confirm) || "yes".equalsIgnoreCase(confirm)) {
+                                currentRunnerType.set(newType);
+                                System.out.println(ANSI_BLUE + "Switched to " + currentRunnerType.get() + ". Rebuilding runner..." + ANSI_RESET);
+                                runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
+                                currentSession = runner.sessionService().createSession(runner.appName(), "user").blockingGet();
+                                System.out.println(ANSI_BLUE + "Runner rebuilt. New Session ID: " + currentSession.id() + ANSI_RESET);
+                            } else {
+                                System.out.println(ANSI_BLUE + "Switch cancelled." + ANSI_RESET);
+                            }
+                        }
+                    } else {
+                        System.out.println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
+                    }
+                } catch (Exception e) {
+                    System.out.println(ANSI_BLUE + "Invalid input or error rebuilding runner: " + e.getMessage() + ANSI_RESET);
+                }
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
             if ("/status".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "Runner Type : " + ANSI_BRIGHT_GREEN + currentRunnerType.get() + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "+--------------+------------+------------------------------------------+" + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "| Agent        | Provider   | Model                                    |" + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "+--------------+------------+------------------------------------------+" + ANSI_RESET);
@@ -256,44 +343,13 @@ public class MkPro {
                 continue;
             }
 
-            if ("/stats".equalsIgnoreCase(line.trim())) {
-                System.out.println(ANSI_BLUE + "Agent Usage Statistics:" + ANSI_RESET);
-                try {
-                    List<AgentStat> stats = centralMemory.getAgentStats();
-                    if (stats.isEmpty()) {
-                        System.out.println(ANSI_BRIGHT_GREEN + "  No statistics recorded yet." + ANSI_RESET);
-                    } else {
-                        System.out.println(ANSI_BLUE + "+---------------------+------------------+------------+--------------------------------+--------+-----------+" + ANSI_RESET);
-                        System.out.println(ANSI_BLUE + "| Timestamp           | Agent            | Provider   | Model                          | Time   | In/Out    |" + ANSI_RESET);
-                        System.out.println(ANSI_BLUE + "+---------------------+------------------+------------+--------------------------------+--------+-----------+" + ANSI_RESET);
-                        
-                        // Show last 20 stats
-                        int start = Math.max(0, stats.size() - 20);
-                        for (int i = start; i < stats.size(); i++) {
-                            AgentStat s = stats.get(i);
-                            String timeStr = s.getTimestamp().toString().substring(0, 19).replace("T", " ");
-                            System.out.printf(ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-19s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-16s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-10s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-30s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-6d " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-4d/%-4d " + ANSI_BLUE + "|%n" + ANSI_RESET, 
-                                timeStr, s.getAgentName(), s.getProvider(), 
-                                (s.getModel().length() > 30 ? s.getModel().substring(0, 27) + "..." : s.getModel()), 
-                                s.getDurationMs(), s.getInputLength(), s.getOutputLength());
-                        }
-                        System.out.println(ANSI_BLUE + "+---------------------+------------------+------------+--------------------------------+--------+-----------+" + ANSI_RESET);
-                        System.out.println(ANSI_BLUE + "Showing last " + (stats.size() - start) + " of " + stats.size() + " records." + ANSI_RESET);
-                    }
-                } catch (Exception e) {
-                    System.out.println(ANSI_BRIGHT_GREEN + "  Error loading stats: " + e.getMessage() + ANSI_RESET);
-                }
-                
-                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
-                continue;
-            }
-
             if (line.trim().toLowerCase().startsWith("/config")) {
                 String[] parts = line.trim().split("\\s+");
                 
                 // Interactive Mode
                 if (parts.length == 1) {
-                    // 1. Select Agent
+                    // ... (rest of config logic)
+
                     System.out.println(ANSI_BLUE + "Select Agent to configure:" + ANSI_RESET);
                     List<String> agentNames = new ArrayList<>(agentConfigs.keySet());
                     Collections.sort(agentNames); 
@@ -413,7 +469,7 @@ public class MkPro {
                     System.out.println(ANSI_BLUE + "Updated " + selectedAgent + " to [" + selectedProvider + "] " + selectedModel + ANSI_RESET);
                     
                     if ("Coordinator".equalsIgnoreCase(selectedAgent)) {
-                        runner = runnerFactory.apply(agentConfigs);
+                        runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
                         System.out.println(ANSI_BLUE + "Coordinator runner rebuilt." + ANSI_RESET);
                     }
 
@@ -440,7 +496,7 @@ public class MkPro {
                             System.out.println(ANSI_BLUE + "Updated " + agentName + " to [" + newProvider + "] " + newModel + ANSI_RESET);
                             
                             if ("Coordinator".equalsIgnoreCase(agentName)) {
-                                runner = runnerFactory.apply(agentConfigs);
+                                runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
                             }
                         } catch (IllegalArgumentException e) {
                             System.out.println(ANSI_BLUE + "Invalid provider: " + providerStr + ". Use OLLAMA, GEMINI, or BEDROCK." + ANSI_RESET);
@@ -485,7 +541,7 @@ public class MkPro {
                 if (newProvider != null) {
                     agentConfigs.put("Coordinator", new AgentConfig(newProvider, newModel));
                     centralMemory.saveAgentConfig("Coordinator", newProvider.name(), newModel);
-                    runner = runnerFactory.apply(agentConfigs);
+                    runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
                 }
                 System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
                 continue;
@@ -629,7 +685,7 @@ public class MkPro {
                                     System.out.println(ANSI_BLUE + "Switching Coordinator model to: " + newModel + "..." + ANSI_RESET);
                                     agentConfigs.put("Coordinator", new AgentConfig(coordConfig.getProvider(), newModel));
                                     centralMemory.saveAgentConfig("Coordinator", coordConfig.getProvider().name(), newModel);
-                                    runner = runnerFactory.apply(agentConfigs);
+                                    runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
                                     System.out.println(ANSI_BLUE + "Model switched successfully." + ANSI_RESET);
                                 } else {
                                     System.out.println(ANSI_BLUE + "Model already selected." + ANSI_RESET);
@@ -647,7 +703,7 @@ public class MkPro {
             }
 
             if ("/reset".equalsIgnoreCase(line.trim())) {
-                currentSession = sessionService.createSession("mkpro-cli", "user").blockingGet();
+                currentSession = runner.sessionService().createSession(runner.appName(), "user").blockingGet();
                 System.out.println(ANSI_BLUE + "System: Session reset. New session ID: " + currentSession.id() + ANSI_RESET);
                 logger.log("SYSTEM", "Session reset by user.");
                 System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
@@ -689,7 +745,7 @@ public class MkPro {
                 }
 
                 // 2. Create New Session
-                currentSession = sessionService.createSession("mkpro-cli", "user").blockingGet();
+                currentSession = runner.sessionService().createSession(runner.appName(), "user").blockingGet();
                 String newSessionId = currentSession.id();
                 
                 System.out.println(ANSI_BLUE + "System: Session compacted. New Session ID: " + newSessionId + ANSI_RESET);
@@ -808,6 +864,10 @@ public class MkPro {
                 }
                 
                 System.err.println(ANSI_BLUE + "Error processing request: " + e.getMessage() + ANSI_RESET);
+                if (e.getMessage() != null && e.getMessage().contains("Session not found")) {
+                    System.err.println(ANSI_BRIGHT_GREEN + "Tip: The current runner (" + currentRunnerType.get() + ") might be having trouble persisting the session." + ANSI_RESET);
+                    System.err.println(ANSI_BRIGHT_GREEN + "Try switching back to IN_MEMORY using '/runner'." + ANSI_RESET);
+                }
                 if (verbose) {
                     e.printStackTrace();
                 }

@@ -83,6 +83,8 @@ public class MkPro {
                 useUI = true;
             } else if ("-v".equalsIgnoreCase(arg) || "--verbose".equalsIgnoreCase(arg)) {
                 verbose = true;
+            } else if ("-vb".equalsIgnoreCase(arg) || "--visible-browser".equalsIgnoreCase(arg)) {
+                System.setProperty("mkpro.browser.visible", "true");
             } else if ("-m".equalsIgnoreCase(arg) || "--model".equalsIgnoreCase(arg)) {
                 if (i + 1 < args.length) {
                     initialModelName = args[i + 1];

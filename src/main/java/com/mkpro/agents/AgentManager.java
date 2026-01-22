@@ -121,8 +121,21 @@ public class AgentManager {
         goalTrackerTools.add(MkProTools.createListGoalsTool(centralMemory));
         goalTrackerTools.add(MkProTools.createUpdateGoalTool(centralMemory));
 
+        List<BaseTool> webTools = new ArrayList<>();
+        webTools.add(com.mkpro.tools.SeleniumTools.createNavigateTool());
+        webTools.add(com.mkpro.tools.SeleniumTools.createClickTool());
+        webTools.add(com.mkpro.tools.SeleniumTools.createTypeTool());
+        webTools.add(com.mkpro.tools.SeleniumTools.createScreenshotTool());
+        webTools.add(com.mkpro.tools.SeleniumTools.createGetHtmlTool());
+        webTools.add(com.mkpro.tools.SeleniumTools.createCloseTool());
+
+        // Add web capabilities to specific agents
+        testerTools.addAll(webTools);
+        docWriterTools.addAll(webTools);
+
         // Delegation Tools
         List<BaseTool> coordinatorTools = new ArrayList<>();
+        coordinatorTools.addAll(webTools); // Give Coordinator direct web access for research
         
         coordinatorTools.add(createDelegationTool(
             "ask_goal_tracker", 
@@ -152,7 +165,7 @@ public class AgentManager {
             "ask_tester", 
             "Delegates testing tasks to the QA/Tester agent (write/run tests).",
             "Tester",
-            "You are the QA / Tester Agent. Your goal is to ensure code quality. You can read/write files (to create tests) and run shell commands (to execute test runners). Always analyze the code first, then write a test case, then run it. Report the results.",
+            "You are the QA / Tester Agent. Your goal is to ensure code quality. You can read/write files (to create tests), run shell commands (to execute test runners), and browse the web using **selenium_* tools** (for E2E testing). Always analyze the code first, then write a test case, then run it. Report the results.",
             agentConfigs, testerTools, contextInfo
         ));
 
@@ -160,7 +173,7 @@ public class AgentManager {
             "ask_doc_writer", 
             "Delegates documentation tasks to the DocWriter agent (read code, write docs).",
             "DocWriter",
-            "You are the Documentation Writer. Your goal is to maintain project documentation. You can read codebase structure and files, and write documentation (README.md, Javadocs, etc.). You do NOT run code. Focus on clarity, accuracy, and keeping docs in sync with code.",
+            "You are the Documentation Writer. Your goal is to maintain project documentation. You can read codebase structure and files, write documentation, and browse the web using **selenium_* tools** to research documentation or verify live sites. Focus on clarity, accuracy, and keeping docs in sync with code.",
             agentConfigs, docWriterTools, contextInfo
         ));
 
@@ -227,8 +240,8 @@ public class AgentManager {
                     + "8. **DatabaseAdmin**: specialized in SQL, schemas, and migrations. \n" 
                     + "9. **DevOps**: specialized in infrastructure, Docker, and CI/CD. \n" 
                     + "10. **DataAnalyst**: specialized in Python-based data analysis and statistics. \n" 
-                    + "Delegate tasks appropriately. Do not try to write files or run commands yourself; you don't have those tools. " 
-                    + "You DO have tools to fetch URLs and manage long-term memory. " 
+                    + "Delegate tasks appropriately. Do not try to write files or run commands yourself; you don't have those tools. \n" 
+                    + "You DO have tools to fetch URLs, manage long-term memory, and **browse the web using Selenium** (tools starting with 'selenium_'). \n"
                     + "Always prefer concise answers."
                     + contextInfo
                     + summaryContext)

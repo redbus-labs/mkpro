@@ -25,7 +25,7 @@ Your `mkpro` instance is not just a chatbot; it's a team of experts led by a Coo
     - **Central Store**: Project summaries and agent configurations are saved to `~/.mkpro/central_memory.db`.
     - **Local Session**: Context is managed efficiently with `/compact` to save tokens.
 - **Multi-Provider**: seamless switching between **Ollama** (Local), **Gemini** (Google), and **Bedrock** (AWS).
-- **Interactive CLI**: Easy-to-use menus for configuration (`/config`) and status monitoring (`/status`).
+- **Multi-Runner Support**: Choose between **InMemory**, **MapDB** (persistent), and **Postgres** (enterprise) execution environments for your agents.
 
 ## 🛠️ Setup & Installation
 
@@ -45,6 +45,29 @@ This generates the native Windows executable `target/mkpro.exe` and a fat JAR.
 ```bash
 ./target/mkpro.exe
 ```
+
+## 🌍 Installation & System-Wide Setup
+
+To use `mkpro` from any directory in your terminal, follow these steps:
+
+### Windows
+1.  Ensure you have built the project: `mvn package -DskipTests`.
+2.  Add the project root directory to your System PATH environment variable.
+    *   Search for "Edit the system environment variables".
+    *   Click "Environment Variables".
+    *   Under "System variables", find `Path`, select it, and click "Edit".
+    *   Click "New" and paste the full path to your `mkpro` directory (e.g., `C:\DevTools\rblab\mkpro`).
+    *   Click OK on all dialogs.
+3.  Open a **new** command prompt and type `mkpro`.
+
+### Linux / macOS
+1.  Ensure you have built the project: `mvn package -DskipTests`.
+2.  Make the script executable: `chmod +x mkpro.sh`.
+3.  Create a symlink to `/usr/local/bin` (or add to your PATH in `.bashrc`/`.zshrc`):
+    ```bash
+    sudo ln -s $(pwd)/mkpro.sh /usr/local/bin/mkpro
+    ```
+4.  Open a new terminal and type `mkpro`.
 
 ## 🎮 Usage Guide
 
@@ -92,6 +115,7 @@ Select Agent to configure:
 | :--- | :--- |
 | `/help` | Show this list. |
 | `/status` | **Dashboard**. View agent models, providers, and memory stats. |
+| `/runner` | **Switch Runner**. Choose between InMemory, MapDB, or Postgres. |
 | `/config` | **Configure Team**. Interactive menu to set agent models/providers. Settings are saved. |
 | `/init` | **Learn Project**. Agents scan and memorize the project structure. |
 | `/re-init` | **Refresh Memory**. Re-scan the project if structure changed significantly. |

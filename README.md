@@ -9,6 +9,7 @@ Your `mkpro` instance is not just a chatbot; it's a team of experts led by a Coo
 | Agent | Role & Capabilities |
 | :--- | :--- |
 | **Coordinator** | **Team Lead**. Orchestrates the workflow, manages long-term memory, and delegates tasks to the right specialist. It is your primary interface. |
+| **GoalTracker** | **Project Manager**. Keeps track of ongoing session goals, creates TODO lists for complex tasks, and maintains progress in a local MapDB store. |
 | **Coder** | **Software Engineer**. Reads, writes, and refactors code. Analyzes project structure and implements features. |
 | **SysAdmin** | **System Operator**. Executes shell commands, manages files, and runs build tools (Maven, Gradle, npm). |
 | **Tester** | **QA Engineer**. Writes unit and integration tests, runs test suites, and analyzes failure reports to suggest fixes. |
@@ -20,12 +21,14 @@ Your `mkpro` instance is not just a chatbot; it's a team of experts led by a Coo
 
 ## 🚀 Key Features
 
+- **Goal Tracking**: Never lose track of original user requests during complex, multi-step sessions.
 - **Granular Configuration**: Assign different models to different agents. Use a cheap, fast model (e.g., `gemini-1.5-flash`) for the *Coder* and a reasoning-heavy model (e.g., `claude-3-5-sonnet`) for the *Architect*.
 - **Persistent Memory**:
     - **Central Store**: Project summaries and agent configurations are saved to `~/.mkpro/central_memory.db`.
     - **Local Session**: Context is managed efficiently with `/compact` to save tokens.
 - **Multi-Provider**: seamless switching between **Ollama** (Local), **Gemini** (Google), and **Bedrock** (AWS).
 - **Multi-Runner Support**: Choose between **InMemory**, **MapDB** (persistent), and **Postgres** (enterprise) execution environments for your agents.
+- **Debug Awareness**: Agents are aware of which provider/model they are running on, helping in performance tuning and debugging.
 
 ## 🛠️ Setup & Installation
 
@@ -87,10 +90,11 @@ Select Agent to configure:
 > **User**: "Implement a new user login endpoint with JWT authentication."
 >
 > **Coordinator**:
-> 1.  Asks **Architect** to design the API interface and security capability.
-> 2.  Asks **Coder** to write the Controller, Service, and JWT utility classes.
-> 3.  Asks **Tester** to generate JUnit tests for the new endpoint.
-> 4.  Asks **DocWriter** to update the API documentation.
+> 1.  Asks **GoalTracker** to create a progress tracker and break down the tasks.
+> 2.  Asks **Architect** to design the API interface and security capability.
+> 3.  Asks **Coder** to write the Controller, Service, and JWT utility classes.
+> 4.  Asks **Tester** to generate JUnit tests for the new endpoint.
+> 5.  Asks **GoalTracker** to update progress after each success.
 
 #### 2. Security Hardening
 > **User**: "Audit the project for security vulnerabilities."
@@ -115,10 +119,12 @@ Select Agent to configure:
 | :--- | :--- |
 | `/help` | Show this list. |
 | `/status` | **Dashboard**. View agent models, providers, and memory stats. |
+| `/stats` | **Performance**. Show agent usage statistics (latencies, token length, models). |
 | `/runner` | **Switch Runner**. Choose between InMemory, MapDB, or Postgres. |
 | `/config` | **Configure Team**. Interactive menu to set agent models/providers. Settings are saved. |
 | `/init` | **Learn Project**. Agents scan and memorize the project structure. |
 | `/re-init` | **Refresh Memory**. Re-scan the project if structure changed significantly. |
+| `/summarize` | Generate and save a session summary to `session_summary.txt`. |
 | `/provider` | Quick switch for the **Coordinator's** provider. |
 | `/model` | Quick switch for the **Coordinator's** model. |
 | `/compact` | **Save Tokens**. Summarize history and start fresh. |

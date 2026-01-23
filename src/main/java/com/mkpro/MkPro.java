@@ -1,22 +1,19 @@
 package com.mkpro;
 
-import com.google.adk.agents.LlmAgent;
-import com.google.adk.artifacts.InMemoryArtifactService;
-import com.google.adk.memory.InMemoryMemoryService;
-import com.google.adk.models.OllamaBaseLM;
 import com.google.adk.runner.Runner;
 import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.Session;
-import com.google.adk.tools.BaseTool;
-import com.google.adk.tools.GoogleSearchTool;
-import com.google.adk.tools.ToolContext;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
+import com.google.adk.artifacts.InMemoryArtifactService;
+import com.google.adk.memory.InMemoryMemoryService;
 import com.google.genai.types.Content;
-import com.google.genai.types.FunctionDeclaration;
 import com.google.genai.types.Part;
-import com.google.genai.types.Schema;
-import io.reactivex.rxjava3.core.Single;
+
+import com.mkpro.models.AgentConfig;
+import com.mkpro.models.AgentStat;
+import com.mkpro.models.Provider;
+import com.mkpro.models.RunnerType;
+import com.mkpro.agents.AgentManager;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -26,12 +23,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.HashMap;
 import java.util.Scanner;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
+
 import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -39,16 +40,42 @@ import ch.qos.logback.classic.Logger;
 public class MkPro {
 
     // ANSI Color Constants
-    public static final String ANSI_RESET = "\u001B[0m";
-    public static final String ANSI_BRIGHT_GREEN = "\u001B[92m";
-    public static final String ANSI_YELLOW = "\u001B[33m"; // Closest to Orange
-    public static final String ANSI_BLUE = "\u001B[34m";
+    public static final String ANSI_RESET = "\u001b[0m";
+    public static final String ANSI_BRIGHT_GREEN = "\u001b[92m";
+    public static final String ANSI_YELLOW = "\u001b[33m"; // Closest to Orange
+    public static final String ANSI_BLUE = "\u001b[34m";
+
+    private static final List<String> GEMINI_MODELS = Arrays.asList(
+         "gemini-3-pro-preview",
+    "gemini-3-flash-preview",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash-thinking",
+    "gemini-2.0-pro",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash-thinking-exp",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b"
+    );
+
+    private static final List<String> BEDROCK_MODELS = Arrays.asList(
+        "anthropic.claude-3-sonnet-20240229-v1:0",
+        "anthropic.claude-3-haiku-20240307-v1:0",
+        "anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "meta.llama3-70b-instruct-v1:0",
+        "meta.llama3-8b-instruct-v1:0",
+        "amazon.titan-text-express-v1"
+    );
 
     public static void main(String[] args) {
         // Check for flags
         boolean useUI = false;
         boolean verbose = false;
-        String modelName = "devstral-small-2";
+        String initialModelName = "devstral-small-2";
+        RunnerType initialRunnerType = null;
 
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -56,25 +83,57 @@ public class MkPro {
                 useUI = true;
             } else if ("-v".equalsIgnoreCase(arg) || "--verbose".equalsIgnoreCase(arg)) {
                 verbose = true;
+            } else if ("-vb".equalsIgnoreCase(arg) || "--visible-browser".equalsIgnoreCase(arg)) {
+                System.setProperty("mkpro.browser.visible", "true");
             } else if ("-m".equalsIgnoreCase(arg) || "--model".equalsIgnoreCase(arg)) {
                 if (i + 1 < args.length) {
-                    modelName = args[i + 1];
-                    i++; // Skip next arg
+                    initialModelName = args[i + 1];
+                    i++;
+                }
+            } else if ("-r".equalsIgnoreCase(arg) || "--runner".equalsIgnoreCase(arg)) {
+                if (i + 1 < args.length) {
+                    try {
+                        initialRunnerType = RunnerType.valueOf(args[i + 1].toUpperCase());
+                    } catch (IllegalArgumentException e) {
+                        System.err.println("Invalid runner type: " + args[i+1] + ". Valid options: IN_MEMORY, MAP_DB, POSTGRES.");
+                    }
+                    i++;
                 }
             }
         }
-
+        
+        if (initialRunnerType == null && !useUI) {
+            System.out.println(ANSI_BLUE + "Select Execution Runner:" + ANSI_RESET);
+            System.out.println(ANSI_BRIGHT_GREEN + "[1] IN_MEMORY (Default, fast, ephemeral)" + ANSI_RESET);
+            System.out.println(ANSI_BRIGHT_GREEN + "[2] MAP_DB (Persistent file-based)" + ANSI_RESET);
+            System.out.println(ANSI_BRIGHT_GREEN + "[3] POSTGRES (Persistent relational DB)" + ANSI_RESET);
+            System.out.print(ANSI_BLUE + "Enter selection [1]: " + ANSI_YELLOW);
+            
+            Scanner startupScanner = new Scanner(System.in);
+            if (startupScanner.hasNextLine()) {
+                String choice = startupScanner.nextLine().trim();
+                if ("2".equals(choice)) {
+                    initialRunnerType = RunnerType.MAP_DB;
+                } else if ("3".equals(choice)) {
+                    initialRunnerType = RunnerType.POSTGRES;
+                } else {
+                    initialRunnerType = RunnerType.IN_MEMORY;
+                }
+            } else {
+                initialRunnerType = RunnerType.IN_MEMORY;
+            }
+            System.out.print(ANSI_RESET);
+        } else if (initialRunnerType == null) {
+            initialRunnerType = RunnerType.IN_MEMORY;
+        }
+        
+        final String modelName = initialModelName;
         final boolean isVerbose = verbose;
 
         if (isVerbose) {
             System.out.println(ANSI_BLUE + "Initializing mkpro assistant with model: " + modelName + ANSI_RESET);
             Logger root = (Logger)LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
             root.setLevel(Level.DEBUG);
-        } else {
-             // Ensure it stays at WARN (or whatever logback.xml said) unless we want to force it.
-             // But logback.xml handles the default.
-             // We can optionally force OFF if we want it *really* quiet.
-             // For now, let's respect logback.xml (WARN).
         }
 
         String apiKey = System.getenv("GOOGLE_API_KEY");
@@ -83,408 +142,110 @@ public class MkPro {
             System.exit(1);
         }
 
+        // Load previous session summary if available
+        String summaryContext = "";
+        try {
+            Path summaryPath = Paths.get("session_summary.txt");
+            if (Files.exists(summaryPath)) {
+                if (isVerbose) System.out.println(ANSI_BLUE + "Loading previous session summary..." + ANSI_RESET);
+                summaryContext = "\n\nPREVIOUS SESSION CONTEXT:\n" + Files.readString(summaryPath);
+            }
+        } catch (IOException e) {
+            System.err.println(ANSI_BLUE + "Warning: Could not read session_summary.txt" + ANSI_RESET);
+        }
+        
+        final String finalSummaryContext = summaryContext;
+
         InMemorySessionService sessionService = new InMemorySessionService();
         InMemoryArtifactService artifactService = new InMemoryArtifactService();
         InMemoryMemoryService memoryService = new InMemoryMemoryService();
-
-        // Define File Tool
-        BaseTool readFileTool = new BaseTool(
-                "read_file",
-                "Reads the content of a file from the local filesystem."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "file_path", Schema.builder() 
-                                                .type("STRING")
-                                                .description("The path to the file to read.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("file_path"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String filePath = (String) args.get("file_path");
-                System.out.println(ANSI_BLUE + "[Tool] Reading file: " + filePath + ANSI_RESET);
-                try {
-                    Path path = Paths.get(filePath);
-                    if (!Files.exists(path)) {
-                         return Single.just(Collections.singletonMap("error", "File not found: " + filePath));
-                    }
-                    String content = Files.readString(path);
-                    if (content.length() > 10000) {
-                        content = content.substring(0, 10000) + "\n...[truncated]";
-                    }
-                    return Single.just(Collections.singletonMap("content", content));
-                } catch (IOException e) {
-                    return Single.just(Collections.singletonMap("error", "Error reading file: " + e.getMessage()));
-                }
-            }
-        };
         
-        // Define List Directory Tool
-        BaseTool listDirTool = new BaseTool(
-                "list_directory",
-                "Lists the files and directories in a given path."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "dir_path", Schema.builder()
-                                                .type("STRING")
-                                                .description("The path to the directory to list.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("dir_path"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String dirPath = (String) args.get("dir_path");
-                System.out.println(ANSI_BLUE + "[Tool] Listing directory: " + dirPath + ANSI_RESET);
-                try {
-                     Path path = Paths.get(dirPath);
-                    if (!Files.exists(path) || !Files.isDirectory(path)) {
-                         return Single.just(Collections.singletonMap("error", "Directory not found: " + dirPath));
-                    }
-                    
-                    StringBuilder listing = new StringBuilder();
-                    Files.list(path).forEach(p -> {
-                        listing.append(p.getFileName().toString());
-                        if (Files.isDirectory(p)) {
-                            listing.append("/");
-                        }
-                        listing.append("\n");
-                    });
-                    
-                    return Single.just(Collections.singletonMap("listing", listing.toString()));
-                } catch (IOException e) {
-                    return Single.just(Collections.singletonMap("error", "Error listing directory: " + e.getMessage()));
-                }
-            }
-        };
-
-        // Define URL Fetch Tool
-        BaseTool urlFetchTool = new BaseTool(
-                "fetch_url",
-                "Fetches and extracts text content from a given URL."
-        ) {
-            private final HttpClient client = HttpClient.newBuilder()
-                    .followRedirects(HttpClient.Redirect.NORMAL)
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
-
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "url", Schema.builder()
-                                                .type("STRING")
-                                                .description("The full URL to fetch content from.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("url"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String url = (String) args.get("url");
-                System.out.println(ANSI_BLUE + "[Tool] Fetching URL: " + url + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] HTTP Request: " + url + ANSI_RESET);
-                        HttpRequest request = HttpRequest.newBuilder()
-                                .uri(URI.create(url))
-                                .timeout(Duration.ofSeconds(20))
-                                .GET()
-                                .build();
-
-                        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-                        
-                        if (response.statusCode() >= 400) {
-                            return Collections.singletonMap("error", "HTTP Error: " + response.statusCode());
-                        }
-
-                        String html = response.body();
-                        // Basic stripping
-                        String text = html.replaceAll("(?s)<style.*?>.*?</style>", "")
-                                          .replaceAll("(?s)<script.*?>.*?</script>", "")
-                                          .replaceAll("<[^>]+>", " ")
-                                          .replaceAll("\\s+", " ")
-                                          .trim();
-                        
-                        if (text.length() > 20000) {
-                            text = text.substring(0, 20000) + "\n...[truncated]";
-                        }
-                        
-                        return Collections.singletonMap("content", text);
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Failed to fetch URL: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        // Define Read Image Tool
-        BaseTool readImageTool = new BaseTool(
-                "read_image",
-                "Reads an image file and returns its Base64 encoded content. Use this to analyze images."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "file_path", Schema.builder()
-                                                .type("STRING")
-                                                .description("The path to the image file.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("file_path"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String filePath = (String) args.get("file_path");
-                System.out.println(ANSI_BLUE + "[Tool] Analyzing image: " + filePath + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        Path path = Paths.get(filePath);
-                        if (!Files.exists(path)) {
-                            return Collections.singletonMap("error", "File not found: " + filePath);
-                        }
-                        byte[] bytes = Files.readAllBytes(path);
-                        String base64 = java.util.Base64.getEncoder().encodeToString(bytes);
-                        String mimeType = "image/jpeg";
-                        if (filePath.toLowerCase().endsWith(".png")) mimeType = "image/png";
-                        else if (filePath.toLowerCase().endsWith(".webp")) mimeType = "image/webp";
-
-                        return ImmutableMap.of(
-                            "mime_type", mimeType,
-                            "data", base64
-                        );
-                    } catch (IOException e) {
-                        return Collections.singletonMap("error", "Error reading image: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        // Define Write File Tool
-        BaseTool writeFileTool = new BaseTool(
-                "write_file",
-                "Writes content to a file, overwriting it."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                 return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "file_path", Schema.builder()
-                                                .type("STRING")
-                                                .description("The path to the file.")
-                                                .build(),
-                                        "content", Schema.builder()
-                                                .type("STRING")
-                                                .description("The content to write.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("file_path", "content"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String filePath = (String) args.get("file_path");
-                System.out.println(ANSI_BLUE + "[Tool] Writing file: " + filePath + ANSI_RESET);
-                String content = (String) args.get("content");
-                return Single.fromCallable(() -> {
-                    try {
-                        Path path = Paths.get(filePath);
-                        if (path.getParent() != null) {
-                            Files.createDirectories(path.getParent());
-                        }
-                        Files.writeString(path, content, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                        return Collections.singletonMap("status", "File written successfully: " + filePath);
-                    } catch (IOException e) {
-                        return Collections.singletonMap("error", "Error writing file: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        // Define Run Shell Tool
-        BaseTool runShellTool = new BaseTool(
-                "run_shell",
-                "Executes a shell command."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(ImmutableMap.of(
-                                        "command", Schema.builder()
-                                                .type("STRING")
-                                                .description("The command to execute.")
-                                                .build()
-                                ))
-                                .required(ImmutableList.of("command"))
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String command = (String) args.get("command");
-                System.out.println(ANSI_BLUE + "[Tool] Executing: " + command + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        ProcessBuilder pb;
-                        String os = System.getProperty("os.name").toLowerCase();
-                        if (os.contains("win")) {
-                            pb = new ProcessBuilder("cmd.exe", "/c", command);
-                        } else {
-                            pb = new ProcessBuilder("sh", "-c", command);
-                        }
-                        pb.redirectErrorStream(true);
-                        Process process = pb.start();
-                        
-                        String output = new String(process.getInputStream().readAllBytes());
-                        boolean exited = process.waitFor(10, TimeUnit.SECONDS);
-                        if (!exited) {
-                             process.destroy();
-                             output += "\n[Timeout]";
-                        }
-                        int exitCode = exited ? process.exitValue() : -1;
-
-                        return ImmutableMap.of(
-                            "exit_code", exitCode,
-                            "output", output
-                        );
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Command failed: " + e.getMessage());
-                    }
-                });
-            }
-        };
-
-        Session session = sessionService.createSession("mkpro-cli", "user").blockingGet();
-
+        CentralMemory centralMemory = new CentralMemory();
+        Session mkSession = sessionService.createSession("mkpro", "Coordinator").blockingGet();
         ActionLogger logger = new ActionLogger("mkpro_logs.db");
+        java.util.concurrent.atomic.AtomicReference<RunnerType> currentRunnerType = new java.util.concurrent.atomic.AtomicReference<>(initialRunnerType);
 
-        // Define Get Action Logs Tool
-        BaseTool getActionLogsTool = new BaseTool(
-                "get_action_logs",
-                "Retrieves the history of user actions and agent responses."
-        ) {
-            @Override
-            public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder()
-                        .name(name())
-                        .description(description())
-                        .parameters(Schema.builder()
-                                .type("OBJECT")
-                                .properties(Collections.emptyMap()) // No parameters needed
-                                .build())
-                        .build());
-            }
-
-            @Override
-            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                if (isVerbose) System.out.println(ANSI_BLUE + "[DEBUG] Tool invoked: get_action_logs" + ANSI_RESET);
-                return Single.fromCallable(() -> {
-                    try {
-                        StringBuilder logsBuilder = new StringBuilder();
-                        for (String log : logger.getLogs()) {
-                            logsBuilder.append(log).append("\n");
-                        }
-                        return Collections.singletonMap("logs", logsBuilder.toString());
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Error retrieving logs: " + e.getMessage());
-                    }
-                });
-            }
+        // Factory to create Runner with specific model and runner type
+        java.util.function.BiFunction<Map<String, AgentConfig>, RunnerType, Runner> runnerBuilder = (agentConfigs, rType) -> {
+            AgentManager am = new AgentManager(sessionService, artifactService, memoryService, apiKey, logger, centralMemory, rType);
+            return am.createRunner(agentConfigs, finalSummaryContext);
         };
 
-        LlmAgent agent = LlmAgent.builder()
-                .name("mkpro")
-                .description("A helpful coding and research assistant.")
-                .instruction("You are mkpro, a powerful coding assistant. "
-                        + "You have access to the local filesystem AND the internet. "
-                        + "You can also ANALYZE IMAGES using the 'read_image' tool. "
-                        + "TOOLS AVAILABLE:\n"
-                        + "- read_file: Read local files (text).\n"
-                        + "- read_image: Read image files (returns base64).\n"
-                        + "- write_file: Create or overwrite files.\n"
-                        + "- run_shell: Execute shell commands (git, etc).\n"
-                        + "- list_directory: List files in folders.\n"
-                        + "- fetch_url: Access external websites to read documentation. USE THIS when given a URL.\n"
-                        + "- google_search: Search Google for general information.\n"
-                        + "- get_action_logs: Retrieve history of interactions.\n\n"
-                        + "IMPORTANT: Before using write_file to modify code, you MUST use run_shell to 'git add .' and 'git commit' to save the current state.\n"
-                        + "Always prefer concise answers.")
-                //.model("gemini-2.0-flash-exp")
-                .model(new OllamaBaseLM(modelName, "http://localhost:11434"))
-                .tools(readFileTool, readImageTool, writeFileTool, runShellTool, listDirTool, urlFetchTool, getActionLogsTool)//, GoogleSearchTool.INSTANCE
-                .planning(true)
-                .build();
-
-        Runner runner = Runner.builder()
-                .agent(agent)
-                .appName("mkpro-cli")
-                .sessionService(sessionService)
-                .artifactService(artifactService)
-                .memoryService(memoryService)
-                .build();
+        // Function for backward compatibility or simple use cases
+        Function<Map<String, AgentConfig>, Runner> runnerFactory = (agentConfigs) -> 
+            runnerBuilder.apply(agentConfigs, currentRunnerType.get());
 
         if (useUI) {
             if (isVerbose) System.out.println(ANSI_BLUE + "Launching Swing Companion UI..." + ANSI_RESET);
-            SwingCompanion gui = new SwingCompanion(runner, session, sessionService);
+            Map<String, AgentConfig> uiConfigs = new java.util.HashMap<>();
+            uiConfigs.put("Coordinator", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("Coder", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("SysAdmin", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("Tester", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("DocWriter", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("SecurityAuditor", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("Architect", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("DatabaseAdmin", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("DevOps", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("DataAnalyst", new AgentConfig(Provider.OLLAMA, modelName));
+            uiConfigs.put("GoalTracker", new AgentConfig(Provider.OLLAMA, modelName));
+            
+            Runner runner = runnerBuilder.apply(uiConfigs, currentRunnerType.get());
+            SwingCompanion gui = new SwingCompanion(runner, mkSession);
             gui.show();
         } else {
-            runConsoleLoop(runner, session, logger, isVerbose);
+            // Default provider OLLAMA
+            runConsoleLoop(runnerBuilder, currentRunnerType, modelName, Provider.OLLAMA, mkSession, sessionService, centralMemory, logger, isVerbose);
         }
         
         logger.close();
     }
 
-    private static void runConsoleLoop(Runner runner, Session session, ActionLogger logger, boolean verbose) {
+    private static void runConsoleLoop(java.util.function.BiFunction<Map<String, AgentConfig>, RunnerType, Runner> runnerBuilder, java.util.concurrent.atomic.AtomicReference<RunnerType> currentRunnerType, String initialModelName, Provider initialProvider, Session initialSession, InMemorySessionService sessionService, CentralMemory centralMemory, ActionLogger logger, boolean verbose) {
+        // Initialize default configs for all agents
+        Map<String, AgentConfig> agentConfigs = new java.util.HashMap<>();
+        
+        // Defaults
+        agentConfigs.put("Coordinator", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("Coder", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("SysAdmin", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("Tester", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("DocWriter", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("SecurityAuditor", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("Architect", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("DatabaseAdmin", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("DevOps", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("DataAnalyst", new AgentConfig(initialProvider, initialModelName));
+        agentConfigs.put("GoalTracker", new AgentConfig(initialProvider, initialModelName));
+
+        // Load overrides from Central Memory
+        try {
+            Map<String, String> storedConfigs = centralMemory.getAgentConfigs();
+            for (Map.Entry<String, String> entry : storedConfigs.entrySet()) {
+                String agent = entry.getKey();
+                String val = entry.getValue();
+                if (val != null && val.contains("|")) {
+                    String[] parts = val.split("\\|", 2);
+                    try {
+                        Provider p = Provider.valueOf(parts[0]);
+                        String m = parts[1];
+                        agentConfigs.put(agent, new AgentConfig(p, m));
+                    } catch (IllegalArgumentException e) {
+                        System.err.println(ANSI_BLUE + "Warning: Invalid provider in saved config for " + agent + ": " + parts[0] + ANSI_RESET);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println(ANSI_BLUE + "Warning: Failed to load agent configs from central memory: " + e.getMessage() + ANSI_RESET);
+        }
+
+        Runner runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
+        Session currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+        
         if (verbose) {
             System.out.println(ANSI_BLUE + "mkpro ready! Type 'exit' to quit." + ANSI_RESET);
         }
+        System.out.println(ANSI_BLUE + "Type '/help' for a list of commands." + ANSI_RESET);
         System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW); // Prompt Blue, Input Yellow
 
         Scanner scanner = new Scanner(System.in);
@@ -494,6 +255,552 @@ public class MkPro {
             
             if ("exit".equalsIgnoreCase(line.trim())) {
                 break;
+            }
+
+            if ("/h".equalsIgnoreCase(line.trim()) || "/help".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "Available Commands:" + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /config     - Configure a specific agent." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /runner     - Change the execution runner (InMemory, MapDB, Postgres)." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /provider   - Switch Coordinator provider (shortcut)." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /models     - List available models." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /model      - Change Coordinator model." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /status     - Show current configuration for all agents." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /stats      - Show agent usage statistics." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /init       - Initialize project memory." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /re-init    - Re-initialize project memory." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /remember   - Analyze and save summary." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /reset      - Reset the session." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /compact    - Compact the session." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /summarize  - Generate session summary." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  exit        - Quit." + ANSI_RESET);
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+            
+            if ("/runner".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "Current Runner: " + currentRunnerType.get() + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "Select new Runner Type:" + ANSI_RESET);
+                RunnerType[] types = RunnerType.values();
+                for (int i = 0; i < types.length; i++) {
+                    System.out.println(ANSI_BRIGHT_GREEN + "[" + (i + 1) + "] " + types[i] + ANSI_RESET);
+                }
+                System.out.print(ANSI_BLUE + "Enter selection: " + ANSI_YELLOW);
+                String selection = scanner.nextLine().trim();
+                System.out.print(ANSI_RESET);
+
+                try {
+                    int idx = Integer.parseInt(selection) - 1;
+                    if (idx >= 0 && idx < types.length) {
+                        RunnerType newType = types[idx];
+                        if (newType == currentRunnerType.get()) {
+                            System.out.println(ANSI_BLUE + "Already using " + newType + "." + ANSI_RESET);
+                        } else {
+                            System.out.println(ANSI_BLUE + "WARNING: Switching to " + newType + " will start a NEW session." + ANSI_RESET);
+                            System.out.println(ANSI_BLUE + "Current conversation history will not be carried over." + ANSI_RESET);
+                            System.out.print(ANSI_BLUE + "Do you want to continue? (y/N): " + ANSI_YELLOW);
+                            String confirm = scanner.nextLine().trim();
+                            System.out.print(ANSI_RESET);
+                            
+                            if ("y".equalsIgnoreCase(confirm) || "yes".equalsIgnoreCase(confirm)) {
+                                currentRunnerType.set(newType);
+                                System.out.println(ANSI_BLUE + "Switched to " + currentRunnerType.get() + ". Rebuilding runner..." + ANSI_RESET);
+                                runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
+                                currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                                System.out.println(ANSI_BLUE + "Runner rebuilt. New Session ID: " + currentSession.id() + ANSI_RESET);
+                            } else {
+                                System.out.println(ANSI_BLUE + "Switch cancelled." + ANSI_RESET);
+                            }
+                        }
+                    } else {
+                        System.out.println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
+                    }
+                } catch (Exception e) {
+                    System.out.println(ANSI_BLUE + "Invalid input or error rebuilding runner: " + e.getMessage() + ANSI_RESET);
+                }
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/stats".equalsIgnoreCase(line.trim())) {
+                try {
+                    List<AgentStat> stats = centralMemory.getAgentStats();
+                    if (stats.isEmpty()) {
+                        System.out.println(ANSI_BLUE + "No statistics available yet." + ANSI_RESET);
+                    } else {
+                        System.out.println(ANSI_BLUE + "Agent Statistics:" + ANSI_RESET);
+                        System.out.println(ANSI_BLUE + String.format("%-15s | %-10s | %-25s | %-8s | %-8s | %-8s", "Agent", "Provider", "Model", "Duration", "Success", "In/Out") + ANSI_RESET);
+                        System.out.println(ANSI_BLUE + "-".repeat(95) + ANSI_RESET);
+                        
+                        // Show last 20 stats
+                        int start = Math.max(0, stats.size() - 20);
+                        for (int i = start; i < stats.size(); i++) {
+                            AgentStat s = stats.get(i);
+                            String modelShort = s.getModel();
+                            if (modelShort.length() > 25) modelShort = modelShort.substring(0, 22) + "...";
+                            
+                            System.out.println(ANSI_BRIGHT_GREEN + String.format("%-15s | %-10s | %-25s | %-8dms | %-8s | %d/%d", 
+                                s.getAgentName(), s.getProvider(), modelShort, s.getDurationMs(), s.isSuccess(), s.getInputLength(), s.getOutputLength()) + ANSI_RESET);
+                        }
+                        
+                        // Summary
+                        System.out.println(ANSI_BLUE + "-".repeat(95) + ANSI_RESET);
+                        System.out.println(ANSI_BLUE + "Total Invocations: " + stats.size() + ANSI_RESET);
+                    }
+                } catch (Exception e) {
+                    System.err.println(ANSI_BLUE + "Error retrieving stats: " + e.getMessage() + ANSI_RESET);
+                }
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/status".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "Runner Type : " + ANSI_BRIGHT_GREEN + currentRunnerType.get() + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "+--------------+------------+------------------------------------------+" + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "| Agent        | Provider   | Model                                    |" + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "+--------------+------------+------------------------------------------+" + ANSI_RESET);
+                
+                List<String> sortedNames = new ArrayList<>(agentConfigs.keySet());
+                Collections.sort(sortedNames);
+                
+                for (String name : sortedNames) {
+                    AgentConfig ac = agentConfigs.get(name);
+                    System.out.printf(ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-12s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-10s " + ANSI_BLUE + "| " + ANSI_BRIGHT_GREEN + "%-40s " + ANSI_BLUE + "|%n" + ANSI_RESET, 
+                        name, ac.getProvider(), ac.getModelName());
+                }
+                System.out.println(ANSI_BLUE + "+--------------+------------+------------------------------------------+" + ANSI_RESET);
+                
+                // Memory Status
+                System.out.println("");
+                System.out.println(ANSI_BLUE + "Memory Status:" + ANSI_RESET);
+                System.out.println(ANSI_BRIGHT_GREEN + "  Local Session ID : " + currentSession.id() + ANSI_RESET);
+                try {
+                    String centralPath = Paths.get(System.getProperty("user.home"), ".mkpro", "central_memory.db").toString();
+                    Map<String, String> memories = centralMemory.getAllMemories();
+                    System.out.println(ANSI_BRIGHT_GREEN + "  Central Store    : " + centralPath + ANSI_RESET);
+                    System.out.println(ANSI_BRIGHT_GREEN + "  Stored Projects  : " + memories.size() + ANSI_RESET);
+                } catch (Exception e) {
+                    System.out.println(ANSI_BRIGHT_GREEN + "  Central Store    : [Error accessing DB] " + e.getMessage() + ANSI_RESET);
+                }
+                
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if (line.trim().toLowerCase().startsWith("/config")) {
+                String[] parts = line.trim().split("\\s+");
+                
+                // Interactive Mode
+                if (parts.length == 1) {
+                    // ... (rest of config logic)
+
+                    System.out.println(ANSI_BLUE + "Select Agent to configure:" + ANSI_RESET);
+                    List<String> agentNames = new ArrayList<>(agentConfigs.keySet());
+                    Collections.sort(agentNames); 
+                    for (int i = 0; i < agentNames.size(); i++) {
+                        AgentConfig ac = agentConfigs.get(agentNames.get(i));
+                        System.out.printf(ANSI_BRIGHT_GREEN + "  [%d] %s (Current: %s - %s)%n" + ANSI_RESET, 
+                            i + 1, agentNames.get(i), ac.getProvider(), ac.getModelName());
+                    }
+                    System.out.print(ANSI_BLUE + "Enter selection (number): " + ANSI_YELLOW);
+                    String agentSelection = scanner.nextLine().trim();
+                    System.out.print(ANSI_RESET);
+                    
+                    if (agentSelection.isEmpty()) continue;
+                    
+                    String selectedAgent = null;
+                    try {
+                        int idx = Integer.parseInt(agentSelection) - 1;
+                        if (idx >= 0 && idx < agentNames.size()) {
+                            selectedAgent = agentNames.get(idx);
+                        }
+                    } catch (NumberFormatException e) {}
+                    
+                    if (selectedAgent == null) {
+                        System.out.println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
+                        System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                        continue;
+                    }
+
+                    // 2. Select Provider
+                    System.out.println(ANSI_BLUE + "Select Provider for " + selectedAgent + ":" + ANSI_RESET);
+                    Provider[] providers = Provider.values();
+                    for (int i = 0; i < providers.length; i++) {
+                        System.out.printf(ANSI_BRIGHT_GREEN + "  [%d] %s%n" + ANSI_RESET, i + 1, providers[i]);
+                    }
+                    System.out.print(ANSI_BLUE + "Enter selection (number): " + ANSI_YELLOW);
+                    String providerSelection = scanner.nextLine().trim();
+                    System.out.print(ANSI_RESET);
+                    
+                    if (providerSelection.isEmpty()) continue;
+                    
+                    Provider selectedProvider = null;
+                    try {
+                        int idx = Integer.parseInt(providerSelection) - 1;
+                        if (idx >= 0 && idx < providers.length) {
+                            selectedProvider = providers[idx];
+                        }
+                    } catch (NumberFormatException e) {}
+                    
+                    if (selectedProvider == null) {
+                        System.out.println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
+                        System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                        continue;
+                    }
+
+                    // 3. Select Model
+                    List<String> availableModels = new ArrayList<>();
+                    if (selectedProvider == Provider.GEMINI) {
+                        availableModels.addAll(GEMINI_MODELS);
+                    } else if (selectedProvider == Provider.BEDROCK) {
+                        availableModels.addAll(BEDROCK_MODELS);
+                    } else if (selectedProvider == Provider.OLLAMA) {
+                        System.out.println(ANSI_BLUE + "Fetching available Ollama models..." + ANSI_RESET);
+                        try {
+                            HttpClient client = HttpClient.newHttpClient();
+                            HttpRequest request = HttpRequest.newBuilder()
+                                    .uri(URI.create("http://localhost:11434/api/tags"))
+                                    .timeout(Duration.ofSeconds(5))
+                                    .GET()
+                                    .build();
+                            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                            if (response.statusCode() == 200) {
+                                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\"name\":\"([^\"]+)\"").matcher(response.body());
+                                while (matcher.find()) availableModels.add(matcher.group(1));
+                            }
+                        } catch (Exception e) {
+                            System.out.println(ANSI_BLUE + "Could not fetch Ollama models. You can type the model name manually." + ANSI_RESET);
+                        }
+                    }
+
+                    String selectedModel = null;
+                    if (!availableModels.isEmpty()) {
+                        System.out.println(ANSI_BLUE + "Select Model:" + ANSI_RESET);
+                        for (int i = 0; i < availableModels.size(); i++) {
+                            System.out.printf(ANSI_BRIGHT_GREEN + "  [%d] %s%n" + ANSI_RESET, i + 1, availableModels.get(i));
+                        }
+                        System.out.println(ANSI_BRIGHT_GREEN + "  [M] Manual Entry" + ANSI_RESET);
+                        
+                        System.out.print(ANSI_BLUE + "Enter selection: " + ANSI_YELLOW);
+                        String modelSel = scanner.nextLine().trim();
+                        System.out.print(ANSI_RESET);
+                        
+                        if (!"M".equalsIgnoreCase(modelSel)) {
+                            try {
+                                int idx = Integer.parseInt(modelSel) - 1;
+                                if (idx >= 0 && idx < availableModels.size()) {
+                                    selectedModel = availableModels.get(idx);
+                                }
+                            } catch (NumberFormatException e) {}
+                        }
+                    }
+
+                    if (selectedModel == null) {
+                        System.out.print(ANSI_BLUE + "Enter model name manually: " + ANSI_YELLOW);
+                        selectedModel = scanner.nextLine().trim();
+                        System.out.print(ANSI_RESET);
+                    }
+
+                    if (selectedModel.isEmpty()) {
+                         System.out.println(ANSI_BLUE + "Model selection cancelled." + ANSI_RESET);
+                         System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                         continue;
+                    }
+
+                    // Apply Configuration
+                    agentConfigs.put(selectedAgent, new AgentConfig(selectedProvider, selectedModel));
+                    centralMemory.saveAgentConfig(selectedAgent, selectedProvider.name(), selectedModel);
+                    System.out.println(ANSI_BLUE + "Updated " + selectedAgent + " to [" + selectedProvider + "] " + selectedModel + ANSI_RESET);
+                    
+                    if ("Coordinator".equalsIgnoreCase(selectedAgent)) {
+                        runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
+                        System.out.println(ANSI_BLUE + "Coordinator runner rebuilt." + ANSI_RESET);
+                    }
+
+                } else if (parts.length >= 3) {
+                    // Command Line Mode (legacy)
+                    String agentName = parts[1];
+                    String providerStr = parts[2].toUpperCase();
+                    
+                    if (!agentConfigs.containsKey(agentName)) {
+                        System.out.println(ANSI_BLUE + "Unknown agent: " + agentName + ". Available: " + agentConfigs.keySet() + ANSI_RESET);
+                    } else {
+                        try {
+                            Provider newProvider = Provider.valueOf(providerStr);
+                            String newModel = (parts.length > 3) ? parts[3] : agentConfigs.get(agentName).getModelName(); 
+                            
+                            if (parts.length == 3 && newProvider != agentConfigs.get(agentName).getProvider()) {
+                                if (newProvider == Provider.GEMINI) newModel = "gemini-1.5-flash";
+                                else if (newProvider == Provider.BEDROCK) newModel = "anthropic.claude-3-sonnet-20240229-v1:0";
+                                else if (newProvider == Provider.OLLAMA) newModel = "devstral-small-2";
+                            }
+
+                            agentConfigs.put(agentName, new AgentConfig(newProvider, newModel));
+                            centralMemory.saveAgentConfig(agentName, newProvider.name(), newModel);
+                            System.out.println(ANSI_BLUE + "Updated " + agentName + " to [" + newProvider + "] " + newModel + ANSI_RESET);
+                            
+                            if ("Coordinator".equalsIgnoreCase(agentName)) {
+                                runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
+                            }
+                        } catch (IllegalArgumentException e) {
+                            System.out.println(ANSI_BLUE + "Invalid provider: " + providerStr + ". Use OLLAMA, GEMINI, or BEDROCK." + ANSI_RESET);
+                        }
+                    }
+                } else {
+                     System.out.println(ANSI_BLUE + "Usage: /config (interactive) OR /config <Agent> <Provider> [Model]" + ANSI_RESET);
+                }
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/provider".equalsIgnoreCase(line.trim())) {
+                AgentConfig coordConfig = agentConfigs.get("Coordinator");
+                System.out.println(ANSI_BLUE + "Current Coordinator Provider: " + coordConfig.getProvider() + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "Select new provider for Coordinator:" + ANSI_RESET);
+                System.out.println(ANSI_BRIGHT_GREEN + "[1] OLLAMA" + ANSI_RESET);
+                System.out.println(ANSI_BRIGHT_GREEN + "[2] GEMINI" + ANSI_RESET);
+                System.out.println(ANSI_BRIGHT_GREEN + "[3] BEDROCK" + ANSI_RESET);
+                System.out.print(ANSI_BLUE + "Enter selection: " + ANSI_YELLOW);
+                String selection = scanner.nextLine().trim();
+                System.out.print(ANSI_RESET);
+                
+                Provider newProvider = null;
+                String newModel = coordConfig.getModelName();
+
+                if ("1".equals(selection)) {
+                    newProvider = Provider.OLLAMA;
+                    System.out.println(ANSI_BLUE + "Switched to OLLAMA." + ANSI_RESET);
+                } else if ("2".equals(selection)) {
+                    newProvider = Provider.GEMINI;
+                    newModel = "gemini-1.5-flash";
+                    System.out.println(ANSI_BLUE + "Switched to GEMINI. Defaulting to 'gemini-1.5-flash'." + ANSI_RESET);
+                } else if ("3".equals(selection)) {
+                    newProvider = Provider.BEDROCK;
+                    newModel = "anthropic.claude-3-sonnet-20240229-v1:0";
+                    System.out.println(ANSI_BLUE + "Switched to BEDROCK. Defaulting to 'anthropic.claude-3-sonnet-20240229-v1:0'." + ANSI_RESET);
+                } else {
+                    System.out.println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
+                }
+                
+                if (newProvider != null) {
+                    agentConfigs.put("Coordinator", new AgentConfig(newProvider, newModel));
+                    centralMemory.saveAgentConfig("Coordinator", newProvider.name(), newModel);
+                    runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
+                }
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/init".equalsIgnoreCase(line.trim())) {
+                String currentPath = Paths.get("").toAbsolutePath().toString();
+                String existing = centralMemory.getMemory(currentPath);
+                if (existing != null && !existing.isBlank()) {
+                    System.out.println(ANSI_BLUE + "Project already initialized in central memory." + ANSI_RESET);
+                    System.out.println(ANSI_BLUE + "Use '/re-init' to force a fresh summary." + ANSI_RESET);
+                    System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                    continue;
+                }
+                line = "Analyze the current project files (use `list_directory` and `read_file` as needed) to build a comprehensive summary of the project's purpose, architecture, and current state. Then, save this summary to the central database using the `save_central_memory` tool.";
+                System.out.println(ANSI_BLUE + "System: Initializing project memory..." + ANSI_RESET);
+            }
+
+            if ("/re-init".equalsIgnoreCase(line.trim())) {
+                 line = "Analyze the current project files (use `list_directory` and `read_file` as needed) to build a comprehensive summary of the project's purpose, architecture, and current state. Then, save this summary to the central database using the `save_central_memory` tool.";
+                 System.out.println(ANSI_BLUE + "System: Re-initializing project memory..." + ANSI_RESET);
+            }
+
+            if ("/remember".equalsIgnoreCase(line.trim())) {
+                 line = "Analyze the current project files (use `list_directory` and `read_file` as needed) to build a comprehensive summary of the project's purpose, architecture, and current state. Then, save this summary to the central database using the `save_central_memory` tool.";
+                 System.out.println(ANSI_BLUE + "System: Initiating project analysis and memory storage..." + ANSI_RESET);
+            }
+
+            if ("/models".equalsIgnoreCase(line.trim())) {
+                AgentConfig coordConfig = agentConfigs.get("Coordinator");
+                if (coordConfig.getProvider() == Provider.GEMINI) {
+                    System.out.println(ANSI_BLUE + "Gemini Models:" + ANSI_RESET);
+                    for (String m : GEMINI_MODELS) {
+                        System.out.println(ANSI_BRIGHT_GREEN + "  - " + m + (m.equals(coordConfig.getModelName()) ? " (current)" : "") + ANSI_RESET);
+                    }
+                } else if (coordConfig.getProvider() == Provider.BEDROCK) {
+                    System.out.println(ANSI_BLUE + "Bedrock Models:" + ANSI_RESET);
+                    for (String m : BEDROCK_MODELS) {
+                        System.out.println(ANSI_BRIGHT_GREEN + "  - " + m + (m.equals(coordConfig.getModelName()) ? " (current)" : "") + ANSI_RESET);
+                    }
+                } else {
+                    System.out.println(ANSI_BLUE + "Fetching available Ollama models..." + ANSI_RESET);
+                    try {
+                        HttpClient client = HttpClient.newHttpClient();
+                        HttpRequest request = HttpRequest.newBuilder()
+                                .uri(URI.create("http://localhost:11434/api/tags"))
+                                .timeout(Duration.ofSeconds(10))
+                                .GET()
+                                .build();
+
+                        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                        if (response.statusCode() == 200) {
+                            System.out.println(ANSI_BLUE + "Ollama Models:" + ANSI_RESET);
+                            String body = response.body();
+                            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\"name\":\"([^\"]+)\"");
+                            java.util.regex.Matcher matcher = pattern.matcher(body);
+                            boolean found = false;
+                            while (matcher.find()) {
+                                String m = matcher.group(1);
+                                System.out.println(ANSI_BRIGHT_GREEN + "  - " + m + (m.equals(coordConfig.getModelName()) ? " (current)" : "") + ANSI_RESET);
+                                found = true;
+                            }
+                            if (!found) {
+                                System.out.println(ANSI_BLUE + "  No models found." + ANSI_RESET);
+                            }
+                        } else {
+                            System.err.println(ANSI_BLUE + "Error: Ollama returned status " + response.statusCode() + ANSI_RESET);
+                        }
+                    } catch (Exception e) {
+                        System.err.println(ANSI_BLUE + "Error fetching models: " + e.getMessage() + ANSI_RESET);
+                    }
+                }
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+            
+            if ("/model".equalsIgnoreCase(line.trim())) {
+                AgentConfig coordConfig = agentConfigs.get("Coordinator");
+                List<String> availableModels = new ArrayList<>();
+                if (coordConfig.getProvider() == Provider.GEMINI) {
+                    availableModels.addAll(GEMINI_MODELS);
+                } else if (coordConfig.getProvider() == Provider.BEDROCK) {
+                    availableModels.addAll(BEDROCK_MODELS);
+                } else {
+                    System.out.println(ANSI_BLUE + "Fetching available Ollama models for selection..." + ANSI_RESET);
+                    try {
+                        HttpClient client = HttpClient.newHttpClient();
+                        HttpRequest request = HttpRequest.newBuilder()
+                                .uri(URI.create("http://localhost:11434/api/tags"))
+                                .timeout(Duration.ofSeconds(10))
+                                .GET()
+                                .build();
+
+                        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                        if (response.statusCode() == 200) {
+                            String body = response.body();
+                            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\"name\":\"([^\"]+)\"");
+                            java.util.regex.Matcher matcher = pattern.matcher(body);
+                            while (matcher.find()) {
+                                availableModels.add(matcher.group(1));
+                            }
+                        } else {
+                            System.err.println(ANSI_BLUE + "Error: Ollama returned status " + response.statusCode() + ANSI_RESET);
+                        }
+                    } catch (Exception e) {
+                        System.err.println(ANSI_BLUE + "Error fetching models: " + e.getMessage() + ANSI_RESET);
+                    }
+                }
+
+                if (availableModels.isEmpty()) {
+                    System.out.println(ANSI_BLUE + "No models available for selection." + ANSI_RESET);
+                } else {
+                    System.out.println(ANSI_BLUE + "Select a model (" + coordConfig.getProvider() + ")" + ANSI_RESET);
+                    int defaultIndex = -1;
+                    for (int i = 0; i < availableModels.size(); i++) {
+                        String m = availableModels.get(i);
+                        String marker = "";
+                        if (m.equals(coordConfig.getModelName())) {
+                            marker = " (current)";
+                            defaultIndex = i + 1;
+                        }
+                        System.out.println(ANSI_BRIGHT_GREEN + "[" + (i + 1) + "] " + m + marker + ANSI_RESET);
+                    }
+                    
+                    System.out.print(ANSI_BLUE + "Enter selection (default " + (defaultIndex != -1 ? defaultIndex : "none") + "): " + ANSI_YELLOW);
+                    String selection = scanner.nextLine().trim();
+                    System.out.print(ANSI_RESET);
+                    
+                    if (selection.isEmpty()) {
+                        if (defaultIndex != -1) {
+                            System.out.println(ANSI_BLUE + "Keeping current model: " + coordConfig.getModelName() + ANSI_RESET);
+                        } else {
+                            System.out.println(ANSI_BLUE + "No selection made." + ANSI_RESET);
+                        }
+                    } else {
+                        try {
+                            int index = Integer.parseInt(selection);
+                            if (index >= 1 && index <= availableModels.size()) {
+                                String newModel = availableModels.get(index - 1);
+                                if (!newModel.equals(coordConfig.getModelName())) {
+                                    System.out.println(ANSI_BLUE + "Switching Coordinator model to: " + newModel + "..." + ANSI_RESET);
+                                    agentConfigs.put("Coordinator", new AgentConfig(coordConfig.getProvider(), newModel));
+                                    centralMemory.saveAgentConfig("Coordinator", coordConfig.getProvider().name(), newModel);
+                                    runner = runnerBuilder.apply(agentConfigs, currentRunnerType.get());
+                                    System.out.println(ANSI_BLUE + "Model switched successfully." + ANSI_RESET);
+                                } else {
+                                    System.out.println(ANSI_BLUE + "Model already selected." + ANSI_RESET);
+                                }
+                            } else {
+                                System.out.println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
+                            }
+                        } catch (NumberFormatException e) {
+                            System.out.println(ANSI_BLUE + "Invalid input." + ANSI_RESET);
+                        }
+                    }
+                }
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/reset".equalsIgnoreCase(line.trim())) {
+                currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                System.out.println(ANSI_BLUE + "System: Session reset. New session ID: " + currentSession.id() + ANSI_RESET);
+                logger.log("SYSTEM", "Session reset by user.");
+                System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                continue;
+            }
+
+            if ("/compact".equalsIgnoreCase(line.trim())) {
+                System.out.println(ANSI_BLUE + "System: Compacting session..." + ANSI_RESET);
+                
+                // 1. Request Summary from Current Session
+                StringBuilder summaryBuilder = new StringBuilder();
+                Content summaryRequest = Content.builder()
+                        .role("user")
+                        .parts(Collections.singletonList(Part.fromText(
+                            "Summarize our conversation so far, focusing on key technical decisions, " +
+                            "user preferences, and current state. " +
+                            "This summary will be used to initialize a new, compacted session."
+                        )))
+                        .build();
+
+                try {
+                    runner.runAsync("Coordinator", currentSession.id(), summaryRequest)
+                        .filter(event -> event.content().isPresent())
+                        .blockingForEach(event -> 
+                            event.content().flatMap(Content::parts).orElse(Collections.emptyList())
+                                .forEach(p -> p.text().ifPresent(summaryBuilder::append))
+                        );
+                } catch (Exception e) {
+                     System.err.println(ANSI_BLUE + "Error generating summary: " + e.getMessage() + ANSI_RESET);
+                     System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                     continue;
+                }
+                
+                String summary = summaryBuilder.toString();
+                if (summary.isBlank()) {
+                     System.err.println(ANSI_BLUE + "Error: Agent returned empty summary." + ANSI_RESET);
+                     System.out.print(ANSI_BLUE + "> " + ANSI_YELLOW);
+                     continue;
+                }
+
+                // 2. Create New Session
+                currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                String newSessionId = currentSession.id();
+                
+                System.out.println(ANSI_BLUE + "System: Session compacted. New Session ID: " + newSessionId + ANSI_RESET);
+                logger.log("SYSTEM", "Session compacted. Summary: " + summary);
+                
+                // 3. Seed New Session by updating 'line' and falling through
+                line = "Here is the summary of the previous session. Please use this as context for our continued conversation:\n\n" + summary;
+            }
+
+            if ("/summarize".equalsIgnoreCase(line.trim())) {
+                 line = "Retrieve the action logs using the 'get_action_logs' tool. Then, summarize the key technical context, user preferences, and important decisions from these logs. Finally, write this summary to a file named 'session_summary.txt' using the 'write_file' tool. The summary should be concise and suitable for priming a future session.";
+                 System.out.println(ANSI_BLUE + "System: Requesting session summary..." + ANSI_RESET);
             }
 
             logger.log("USER", line);
@@ -559,7 +866,7 @@ public class MkPro {
             try {
                 StringBuilder responseBuilder = new StringBuilder();
                 
-                runner.runAsync("user", session.id(), content)
+                runner.runAsync("Coordinator", currentSession.id(), content)
                         .filter(event -> event.content().isPresent())
                         .blockingForEach(event -> {
                             if (isThinking.getAndSet(false)) {
@@ -600,6 +907,10 @@ public class MkPro {
                 }
                 
                 System.err.println(ANSI_BLUE + "Error processing request: " + e.getMessage() + ANSI_RESET);
+                if (e.getMessage() != null && e.getMessage().contains("Session not found")) {
+                    System.err.println(ANSI_BRIGHT_GREEN + "Tip: The current runner (" + currentRunnerType.get() + ") might be having trouble persisting the session." + ANSI_RESET);
+                    System.err.println(ANSI_BRIGHT_GREEN + "Try switching back to IN_MEMORY using '/runner'." + ANSI_RESET);
+                }
                 if (verbose) {
                     e.printStackTrace();
                 }

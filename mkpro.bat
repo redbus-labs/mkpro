@@ -5,7 +5,7 @@ setlocal
 set "SCRIPT_DIR=%~dp0"
 
 :: Define the path to the shaded JAR
-set "JAR_PATH=%SCRIPT_DIR%target\mkpro-1.4-SNAPSHOT-shaded.jar"
+set "JAR_PATH=%SCRIPT_DIR%target\mkpro-1.4-SNAPSHOT.jar"
 
 :: Check if the JAR exists
 if not exist "%JAR_PATH%" (

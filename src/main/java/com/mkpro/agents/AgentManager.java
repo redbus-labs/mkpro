@@ -1,5 +1,6 @@
 package com.mkpro.agents;
 
+import com.google.adk.agents.BaseAgent;
 import com.google.adk.agents.LlmAgent;
 import com.google.adk.artifacts.InMemoryArtifactService;
 import com.google.adk.memory.InMemoryMemoryService;
@@ -267,10 +268,7 @@ public class AgentManager {
                 }
             case POSTGRES:
                 try {
-                    return PostgresRunner.builder()
-                        .agent(agent)
-                        .appName(appName)
-                        .build();
+                    return new PostgresRunner(  agent,   appName);
                 } catch (Exception e) {
                     System.err.println("Error creating PostgresRunner: " + e.getMessage());
                     // Fallback to InMemory

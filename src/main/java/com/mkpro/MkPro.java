@@ -191,7 +191,7 @@ public class MkPro {
             uiConfigs.put("GoalTracker", new AgentConfig(Provider.OLLAMA, modelName));
             
             Runner runner = runnerBuilder.apply(uiConfigs, currentRunnerType.get());
-            SwingCompanion gui = new SwingCompanion(runner, mkSession, sessionService);
+            SwingCompanion gui = new SwingCompanion(runner, mkSession);
             gui.show();
         } else {
             // Default provider OLLAMA

@@ -2,7 +2,6 @@ package com.mkpro;
 
 import com.google.adk.runner.Runner;
 import com.google.adk.sessions.Session;
-import com.google.adk.sessions.InMemorySessionService;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import io.reactivex.rxjava3.disposables.Disposable;
@@ -18,7 +17,6 @@ public class SwingCompanion {
 
     private final Runner runner;
     private final Session session;
-    private final InMemorySessionService sessionService;
     
     private JFrame frame;
     private JTextArea chatHistory;
@@ -26,10 +24,9 @@ public class SwingCompanion {
     private JButton sendButton;
     private JProgressBar progressBar;
 
-    public SwingCompanion(Runner runner, Session session, InMemorySessionService sessionService) {
+    public SwingCompanion(Runner runner, Session session) {
         this.runner = runner;
         this.session = session;
-        this.sessionService = sessionService;
         initializeUI();
     }
 

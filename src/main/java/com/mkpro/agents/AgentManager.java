@@ -79,9 +79,13 @@ public class AgentManager {
 
         // Core Tools
         // ... (tools logic stays same)
+        List<BaseTool> codeEditorTools = new ArrayList<>();
+        codeEditorTools.add(MkProTools.createSafeWriteFileTool());
+        codeEditorTools.add(MkProTools.createReadFileTool());
+
         List<BaseTool> coderTools = new ArrayList<>();
         coderTools.add(MkProTools.createReadFileTool());
-        coderTools.add(MkProTools.createWriteFileTool());
+        // coderTools.add(MkProTools.createWriteFileTool()); // Removed direct write access
         coderTools.add(MkProTools.createListDirTool());
         coderTools.add(MkProTools.createReadImageTool());
 
@@ -138,6 +142,15 @@ public class AgentManager {
         List<BaseTool> coordinatorTools = new ArrayList<>();
         coordinatorTools.addAll(webTools); // Give Coordinator direct web access for research
         
+        // Coder Sub-Agents
+        coderTools.add(createDelegationTool(
+            "ask_code_editor", 
+            "Delegates file editing tasks to the CodeEditor agent.",
+            "CodeEditor",
+            "You are the Code Editor. You are responsible for applying code changes safely. You have the `safe_write_file` tool which will preview changes and ask for user confirmation. Always read the file first if you need context, then apply the change.",
+            agentConfigs, codeEditorTools, contextInfo
+        ));
+
         coordinatorTools.add(createDelegationTool(
             "ask_goal_tracker", 
             "Delegates goal management tasks to the Goal Tracker agent.",
@@ -150,7 +163,7 @@ public class AgentManager {
             "ask_coder", 
             "Delegates coding tasks to the Coder agent (read/write files, list dirs).",
             "Coder",
-            "You are the Coder. You specialize in software engineering. You can read files, write files, list directories, and analyze images. You CANNOT execute shell commands directly. Perform the requested task and provide a concise report.",
+            "You are the Coder. You specialize in software engineering. You can read files, list directories, and analyze images. You CANNOT write files directly; instead, delegate to your sub-agent 'CodeEditor' using `ask_code_editor` to apply changes safely. Perform the requested task and provide a concise report.",
             agentConfigs, coderTools, contextInfo
         ));
 

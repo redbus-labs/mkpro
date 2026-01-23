@@ -10,7 +10,11 @@ import io.reactivex.rxjava3.core.Single;
 import com.mkpro.ActionLogger;
 import com.mkpro.CentralMemory;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -20,15 +24,138 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
+import java.util.Scanner;
+import java.util.Arrays;
 
 public class MkProTools {
 
     public static final String ANSI_RESET = "\u001b[0m";
     public static final String ANSI_BLUE = "\u001b[34m";
+    public static final String ANSI_YELLOW = "\u001b[33m";
+    public static final String ANSI_RED = "\u001b[31m";
+    public static final String ANSI_GREEN = "\u001b[32m";
+
+    public static BaseTool createSafeWriteFileTool() {
+        return new BaseTool(
+                "safe_write_file",
+                "Writes content to a file safely. It shows a preview of the changes and asks for user confirmation before overwriting."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                 return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "file_path", Schema.builder()
+                                                .type("STRING")
+                                                .description("The path to the file.")
+                                                .build(),
+                                        "content", Schema.builder()
+                                                .type("STRING")
+                                                .description("The content to write.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("file_path", "content"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String filePath = (String) args.get("file_path");
+                String newContent = (String) args.get("content");
+                
+                return Single.fromCallable(() -> {
+                    try {
+                        Path path = Paths.get(filePath);
+                        String oldContent = "";
+                        if (Files.exists(path)) {
+                            oldContent = Files.readString(path);
+                        } else {
+                             System.out.println(ANSI_BLUE + "[CodeEditor] Creating NEW file: " + filePath + ANSI_RESET);
+                        }
+
+                        System.out.println(ANSI_BLUE + "\n--- PROPOSED CHANGES FOR: " + filePath + " ---" + ANSI_RESET);
+                        
+                        // Simple Diff Preview
+                        String[] oldLines = oldContent.split("\n");
+                        String[] newLines = newContent.split("\n");
+                        
+                        // Heuristic: If file is huge, just show head/tail or size diff
+                        if (newLines.length > 50 && oldLines.length > 50) {
+                            System.out.println(ANSI_YELLOW + "File is large (" + newLines.length + " lines). Showing first 10 and last 10 lines." + ANSI_RESET);
+                             for (int i = 0; i < Math.min(10, newLines.length); i++) {
+                                System.out.println(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
+                            }
+                            System.out.println("...");
+                            for (int i = Math.max(0, newLines.length - 10); i < newLines.length; i++) {
+                                System.out.println(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
+                            }
+                        } else {
+                            // Show full content for smaller files (simplified view)
+                            // Ideally we would do a line-by-line diff, but for now just showing the new content is safer than a bad diff.
+                            // Or better: Show side-by-side or just "Replacing X lines with Y lines".
+                            
+                            // Let's try a very basic diff logic:
+                            int maxLen = Math.max(oldLines.length, newLines.length);
+                            boolean hasChanges = false;
+                            
+                            for (int i = 0; i < maxLen; i++) {
+                                String oldL = (i < oldLines.length) ? oldLines[i] : null;
+                                String newL = (i < newLines.length) ? newLines[i] : null;
+                                
+                                if (oldL == null && newL != null) {
+                                    System.out.println(ANSI_GREEN + "+ " + newL + ANSI_RESET);
+                                    hasChanges = true;
+                                } else if (oldL != null && newL == null) {
+                                    System.out.println(ANSI_RED + "- " + oldL + ANSI_RESET);
+                                    hasChanges = true;
+                                } else if (!oldL.equals(newL)) {
+                                    System.out.println(ANSI_RED + "- " + oldL + ANSI_RESET);
+                                    System.out.println(ANSI_GREEN + "+ " + newL + ANSI_RESET);
+                                    hasChanges = true;
+                                } else {
+                                    // Context lines (optional, maybe skip for brevity if unchanged)
+                                    // System.out.println("  " + oldL);
+                                }
+                            }
+                            
+                            if (!hasChanges) {
+                                System.out.println(ANSI_YELLOW + "No textual changes detected." + ANSI_RESET);
+                            }
+                        }
+
+                        System.out.println(ANSI_BLUE + "---------------------------------------------" + ANSI_RESET);
+                        System.out.print(ANSI_YELLOW + "Apply these changes? [y/N]: " + ANSI_RESET);
+
+                        // Read from Console
+                        Scanner scanner = new Scanner(System.in);
+                        if (scanner.hasNextLine()) {
+                            String input = scanner.nextLine().trim();
+                            if ("y".equalsIgnoreCase(input) || "yes".equalsIgnoreCase(input)) {
+                                if (path.getParent() != null) {
+                                    Files.createDirectories(path.getParent());
+                                }
+                                Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                                System.out.println(ANSI_GREEN + "File written successfully." + ANSI_RESET);
+                                return Collections.singletonMap("status", "File written successfully: " + filePath);
+                            } else {
+                                System.out.println(ANSI_RED + "Changes rejected by user." + ANSI_RESET);
+                                return Collections.singletonMap("status", "User rejected changes for: " + filePath);
+                            }
+                        }
+                        
+                        return Collections.singletonMap("status", "No input received. Changes rejected.");
+
+                    } catch (IOException e) {
+                        return Collections.singletonMap("error", "Error processing safe write: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
 
     public static BaseTool createReadFileTool() {
         return new BaseTool(
@@ -77,7 +204,7 @@ public class MkProTools {
     public static BaseTool createListDirTool() {
         return new BaseTool(
                 "list_directory",
-                "Lists the files and directories in a given path."
+                "Lists the files and directories in a given path. Can be recursive."
         ) {
             @Override
             public Optional<FunctionDeclaration> declaration() {
@@ -90,6 +217,10 @@ public class MkProTools {
                                         "dir_path", Schema.builder()
                                                 .type("STRING")
                                                 .description("The path to the directory to list.")
+                                                .build(),
+                                        "recursive", Schema.builder()
+                                                .type("BOOLEAN")
+                                                .description("Whether to list files recursively.")
                                                 .build()
                                 ))
                                 .required(ImmutableList.of("dir_path"))
@@ -100,22 +231,64 @@ public class MkProTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String dirPath = (String) args.get("dir_path");
-                System.out.println(ANSI_BLUE + "[Coder] Listing directory: " + dirPath + ANSI_RESET);
+                Boolean recursive = (Boolean) args.get("recursive");
+                if (recursive == null) recursive = false;
+
+                System.out.println(ANSI_BLUE + "[Coder] Listing directory " + (recursive ? "(recursive)" : "") + ": " + dirPath + ANSI_RESET);
                 try {
-                     Path path = Paths.get(dirPath);
-                    if (!Files.exists(path) || !Files.isDirectory(path)) {
-                         return Single.just(Collections.singletonMap("error", "Directory not found: " + dirPath));
+                    Path startPath = Paths.get(dirPath);
+                    if (!Files.exists(startPath) || !Files.isDirectory(startPath)) {
+                        return Single.just(Collections.singletonMap("error", "Directory not found: " + dirPath));
                     }
-                    
+
                     StringBuilder listing = new StringBuilder();
-                    Files.list(path).forEach(p -> {
-                        listing.append(p.getFileName().toString());
-                        if (Files.isDirectory(p)) {
-                            listing.append("/");
+                    List<String> ignoredDirs = Arrays.asList(".git", "target", "node_modules", ".idea", ".vscode", ".venv", "bin", "obj");
+
+                    if (recursive) {
+                        java.util.concurrent.atomic.AtomicInteger count = new java.util.concurrent.atomic.AtomicInteger(0);
+                        Files.walk(startPath)
+                             .filter(p -> {
+                                 // Simple ignore logic
+                                 String pathStr = p.toString().toLowerCase();
+                                 if (pathStr.endsWith(".db") || pathStr.endsWith(".db-shm") || pathStr.endsWith(".db-wal")) {
+                                     return false;
+                                 }
+
+                                 for (String ignored : ignoredDirs) {
+                                     if (p.toString().contains(java.io.File.separator + ignored + java.io.File.separator) || 
+                                         p.toString().endsWith(java.io.File.separator + ignored)) {
+                                         return false;
+                                     }
+                                 }
+                                 return true;
+                             })
+                             .limit(1001) // Limit to 1000 items
+                             .forEach(p -> {
+                                 if (count.incrementAndGet() > 1000) return;
+                                 
+                                 Path relative = startPath.relativize(p);
+                                 if (relative.toString().isEmpty()) return;
+                                 
+                                 listing.append(relative.toString().replace("\\", "/"));
+                                 if (Files.isDirectory(p)) {
+                                     listing.append("/");
+                                 }
+                                 listing.append("\n");
+                             });
+                        
+                        if (count.get() > 1000) {
+                            listing.append("... [truncated after 1000 items]");
                         }
-                        listing.append("\n");
-                    });
-                    
+                    } else {
+                        Files.list(startPath).forEach(p -> {
+                            listing.append(p.getFileName().toString());
+                            if (Files.isDirectory(p)) {
+                                listing.append("/");
+                            }
+                            listing.append("\n");
+                        });
+                    }
+
                     return Single.just(Collections.singletonMap("listing", listing.toString()));
                 } catch (IOException e) {
                     return Single.just(Collections.singletonMap("error", "Error listing directory: " + e.getMessage()));

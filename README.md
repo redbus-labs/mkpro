@@ -31,6 +31,7 @@ Your `mkpro` instance is not just a chatbot; it's a team of experts led by a Coo
 - **Multi-Provider**: seamless switching between **Ollama** (Local), **Gemini** (Google), and **Bedrock** (AWS).
 - **Multi-Runner Support**: Choose between **InMemory**, **MapDB** (persistent), and **Postgres** (enterprise) execution environments for your agents.
 - **Debug Awareness**: Agents are aware of which provider/model they are running on, helping in performance tuning and debugging.
+- **Customizable Teams**: Define your own team rosters, agent descriptions, and specialized instructions using YAML files in `~/.mkpro/teams/`.
 
 ## 🛠️ Setup & Installation
 
@@ -51,6 +52,19 @@ This generates the native Windows executable `target/mkpro.exe` and a fat JAR.
 ```bash
 ./target/mkpro.exe
 ```
+
+## 🏘️ Teams & Agent Workflows
+
+`mkpro` now supports multiple agent team configurations. You can switch between different engineering squads depending on your task.
+
+### How it Works:
+1.  **Configuration Files**: Team definitions are stored in `~/.mkpro/teams/` as YAML files.
+2.  **Default Team**: The `default.yaml` includes the full roster of 12 agents (Architect, Coder, DevOps, etc.).
+3.  **Minimal Team**: Use `minimal.yaml` for lighter tasks requiring only the Coordinator and Coder.
+4.  **Customization**: You can create your own YAML file (e.g., `audit_squad.yaml`) to define specialized agents for a specific project.
+
+### Switching Teams:
+Use the `/team` command in the console to list and select available team rosters. This will automatically rebuild the agent runner with the new instructions and roles.
 
 ## 🌍 Installation & System-Wide Setup
 
@@ -124,6 +138,7 @@ Select Agent to configure:
 | `/status` | **Dashboard**. View agent models, providers, and memory stats. |
 | `/stats` | **Performance**. Show agent usage statistics (latencies, token length, models). |
 | `/runner` | **Switch Runner**. Choose between InMemory, MapDB, or Postgres. |
+| `/team` | **Switch Team**. Select a different agent roster from `~/.mkpro/teams/`. |
 | `/config` | **Configure Team**. Interactive menu to set agent models/providers. Settings are saved. |
 | `/init` | **Learn Project**. Agents scan and memorize the project structure. |
 | `/re-init` | **Refresh Memory**. Re-scan the project if structure changed significantly. |

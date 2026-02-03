@@ -33,6 +33,17 @@ Your `mkpro` instance is not just a chatbot; it's a team of experts led by a Coo
 - **Debug Awareness**: Agents are aware of which provider/model they are running on, helping in performance tuning and debugging.
 - **Customizable Teams**: Define your own team rosters, agent descriptions, and specialized instructions using YAML files in `~/.mkpro/teams/`.
 
+## 💎 Supported Gemini Models
+
+`mkpro` is optimized for the latest Gemini 3 and 1.5 series models. You can configure any agent to use these models via the `/config` command or team YAML files:
+
+| Model | Best For |
+| :--- | :--- |
+| **gemini-3-pro** | **Ultimate Multimodal Reasoning**. The flagship model for complex architecture, agentic workflows, and deep interactivity. Includes 'Deep Think' reasoning capabilities. |
+| **gemini-3-flash** | **Frontier Speed**. Lightning-fast intelligence for rapid iterations, testing, and system administration. |
+| **gemini-1.5-pro** | **Large Context Reasoning**. Stable option for processing massive codebases (up to 2M tokens). |
+| **gemini-1.5-flash** | **Efficiency**. Cost-effective and reliable for high-frequency sub-agent tasks. |
+
 ## 🛠️ Setup & Installation
 
 ### Prerequisites

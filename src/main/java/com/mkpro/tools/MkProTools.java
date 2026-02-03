@@ -1,7 +1,6 @@
 package com.mkpro.tools;
 
 import com.google.adk.tools.BaseTool;
-import com.google.adk.tools.GoogleSearchTool;
 import com.google.adk.tools.ToolContext;
 import com.google.genai.types.FunctionDeclaration;
 import com.google.genai.types.Schema;
@@ -28,6 +27,14 @@ import java.time.Duration;
 import java.util.Scanner;
 import java.util.Arrays;
 
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
+import java.io.File;
+
 public class MkProTools {
 
     public static final String ANSI_RESET = "\u001b[0m";
@@ -35,6 +42,77 @@ public class MkProTools {
     public static final String ANSI_YELLOW = "\u001b[33m";
     public static final String ANSI_RED = "\u001b[31m";
     public static final String ANSI_GREEN = "\u001b[32m";
+
+    public static BaseTool createReadClipboardTool() {
+        return new BaseTool(
+                "read_clipboard",
+                "Reads content from the system clipboard. Supports text and images. Images are saved to a temporary file."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Collections.emptyMap())
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                System.out.println(ANSI_BLUE + "[System] Reading clipboard..." + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        // Check for headless mode, though on many servers this might just fail or return empty
+                        if (java.awt.GraphicsEnvironment.isHeadless()) {
+                             return Collections.singletonMap("error", "Cannot access clipboard in headless mode.");
+                        }
+
+                        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                        Transferable contents = clipboard.getContents(null);
+
+                        if (contents == null) {
+                            return Collections.singletonMap("error", "Clipboard is empty.");
+                        }
+
+                        if (contents.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                            String text = (String) contents.getTransferData(DataFlavor.stringFlavor);
+                            // Truncate if too long? For now, let's keep it reasonable.
+                            if (text.length() > 20000) {
+                                text = text.substring(0, 20000) + "\n...[truncated]";
+                            }
+                            return ImmutableMap.of(
+                                "type", "text",
+                                "content", text
+                            );
+                        } else if (contents.isDataFlavorSupported(DataFlavor.imageFlavor)) {
+                            BufferedImage image = (BufferedImage) contents.getTransferData(DataFlavor.imageFlavor);
+                            
+                            // Save to temp file
+                            String tempDir = System.getProperty("java.io.tmpdir");
+                            String fileName = "clipboard_" + System.currentTimeMillis() + ".png";
+                            File outputFile = new File(tempDir, fileName);
+                            
+                            ImageIO.write(image, "png", outputFile);
+                            
+                            return ImmutableMap.of(
+                                "type", "image",
+                                "file_path", outputFile.getAbsolutePath(),
+                                "info", "Image saved to temporary file."
+                            );
+                        } else {
+                            return Collections.singletonMap("error", "Clipboard content type not supported (only text or image).");
+                        }
+
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Failed to read clipboard: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
 
     public static BaseTool createSafeWriteFileTool() {
         return new BaseTool(
@@ -366,7 +444,74 @@ public class MkProTools {
     }
 
     public static BaseTool createGoogleSearchTool() {
-        return new GoogleSearchTool();
+        return new BaseTool(
+                "google_search",
+                "Performs a Google search for the given query and returns the results as text."
+        ) {
+            private final HttpClient client = HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "query", Schema.builder()
+                                                .type("STRING")
+                                                .description("The search query.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("query"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String query = (String) args.get("query");
+                System.out.println(ANSI_BLUE + "[Search] Googling: " + query + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        String encodedQuery = java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8);
+                        String url = "https://www.google.com/search?q=" + encodedQuery;
+                        
+                        HttpRequest request = HttpRequest.newBuilder()
+                                .uri(URI.create(url))
+                                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                                .timeout(Duration.ofSeconds(20))
+                                .GET()
+                                .build();
+
+                        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                        
+                        if (response.statusCode() >= 400) {
+                            return Collections.singletonMap("error", "HTTP Error: " + response.statusCode());
+                        }
+
+                        String html = response.body();
+                        // Basic cleanup to extract readable text
+                        String text = html.replaceAll("(?s)<style.*?>.*?</style>", "")
+                                          .replaceAll("(?s)<script.*?>.*?</script>", "")
+                                          .replaceAll("<[^>]+>", " ")
+                                          .replaceAll("\\s+", " ")
+                                          .trim();
+                        
+                        if (text.length() > 20000) {
+                            text = text.substring(0, 20000) + "\n...[truncated]";
+                        }
+                        
+                        return Collections.singletonMap("results", text);
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Search failed: " + e.getMessage());
+                    }
+                });
+            }
+        };
     }
 
     public static BaseTool createReadImageTool() {

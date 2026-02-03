@@ -138,12 +138,13 @@ public class AgentManager {
         // coderTools.add(MkProTools.createWriteFileTool()); // Removed direct write access
         coderTools.add(MkProTools.createListDirTool());
         coderTools.add(MkProTools.createReadImageTool());
+        coderTools.add(MkProTools.createReadClipboardTool());
 
         List<BaseTool> sysAdminTools = new ArrayList<>();
         sysAdminTools.add(MkProTools.createRunShellTool());
 
         List<BaseTool> testerTools = new ArrayList<>();
-        testerTools.addAll(coderTools); // Read/Write/List/Image
+        testerTools.addAll(coderTools); // Read/Write/List/Image/Clipboard
         testerTools.add(MkProTools.createRunShellTool());
 
         List<BaseTool> docWriterTools = new ArrayList<>();
@@ -264,6 +265,7 @@ public class AgentManager {
         if (coordConfig.getProvider() == Provider.GEMINI) {
              coordinatorTools.add(MkProTools.createGoogleSearchTool());
         }
+        coordinatorTools.add(MkProTools.createReadClipboardTool());
         coordinatorTools.add(MkProTools.createGetActionLogsTool(logger));
         coordinatorTools.add(MkProTools.createSaveMemoryTool(centralMemory));
         coordinatorTools.add(MkProTools.createReadMemoryTool(centralMemory));

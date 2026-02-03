@@ -39,11 +39,20 @@ import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
+
 import com.google.genai.types.GenerateContentResponse;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.UserInterruptException;
 import org.jline.reader.EndOfFileException;
+import org.jline.reader.Widget;
+import org.jline.reader.Reference;
+import org.jline.keymap.KeyMap;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import io.reactivex.rxjava3.disposables.Disposable;
@@ -388,6 +397,56 @@ public class MkPro {
         try {
             terminal = TerminalBuilder.builder().system(true).build();
             lineReader = LineReaderBuilder.builder().terminal(terminal).build();
+            
+            final Terminal term = terminal;
+            // Custom Paste Widget for Ctrl+V
+            final LineReader lr = lineReader;
+            Widget pasteWidget = () -> {
+                try {
+                    // Check for headless environment
+                    if (java.awt.GraphicsEnvironment.isHeadless()) return false;
+
+                    Clipboard c = Toolkit.getDefaultToolkit().getSystemClipboard();
+                    if (c == null) return false;
+
+                    if (c.isDataFlavorAvailable(DataFlavor.imageFlavor)) {
+                        BufferedImage img = (BufferedImage) c.getData(DataFlavor.imageFlavor);
+                        String tempDir = System.getProperty("java.io.tmpdir");
+                        String fileName = "pasted_image_" + System.currentTimeMillis() + ".png";
+                        File outputFile = new File(tempDir, fileName);
+                        ImageIO.write(img, "png", outputFile);
+                        
+                        String pathStr = outputFile.getAbsolutePath();
+                        // Insert quoted path with a space for separation
+                        lr.getBuffer().write("\"" + pathStr + "\" "); 
+                        
+                        // Notify user visibly
+                        term.writer().println("\n" + ANSI_BLUE + "[System] Image pasted and saved to: " + pathStr + ANSI_RESET);
+                        term.writer().println(ANSI_BLUE + "[System] This image path has been added to your prompt." + ANSI_RESET);
+                        term.flush();
+                        
+                        // Redraw line to show the inserted path
+                        lr.callWidget(LineReader.REDRAW_LINE);
+                        lr.callWidget(LineReader.REDISPLAY);
+                        return true;
+                    } else if (c.isDataFlavorAvailable(DataFlavor.stringFlavor)) {
+                        String text = (String) c.getData(DataFlavor.stringFlavor);
+                        if (text != null) {
+                            lr.getBuffer().write(text);
+                        }
+                        return true;
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error in paste widget: " + e.getMessage());
+                    e.printStackTrace();
+                }
+                return false;
+            };
+            
+            // Register and bind
+            lineReader.getWidgets().put("paste-custom", pasteWidget);
+            lineReader.getKeyMaps().get(LineReader.MAIN).bind(new Reference("paste-custom"), KeyMap.ctrl('v'));
+
         } catch (IOException e) {
             System.err.println("Error initializing JLine terminal: " + e.getMessage());
             System.exit(1);
@@ -821,9 +880,10 @@ public class MkPro {
             java.util.List<Part> parts = new java.util.ArrayList<>();
             parts.add(Part.fromText(line));
 
-            // Image detection logic
-            String[] tokens = line.split("\\s+");
-            for (String token : tokens) {
+            // Image detection logic with quote handling
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("([^\"]\\S*|\".+?\")\\s*").matcher(line);
+            while (m.find()) {
+                String token = m.group(1).replace("\"", ""); // Remove quotes
                 String lowerToken = token.toLowerCase();
                 if (lowerToken.endsWith(".jpg") || lowerToken.endsWith(".jpeg") || lowerToken.endsWith(".png") || lowerToken.endsWith(".webp")) {
                     try {

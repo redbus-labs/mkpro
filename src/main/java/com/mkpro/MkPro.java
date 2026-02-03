@@ -1,3 +1,7 @@
+/**
+ * @author Sandeep Belgavi
+ * @date 02/02/2026
+ */
 package com.mkpro;
 
 import com.google.adk.runner.Runner;
@@ -575,6 +579,7 @@ public class MkPro {
                     fTerminal.writer().println(ANSI_BLUE + "Select Agent to configure:" + ANSI_RESET);
                     List<String> agentNames = new ArrayList<>(agentConfigs.keySet());
                     Collections.sort(agentNames); 
+                    fTerminal.writer().printf(ANSI_BRIGHT_GREEN + "  [%d] %s%n" + ANSI_RESET, 0, "All Agents");
                     for (int i = 0; i < agentNames.size(); i++) {
                         AgentConfig ac = agentConfigs.get(agentNames.get(i));
                         fTerminal.writer().printf(ANSI_BRIGHT_GREEN + "  [%d] %s (Current: %s - %s)%n" + ANSI_RESET, 
@@ -587,20 +592,23 @@ public class MkPro {
                     if (agentSelection.isEmpty()) continue;
                     
                     String selectedAgent = null;
+                    boolean configureAllAgents = false;
                     try {
-                        int idx = Integer.parseInt(agentSelection) - 1;
-                        if (idx >= 0 && idx < agentNames.size()) {
-                            selectedAgent = agentNames.get(idx);
+                        int idx = Integer.parseInt(agentSelection);
+                        if (idx == 0) {
+                            configureAllAgents = true;
+                        } else if (idx > 0 && idx <= agentNames.size()) {
+                            selectedAgent = agentNames.get(idx - 1);
                         }
                     } catch (NumberFormatException e) {}
                     
-                    if (selectedAgent == null) {
+                    if (selectedAgent == null && !configureAllAgents) {
                         fTerminal.writer().println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
                         continue;
                     }
 
                     // 2. Select Provider
-                    fTerminal.writer().println(ANSI_BLUE + "Select Provider for " + selectedAgent + ":" + ANSI_RESET);
+                    fTerminal.writer().println(ANSI_BLUE + "Select Provider for " + (configureAllAgents ? "All Agents" : selectedAgent) + ":" + ANSI_RESET);
                     Provider[] providers = Provider.values();
                     for (int i = 0; i < providers.length; i++) {
                         fTerminal.writer().printf(ANSI_BRIGHT_GREEN + "  [%d] %s%n" + ANSI_RESET, i + 1, providers[i]);
@@ -681,13 +689,23 @@ public class MkPro {
                     }
 
                     // Apply Configuration
-                    agentConfigs.put(selectedAgent, new AgentConfig(selectedProvider, selectedModel));
-                    centralMemory.saveAgentConfig(selectedAgent, selectedProvider.name(), selectedModel);
-                    fTerminal.writer().println(ANSI_BLUE + "Updated " + selectedAgent + " to [" + selectedProvider + "] " + selectedModel + ANSI_RESET);
-                    
-                    if ("Coordinator".equalsIgnoreCase(selectedAgent)) {
+                    if (configureAllAgents) {
+                        for (String agentName : agentConfigs.keySet()) {
+                            agentConfigs.put(agentName, new AgentConfig(selectedProvider, selectedModel));
+                            centralMemory.saveAgentConfig(agentName, selectedProvider.name(), selectedModel);
+                        }
+                        fTerminal.writer().println(ANSI_BLUE + "Updated all agents to [" + selectedProvider + "] " + selectedModel + ANSI_RESET);
                         runner = runnerFactory.apply(currentRunnerType.get());
-                        fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt." + ANSI_RESET);
+                        fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new configurations." + ANSI_RESET);
+                    } else {
+                        agentConfigs.put(selectedAgent, new AgentConfig(selectedProvider, selectedModel));
+                        centralMemory.saveAgentConfig(selectedAgent, selectedProvider.name(), selectedModel);
+                        fTerminal.writer().println(ANSI_BLUE + "Updated " + selectedAgent + " to [" + selectedProvider + "] " + selectedModel + ANSI_RESET);
+                        
+                        if ("Coordinator".equalsIgnoreCase(selectedAgent)) {
+                            runner = runnerFactory.apply(currentRunnerType.get());
+                            fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt." + ANSI_RESET);
+                        }
                     }
 
                 } else if (parts.length >= 3) {

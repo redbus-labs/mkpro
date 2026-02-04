@@ -37,7 +37,6 @@ import java.io.File;
 
 import com.google.adk.memory.EmbeddingService;
 import com.google.adk.memory.MapDBVectorStore;
-import com.google.adk.memory.MemoryEntry;
 import com.google.adk.memory.Vector;
 
 import com.mkpro.IndexingHelper;

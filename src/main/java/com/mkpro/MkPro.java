@@ -385,7 +385,8 @@ public class MkPro {
 
         // Vector Store Init
         EmbeddingService embeddingService = IndexingHelper.createEmbeddingService();
-        MapDBVectorStore vectorStore = IndexingHelper.createVectorStore();
+        String projectName = Paths.get("").toAbsolutePath().getFileName().toString();
+        MapDBVectorStore vectorStore = IndexingHelper.getOrCreateStore(projectName);
 
         // Inject recent history from ActionLogger
         List<String> recentLogs = logger.getRecentLogs(10);

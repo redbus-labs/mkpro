@@ -34,14 +34,14 @@ public class IndexingHelper {
         return new ZeroEmbeddingService(768);
     }
 
-    public static MapDBVectorStore createVectorStore() {
-        String projectName = Paths.get("").toAbsolutePath().getFileName().toString();
-        // Sanitize project name
-        projectName = projectName.replaceAll("[^a-zA-Z0-9._-]", "_");
-        return getOrCreateStore(projectName);
-    }
+//    public static MapDBVectorStore createVectorStore() {
+//        String projectName = Paths.get("").toAbsolutePath().getFileName().toString();
+//        // Sanitize project name
+//        projectName = projectName.replaceAll("[^a-zA-Z0-9._-]", "_");
+//        return getOrCreateStore(projectName);
+//    }
     
-    private static MapDBVectorStore getOrCreateStore(String projectName) {
+    public static MapDBVectorStore getOrCreateStore(String projectName) {
         return storeCache.computeIfAbsent(projectName, k -> {
             String vectorDbPath = Paths.get(System.getProperty("user.home"), ".mkpro", "vectors", k + ".db").toString();
             File dbFile = new File(vectorDbPath);

@@ -39,7 +39,7 @@ import com.google.adk.memory.EmbeddingService;
 import com.google.adk.memory.MapDBVectorStore;
 import com.google.adk.memory.MemoryEntry;
 import com.google.adk.memory.Vector;
-import com.google.adk.memory.VectorStore.SearchResult;
+
 import com.mkpro.IndexingHelper;
 
 public class MkProTools {

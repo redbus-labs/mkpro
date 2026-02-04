@@ -96,6 +96,55 @@ public class IndexingHelper {
         }
     }
 
+    public static String searchMultipleProjects(String query, List<String> targetProjects, EmbeddingService embeddingService, int limit) {
+        StringBuilder resultBuilder = new StringBuilder();
+        try {
+            double[] embedding = embeddingService.generateEmbedding(query).blockingGet();
+            File vectorsDir = new File(System.getProperty("user.home"), ".mkpro/vectors");
+            
+            if (!vectorsDir.exists() || !vectorsDir.isDirectory()) {
+                return "No vector stores found.";
+            }
+
+            File[] dbFiles = vectorsDir.listFiles((dir, name) -> name.endsWith(".db"));
+            if (dbFiles == null) return "No vector stores found.";
+
+            for (File dbFile : dbFiles) {
+                String projectName = dbFile.getName().replace(".db", "");
+                
+                // Filter if targets specified
+                if (targetProjects != null && !targetProjects.isEmpty() && !targetProjects.contains(projectName)) {
+                    continue;
+                }
+
+                MapDBVectorStore store = null;
+                try {
+                    store = new MapDBVectorStore(dbFile.getAbsolutePath(), projectName);
+                   // List<com.google.adk.memory.VectorStore.SearchResult> matches = store.searchVectors(embedding, limit, 0.6);
+                    List<Vector> matches = store.searchTopNVectors( embedding, 0.0, 5); // Top 5, threshold 0.6
+                    if (!matches.isEmpty()) {
+                        resultBuilder.append("\n=== Project: ").append(projectName).append(" ===\n");
+                        for (Vector vector : matches) {
+                            //resultBuilder.append("Score: ").append(String.format("%.2f", vector.)).append("\n");
+                            resultBuilder.append(vector.getContent()).append("\n\n");
+                        }
+                    }
+                } catch (Exception e) {
+                    resultBuilder.append("Error searching project ").append(projectName).append(": ").append(e.getMessage()).append("\n");
+                } finally {
+                    if (store != null) {
+                        try { store.close(); } catch (Exception ignored) {}
+                    }
+                }
+            }
+        } catch (Exception e) {
+            return "Search failed: " + e.getMessage();
+        }
+        
+        if (resultBuilder.length() == 0) return "No matches found across projects.";
+        return resultBuilder.toString();
+    }
+
     private static List<String> chunkTextContent(String content) {
         List<String> chunks = new ArrayList<>();
         int chunkSize = 2000;

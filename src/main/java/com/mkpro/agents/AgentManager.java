@@ -172,6 +172,9 @@ public class AgentManager {
         List<BaseTool> securityAuditorTools = new ArrayList<>();
         securityAuditorTools.addAll(coderTools); // Read/Analyze code
         securityAuditorTools.add(MkProTools.createRunShellTool()); // Run audit tools
+        if (embeddingService != null) {
+            securityAuditorTools.add(MkProTools.createMultiProjectSearchTool(embeddingService));
+        }
 
         List<BaseTool> architectTools = new ArrayList<>();
         architectTools.add(MkProTools.createReadFileTool());
@@ -179,6 +182,7 @@ public class AgentManager {
         architectTools.add(MkProTools.createReadImageTool());
         if (vectorStore != null && embeddingService != null) {
             architectTools.add(MkProTools.createSearchCodebaseTool(vectorStore, embeddingService));
+            architectTools.add(MkProTools.createMultiProjectSearchTool(embeddingService));
         }
 
         List<BaseTool> databaseTools = new ArrayList<>();
@@ -283,6 +287,9 @@ public class AgentManager {
         // Add Coordinator-specific tools
         if (vectorStore != null && embeddingService != null) {
             coordinatorTools.add(MkProTools.createSearchCodebaseTool(vectorStore, embeddingService));
+        }
+        if (embeddingService != null) {
+            coordinatorTools.add(MkProTools.createMultiProjectSearchTool(embeddingService));
         }
         coordinatorTools.add(MkProTools.createUrlFetchTool());
         if (coordConfig.getProvider() == Provider.GEMINI) {

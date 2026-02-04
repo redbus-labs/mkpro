@@ -154,6 +154,12 @@ Select Agent to configure:
     3.  Notify the agent that an image is available for analysis.
     This is perfect for showing the **Coder** or **Tester** UI bugs, diagrams, or error screenshots.
 
+### Codebase Indexing & Search
+Enable agents to semantically understand your entire codebase, not just files they explicitly read.
+1.  **Index Codebase**: Run `/index` in the project root. This recursively scans, chunks, and embeds your code into a local vector database (`~/.mkpro/vectors/<project>.db`).
+2.  **Semantic Search**: Once indexed, agents (like **Architect** and **Coder**) gain a new tool `search_codebase`. They can use this to find relevant code snippets by meaning (e.g., "Find the authentication logic" or "Where is the user validation?").
+3.  **Zero-Setup**: Uses an embedded `ZeroEmbeddingService` (768 dimensions), so no external API keys are needed for embeddings.
+
 ### Real-World Use Cases
 
 #### 1. Full Feature Implementation
@@ -197,7 +203,9 @@ Select Agent to configure:
 | `/re-init` | **Refresh Memory**. Re-scan the project if structure changed significantly. |
 | `/summarize` | Generate and save a session summary to `session_summary.txt`. |
 | `/provider` | Quick switch for the **Coordinator's** provider. |
-| `/model` | Quick switch for the **Coordinator's** model. |
+| `/server` | **Manage Ollama Servers**. Add/Select/Remove custom Ollama endpoints. |
+| `/index` | **Index Codebase**. Scans and embeds current project files for semantic search. |
+| `/models` | **List Models**. List available models for the selected provider. |
 | `/compact` | **Save Tokens**. Summarize history and start fresh. |
 | `/reset` | Clear session memory. |
 | `exit` | Quit. |

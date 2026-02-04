@@ -158,7 +158,9 @@ Select Agent to configure:
 Enable agents to semantically understand your entire codebase, not just files they explicitly read.
 1.  **Index Codebase**: Run `/index` in the project root. This recursively scans, chunks, and embeds your code into a local vector database (`~/.mkpro/vectors/<project>.db`).
 2.  **Semantic Search**: Once indexed, agents (like **Architect** and **Coder**) gain a new tool `search_codebase`. They can use this to find relevant code snippets by meaning (e.g., "Find the authentication logic" or "Where is the user validation?").
-3.  **Zero-Setup**: Uses an embedded `ZeroEmbeddingService` (768 dimensions), so no external API keys are needed for embeddings.
+3.  **Multi-Project Search**: A powerful tool `search_multi_project` allows searching across **all** indexed projects in your `~/.mkpro/vectors/` directory. This is ideal for finding shared libraries, common patterns, or security flaws across your entire local ecosystem.
+4.  **Access Control**: For security and focus, `search_multi_project` is exclusively available to the **Coordinator**, **Architect**, and **SecurityAuditor** agents.
+5.  **Zero-Setup**: Uses an embedded `ZeroEmbeddingService` (768 dimensions), so no external API keys are needed for embeddings.
 
 ### Real-World Use Cases
 

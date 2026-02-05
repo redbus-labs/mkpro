@@ -272,9 +272,37 @@ public class MkProTools {
                         }
 
                         System.out.println(ANSI_BLUE + "---------------------------------------------" + ANSI_RESET);
-                        System.out.print(ANSI_YELLOW + "Apply these changes? [y/N]: " + ANSI_RESET);
+                        
+                        // Auto-approve logic
+                        System.out.print(ANSI_YELLOW + "Auto-approving in 7s... (Press Enter to pause/reject) " + ANSI_RESET);
+                        
+                        boolean interrupted = false;
+                        for (int i = 7; i > 0; i--) {
+                            System.out.print("\r" + ANSI_YELLOW + "Auto-approving in " + i + "s... (Press Enter to pause/reject)   " + ANSI_RESET);
+                            // Check if input is available (non-blocking check)
+                            try {
+                                if (System.in.available() > 0) {
+                                    interrupted = true;
+                                    break;
+                                }
+                                Thread.sleep(1000);
+                            } catch (Exception e) {
+                                // Ignore
+                            }
+                        }
+                        System.out.println(); // Newline
 
-                        // Read from Console
+                        if (!interrupted) {
+                            System.out.println(ANSI_GREEN + "Time's up! Auto-approving changes." + ANSI_RESET);
+                            if (path.getParent() != null) {
+                                Files.createDirectories(path.getParent());
+                            }
+                            Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                            return Collections.singletonMap("status", "File written successfully (Auto-approved): " + filePath);
+                        }
+
+                        // Fallback to manual confirmation if interrupted
+                        System.out.print(ANSI_YELLOW + "Apply these changes? [y/N]: " + ANSI_RESET);
                         Scanner scanner = new Scanner(System.in);
                         if (scanner.hasNextLine()) {
                             String input = scanner.nextLine().trim();

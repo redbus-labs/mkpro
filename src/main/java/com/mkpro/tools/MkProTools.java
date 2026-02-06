@@ -179,6 +179,73 @@ public class MkProTools {
         };
     }
 
+    public static BaseTool createImageCropTool() {
+        return new BaseTool(
+                "image_crop",
+                "Crops an image to the specified dimensions. Useful for focusing on specific UI elements or regions."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "image_path", Schema.builder().type("STRING").description("Path to the image file.").build(),
+                                        "x", Schema.builder().type("INTEGER").description("Starting X coordinate.").build(),
+                                        "y", Schema.builder().type("INTEGER").description("Starting Y coordinate.").build(),
+                                        "width", Schema.builder().type("INTEGER").description("Width of the cropped area.").build(),
+                                        "height", Schema.builder().type("INTEGER").description("Height of the cropped area.").build()
+                                ))
+                                .required(ImmutableList.of("image_path", "x", "y", "width", "height"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String imagePath = (String) args.get("image_path");
+                int x = ((Double) args.get("x")).intValue();
+                int y = ((Double) args.get("y")).intValue();
+                int width = ((Double) args.get("width")).intValue();
+                int height = ((Double) args.get("height")).intValue();
+
+                System.out.println(ANSI_BLUE + "[System] Cropping image: " + imagePath + " [" + x + "," + y + " " + width + "x" + height + "]" + ANSI_RESET);
+
+                return Single.fromCallable(() -> {
+                    try {
+                        File inputFile = new File(imagePath);
+                        if (!inputFile.exists()) {
+                            return Collections.singletonMap("error", "Image file not found: " + imagePath);
+                        }
+
+                        BufferedImage originalImage = ImageIO.read(inputFile);
+                        
+                        // Bounds check
+                        if (x < 0 || y < 0 || x + width > originalImage.getWidth() || y + height > originalImage.getHeight()) {
+                             return Collections.singletonMap("error", String.format("Crop coordinates out of bounds. Image size: %dx%d", originalImage.getWidth(), originalImage.getHeight()));
+                        }
+
+                        BufferedImage croppedImage = originalImage.getSubimage(x, y, width, height);
+                        
+                        // Save back to same file
+                        String format = imagePath.toLowerCase().endsWith(".png") ? "png" : "jpg";
+                        ImageIO.write(croppedImage, format, inputFile);
+
+                        return ImmutableMap.of(
+                            "status", "Image cropped successfully.",
+                            "image_path", imagePath,
+                            "new_size", width + "x" + height
+                        );
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Failed to crop image: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
+
     public static BaseTool createSafeWriteFileTool() {
         return new BaseTool(
                 "safe_write_file",

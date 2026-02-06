@@ -159,6 +159,7 @@ public class AgentManager {
 
         List<BaseTool> sysAdminTools = new ArrayList<>();
         sysAdminTools.add(MkProTools.createRunShellTool());
+        sysAdminTools.add(MkProTools.createImageCropTool());
 
         List<BaseTool> testerTools = new ArrayList<>();
         testerTools.addAll(coderTools); // Read/Write/List/Image/Clipboard

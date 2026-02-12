@@ -1,4 +1,5 @@
 package com.mkpro.tools;
+import com.mkpro.Maker;
 
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.ToolContext;
@@ -848,6 +849,11 @@ public class MkProTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String command = (String) args.get("command");
+                // Security Check
+                if (!Maker.isAllowed(command)) {
+                    System.out.println(ANSI_RED + "[SysAdmin] BLOCKED: " + command + ANSI_RESET);
+                    return Single.just(Collections.singletonMap("error", "Command blocked by security policy: " + command));
+                }
                 System.out.println(ANSI_BLUE + "[SysAdmin] Executing: " + command + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
@@ -1184,3 +1190,4 @@ public class MkProTools {
         };
     }
 }
+

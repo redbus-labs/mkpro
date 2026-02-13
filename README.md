@@ -85,6 +85,28 @@ To ensure project integrity and prevent accidental data loss, `mkpro` includes b
 - **Debug Awareness**: Agents are aware of which provider/model they are running on, helping in performance tuning and debugging.
 - **Customizable Teams**: Define your own team rosters, agent descriptions, and specialized instructions using YAML files in `~/.mkpro/teams/`.
 
+To use the new background capabilities, you simply need to tell me what you want to run and specify that it should run in the "background" or "detached."
+
+Here is how you can use it:
+
+### 1. Start a Service
+Just ask me to run a command in the background.
+*   **Example:** "Start the Spring Boot application in the background."
+*   **Example:** "Run `python server.py` as a background process."
+
+### 2. Check What's Running
+Ask for a status update.
+*   **Example:** "List running background jobs."
+*   **Example:** "Show me the logs for the running server."
+
+### 3. Stop a Service
+Ask me to kill a specific job or all of them.
+*   **Example:** "Stop the background job with ID 1."
+*   **Example:** "Kill the ping process."
+
+**Try it out:**
+Do you have a specific server or script in this project you want to start up now? (e.g., `mvn spring-boot:run`)
+
 ## 💎 Supported Gemini Models
 
 `mkpro` is optimized for the latest Gemini 3 and 1.5 series models. You can configure any agent to use these models via the `/config` command or team YAML files:

@@ -537,7 +537,8 @@ public class MkPro {
                 autoReplyCount.set(0);
                 try {
                     // ANSI colors in prompt: \u001b[34m> \u001b[33m
-                    line = fLineReader.readLine(ANSI_BLUE + "> " + ANSI_YELLOW); 
+                    String timestamp = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").format(java.time.LocalTime.now());
+                    line = fLineReader.readLine(ANSI_BLUE + "[" + timestamp + "] > " + ANSI_YELLOW); 
                     System.out.print(ANSI_RESET); // Reset after input
                 } catch (UserInterruptException e) {
                     continue; 
@@ -563,11 +564,14 @@ public class MkPro {
                 System.out.println(ANSI_BLUE + "  /models     - List available models." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /model      - Change Coordinator model." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /status     - Show current configuration." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /maker      - Toggle goal validation loop." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /stats      - Show agent usage statistics." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /init       - Initialize project memory." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /re-init    - Re-initialize project memory." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /remember   - Analyze and save summary." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /index      - Index codebase for vector search." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /export logs- Export all action logs to Markdown." + ANSI_RESET);
+                System.out.println(ANSI_BLUE + "  /import     - Import project goals/memory." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /reset      - Reset the session." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /compact    - Compact the session." + ANSI_RESET);
                 System.out.println(ANSI_BLUE + "  /summarize  - Generate session summary." + ANSI_RESET);
@@ -991,42 +995,119 @@ public class MkPro {
                 continue;
             }
 
-            if ("/export logs".equalsIgnoreCase(line)) {
+            if (line.trim().toLowerCase().startsWith("/import")) {
+                String[] parts = line.trim().split("\\s+", 3);
+                String type = (parts.length > 1) ? parts[1].toLowerCase() : "all";
+                String filename = (parts.length > 2) ? parts[2] : null;
+
                 try {
-                    System.out.println(ANSI_BLUE + "Exporting action logs to markdown..." + ANSI_RESET);
-                    List<String> logs = logger.getLogs();
-                    StringBuilder md = new StringBuilder();
-                    md.append("# Action Logs Report\n\n");
-                    md.append("Generated on: ").append(java.time.LocalDateTime.now()).append("\n\n");
-                    
-                    for (String log : logs) {
-                        // Log format: [timestamp] ROLE: content
-                        // Let's try to parse it for better formatting
-                        int roleStart = log.indexOf("] ") + 2;
-                        int contentStart = log.indexOf(": ", roleStart);
-                        
-                        if (roleStart > 1 && contentStart > roleStart) {
-                            String timestamp = log.substring(1, roleStart - 2);
-                            String role = log.substring(roleStart, contentStart);
-                            String content = log.substring(contentStart + 2);
-                            
-                            md.append("### ").append(role).append(" - ").append(timestamp).append("\n\n");
-                            md.append(content).append("\n\n");
-                            md.append("---\n\n");
+//                     String currentProjectPath = Paths.get("").toAbsolutePath().toString();
+
+                    if ("logs".equals(type) || "all".equals(type)) {
+                        String logFile = (filename != null) ? filename : "action_logs_report.md";
+                        if (Files.exists(Paths.get(logFile))) {
+                            System.out.println(ANSI_BLUE + "Importing logs from: " + logFile + ANSI_RESET);
+                            ImportHelper.importLogs(Paths.get(logFile), logger);
+                            System.out.println(ANSI_BRIGHT_GREEN + "Logs imported successfully." + ANSI_RESET);
                         } else {
-                            // Fallback
-                            md.append(log).append("\n\n");
+                            System.out.println(ANSI_BLUE + "Log file not found: " + logFile + ANSI_RESET);
                         }
                     }
                     
-                    Path reportPath = Paths.get("action_logs_report.md");
-                    Files.writeString(reportPath, md.toString());
-                    System.out.println(ANSI_BRIGHT_GREEN + "Successfully exported logs to: " + reportPath.toAbsolutePath() + ANSI_RESET);
+                    if ("goals".equals(type) || "all".equals(type)) {
+                        String goalsFile = (filename != null) ? filename : "project_goals.md";
+                        if (Files.exists(Paths.get(goalsFile))) {
+                            System.out.println(ANSI_BLUE + "Importing goals from: " + goalsFile + ANSI_RESET);
+                            List<com.mkpro.models.Goal> goals = ImportHelper.importGoals(Paths.get(goalsFile));
+                            centralMemory.setGoals(currentProjectPath, goals);
+                            System.out.println(ANSI_BRIGHT_GREEN + "Goals imported successfully for " + currentProjectPath + ANSI_RESET);
+                        } else {
+                            System.out.println(ANSI_BLUE + "Goal file not found: " + goalsFile + ANSI_RESET);
+                        }
+                    }
                 } catch (Exception e) {
-                    System.err.println(ANSI_BLUE + "Error exporting logs: " + e.getMessage() + ANSI_RESET);
+                    System.err.println(ANSI_BLUE + "Error during import: " + e.getMessage() + ANSI_RESET);
+                    if (verbose) e.printStackTrace();
                 }
                 continue;
             }
+            if (line.trim().toLowerCase().startsWith("/export")) {
+                String[] parts = line.trim().split("\\s+");
+                String type = (parts.length > 1) ? parts[1].toLowerCase() : "logs";
+
+                try {
+                    StringBuilder exportContent = new StringBuilder();
+                    String exportFileName = "";
+
+                    // LOGS or ALL
+                    if ("logs".equals(type) || "all".equals(type)) {
+                        System.out.println(ANSI_BLUE + "Exporting action logs..." + ANSI_RESET);
+                        List<String> logs = logger.getLogs();
+                        
+                        exportContent.append("# Action Logs Report\n\n");
+                        exportContent.append("Generated on: ").append(java.time.LocalDateTime.now()).append("\n\n");
+                        
+                        for (String log : logs) {
+                            int roleStart = log.indexOf("] ") + 2;
+                            int contentStart = log.indexOf(": ", roleStart);
+                            
+                            if (roleStart > 1 && contentStart > roleStart) {
+                                String timestamp = log.substring(1, roleStart - 2);
+                                String role = log.substring(roleStart, contentStart);
+                                String content = log.substring(contentStart + 2);
+                                
+                                exportContent.append("### ").append(role).append(" - ").append(timestamp).append("\n\n");
+                                exportContent.append(content).append("\n\n");
+                                exportContent.append("---\n\n");
+                            } else {
+                                exportContent.append(log).append("\n\n");
+                            }
+                        }
+                        if ("logs".equals(type)) exportFileName = "action_logs_report.md";
+                    }
+
+                    // GOALS or ALL
+                    if ("goals".equals(type) || "all".equals(type)) {
+                        System.out.println(ANSI_BLUE + "Exporting goals..." + ANSI_RESET);
+                        if ("all".equals(type)) exportContent.append("\n\n---\n\n");
+
+                        List<com.mkpro.models.Goal> goals = centralMemory.getGoals(currentProjectPath);
+                        
+                        exportContent.append("# Project Goals Report\n\n");
+                        if ("goals".equals(type)) {
+                             exportContent.append("Project: ").append(currentProjectPath).append("\n");
+                             exportContent.append("Generated on: ").append(java.time.LocalDateTime.now()).append("\n\n");
+                        }
+
+                        if (goals == null || goals.isEmpty()) {
+                            exportContent.append("_No goals found for this project._\n\n");
+                        } else {
+                            for (com.mkpro.models.Goal goal : goals) {
+                                appendGoalRecursive(exportContent, goal, 0);
+                            }
+                        }
+                        
+                        if ("goals".equals(type)) exportFileName = "project_goals.md";
+                    }
+
+                    if ("all".equals(type)) {
+                        exportFileName = "project_export.md";
+                    }
+
+                    if (!exportFileName.isEmpty()) {
+                        Path exportPath = Paths.get(exportFileName);
+                        Files.writeString(exportPath, exportContent.toString());
+                        System.out.println(ANSI_BRIGHT_GREEN + "Successfully exported to: " + exportPath.toAbsolutePath() + ANSI_RESET);
+                    } else {
+                        System.out.println(ANSI_BLUE + "Usage: /export [logs|goals|all]" + ANSI_RESET);
+                    }
+
+                } catch (Exception e) {
+                    System.err.println(ANSI_BLUE + "Error exporting: " + e.getMessage() + ANSI_RESET);
+                }
+                continue;
+            }
+
 
             if ("/init".equalsIgnoreCase(line)) {
 
@@ -1094,6 +1175,7 @@ public class MkPro {
             Content content = Content.builder().role("user").parts(parts).build();
 
             // Interruption & Execution Logic
+            long cmdStartTime = System.currentTimeMillis();
             AtomicBoolean isThinking = new AtomicBoolean(true);
             AtomicBoolean isCancelled = new AtomicBoolean(false);
             
@@ -1137,8 +1219,15 @@ public class MkPro {
                                                                                 }
 
                                                                                 isThinking.set(false);
+
                                                                                 fTerminal.writer().println(ANSI_RESET);
+
+                                                                                long cmdDuration = System.currentTimeMillis() - cmdStartTime;
+
+                                                                                fTerminal.writer().printf(ANSI_BLUE + " (Took %.2fs)%n" + ANSI_RESET, cmdDuration / 1000.0);
+
                                                                                 fTerminal.writer().flush();
+
                                                                                 logger.log("AGENT", responseBuilder.toString());
                                                                             }
                                                                         );
@@ -1199,4 +1288,29 @@ public class MkPro {
         
         if (verbose) System.out.println(ANSI_BLUE + "Goodbye!" + ANSI_RESET);
     }
+    private static void appendGoalRecursive(StringBuilder sb, com.mkpro.models.Goal goal, int depth) {
+        String indent = "  ".repeat(depth);
+        String emoji;
+        switch (goal.getStatus()) {
+            case COMPLETED: emoji = "✅"; break;
+            case PENDING: emoji = "⏳"; break;
+            case IN_PROGRESS: emoji = "🔄"; break;
+            case FAILED: emoji = "❌"; break;
+            default: emoji = "❓"; break;
+        }
+
+        sb.append(indent)
+          .append("- ")
+          .append(emoji)
+          .append(" **[").append(goal.getStatus()).append("]** ")
+          .append(goal.getDescription())
+          .append("\n");
+
+        if (goal.getSubGoals() != null) {
+            for (com.mkpro.models.Goal sub : goal.getSubGoals()) {
+                appendGoalRecursive(sb, sub, depth + 1);
+            }
+        }
+    }
+
 }

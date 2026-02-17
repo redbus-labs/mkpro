@@ -424,7 +424,7 @@ public class AgentManager {
         StringBuilder output = new StringBuilder();
         
         // Log start of execution to persistent logs
-        String executionInfo = String.format("Executing %s using %s (%s)", 
+        String executionInfo = String.format("Delegating task to %s (%s/%s)...", 
             request.getAgentName(), request.getProvider(), request.getModelName());
         logger.log("SYSTEM", executionInfo);
 
@@ -463,7 +463,13 @@ public class AgentManager {
                        .forEach(p -> p.text().ifPresent(output::append))
                   );
             
-            return output.toString();
+            String resultStr = output.toString();
+
+            
+            logger.log(request.getAgentName(), resultStr);
+
+            
+            return resultStr;
         } catch (Exception e) {
             success = false;
             return "Error executing sub-agent " + request.getAgentName() + ": " + e.getMessage();

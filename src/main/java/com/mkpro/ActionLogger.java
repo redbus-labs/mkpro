@@ -1,62 +1,48 @@
 package com.mkpro;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
-import org.mapdb.IndexTreeList;
 import org.mapdb.Serializer;
 
-import java.io.Closeable;
-import java.time.Instant;
-import java.util.concurrent.ConcurrentMap;
-
-public class ActionLogger implements Closeable {
-
-    private final DB db;
-    private final IndexTreeList<String> logs;
+public class ActionLogger {
+    private DB db;
+    private List<String> logs;
 
     public ActionLogger(String dbPath) {
-        this.db = DBMaker.fileDB(dbPath)
-                .transactionEnable()
-                .make();
-        this.logs = db.indexTreeList("action_logs", Serializer.STRING).createOrOpen();
+        db = DBMaker.fileDB(dbPath).make();
+        logs = db.indexTreeList("logs", Serializer.STRING).createOrOpen();
     }
 
     public void log(String role, String content) {
-        String entry = String.format("[%s] %s: %s", Instant.now(), role, content);
+        String entry = String.format("[%s] %s: %s", java.time.LocalDateTime.now(), role, content);
         logs.add(entry);
         db.commit();
     }
 
-    public void printLogs() {
-        System.out.println("----- Action Logs -----");
-        for (String log : logs) {
-            System.out.println(log);
-        }
-        System.out.println("-----------------------");
+    public List<String> getLogs() {
+        return new ArrayList<>(logs);
     }
-
-    public java.util.List<String> getLogs() {
-        java.util.List<String> result = new java.util.ArrayList<>();
-        for (String log : logs) {
-            result.add(log);
-        }
-        return result;
-    }
-
-    public java.util.List<String> getRecentLogs(int limit) {
-        java.util.List<String> result = new java.util.ArrayList<>();
+    
+    public List<String> getRecentLogs(int limit) {
         int size = logs.size();
         int start = Math.max(0, size - limit);
+        List<String> recent = new ArrayList<>();
         for (int i = start; i < size; i++) {
-            result.add(logs.get(i));
+            recent.add(logs.get(i));
         }
-        return result;
+        return recent;
     }
 
-    @Override
+    // New Import Method
+    public void importLog(String role, String content, String timestamp) {
+        String entry = String.format("[%s] %s: %s", timestamp, role, content);
+        logs.add(entry);
+        db.commit();
+    }
+
     public void close() {
-        if (!db.isClosed()) {
-            db.close();
-        }
+        db.close();
     }
 }

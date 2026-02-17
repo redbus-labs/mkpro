@@ -82,9 +82,6 @@ public class CentralMemory {
                     .keySerializer(Serializer.STRING)
                     .valueSerializer(Serializer.STRING)
                     .createOrOpen();
-            // Format Key: PROJECT:TEAM:AGENT -> Format Value: PROVIDER|MODEL
-            // We hash the project path to keep keys reasonably short/safe, or just use it directly. 
-            // Using direct string is simpler for debug.
             String key = projectPath + ":" + teamName + ":" + agentName;
             configs.put(key, provider + "|" + modelName);
             db.commit();
@@ -99,7 +96,6 @@ public class CentralMemory {
                     .createOrOpen();
             Map<String, String> teamConfigs = new HashMap<>();
             
-            // 1. Try Project+Team specific configs
             String prefix = projectPath + ":" + teamName + ":";
             configs.forEach((k, v) -> {
                 String key = (String) k;
@@ -108,35 +104,10 @@ public class CentralMemory {
                 }
             });
             
-            // 2. Fallback to Team-only configs (Legacy/Global defaults for that team)
-            // This ensures if I switch to a new project but use "default" team, I still get my global preferences
-            // unless overridden by project-specific settings.
-            if (teamConfigs.isEmpty()) {
-                String teamPrefix = teamName + ":";
-                configs.forEach((k, v) -> {
-                    String key = (String) k;
-                    // Check it DOESN'T have a project path (contains only one colon or starts with team name and no other colon before it?)
-                    // The legacy format was TEAM:AGENT. New is PROJECT:TEAM:AGENT.
-                    // If key starts with teamName: and does NOT contain another : (or rather, is not part of a project path)
-                    // Actually, legacy keys are just "TEAM:AGENT". New keys are "PROJECT:TEAM:AGENT".
-                    // So we check if key starts with teamPrefix AND key does NOT start with ANY project path.
-                    // A simple heuristic: Legacy keys have exactly one colon. New keys have at least two.
-                    // Windows paths have colons (C:\...), so splitting by colon is tricky.
-                    // Let's assume legacy keys were strictly "TEAM:AGENT".
-                    
-                    if (key.startsWith(teamPrefix) && !key.substring(teamPrefix.length()).contains(":")) {
-                         // This is a global team config
-                         String agent = key.substring(teamPrefix.length());
-                         teamConfigs.putIfAbsent(agent, (String) v);
-                    }
-                });
-            }
-            
             return teamConfigs;
         }
     }
 
-    // Legacy method for backward compatibility if needed, or just to list all
     public Map<String, String> getAllAgentConfigs() {
         try (DB db = openDB()) {
             HTreeMap<String, String> configs = db.hashMap("agent_configs")
@@ -162,12 +133,9 @@ public class CentralMemory {
         try (DB db = openDB()) {
             IndexTreeList<AgentStat> stats = (IndexTreeList<AgentStat>) db.indexTreeList("agent_stats", Serializer.JAVA)
                     .createOrOpen();
-            // Return a copy to avoid concurrency issues after db close
             return new ArrayList<>(stats);
         }
     }
-
-    // --- Ollama Configuration ---
 
     public void saveOllamaServers(List<String> servers) {
         try (DB db = openDB()) {
@@ -175,7 +143,6 @@ public class CentralMemory {
                     .keySerializer(Serializer.STRING)
                     .valueSerializer(Serializer.STRING)
                     .createOrOpen();
-            // Store as comma-separated string
             config.put("servers", String.join(",", servers));
             db.commit();
         }
@@ -189,7 +156,6 @@ public class CentralMemory {
                     .createOrOpen();
             String servers = config.get("servers");
             if (servers == null || servers.isEmpty()) {
-                // Default
                 List<String> defaults = new ArrayList<>();
                 defaults.add("http://localhost:11434");
                 return defaults;
@@ -270,6 +236,18 @@ public class CentralMemory {
                 projectGoals.put(projectPath, goals);
                 db.commit();
             }
+        }
+    }
+    
+    public void setGoals(String projectPath, List<com.mkpro.models.Goal> goals) {
+        try (DB db = openDB()) {
+            HTreeMap<String, ArrayList<com.mkpro.models.Goal>> projectGoals = db.hashMap("project_goals")
+                    .keySerializer(Serializer.STRING)
+                    .valueSerializer(Serializer.JAVA)
+                    .createOrOpen();
+            
+            projectGoals.put(projectPath, new ArrayList<>(goals));
+            db.commit();
         }
     }
 }

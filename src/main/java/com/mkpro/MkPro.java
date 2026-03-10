@@ -86,20 +86,20 @@ public class MkPro {
     public static final String ANSI_GREEN = "\u001b[32m";
     public static final String ANSI_RED = "\u001b[31m";
 
-    private static final List<String> GEMINI_MODELS = Arrays.asList(
-         "gemini-3-pro-preview",
-    "gemini-3-flash-preview",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash-thinking",
-    "gemini-2.0-pro",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-2.0-flash-thinking-exp",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b"
+     private static final List<String> GEMINI_MODELS = Arrays.asList(
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash-live-preview",
+        "gemini-2.5-flash-thinking",
+        "gemini-2.0-pro",
+        "gemini-2.0-flash",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b"
     );
 
     private static final List<String> BEDROCK_MODELS = Arrays.asList(

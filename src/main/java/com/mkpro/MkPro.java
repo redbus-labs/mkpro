@@ -97,13 +97,11 @@ public class MkPro {
     "gemini-1.5-flash-8b"
     );
 
+    // Top 3 Bedrock models for ap-south-1 (from foundation-models API)
     private static final List<String> BEDROCK_MODELS = Arrays.asList(
-        "anthropic.claude-3-sonnet-20240229-v1:0",
-        "anthropic.claude-3-haiku-20240307-v1:0",
-        "anthropic.claude-3-5-sonnet-20240620-v1:0",
-        "meta.llama3-70b-instruct-v1:0",
-        "meta.llama3-8b-instruct-v1:0",
-        "amazon.titan-text-express-v1"
+        "global.anthropic.claude-opus-4-6-v1",           // #1 Best: Claude Opus 4.6 (inference profile)
+        "global.anthropic.claude-sonnet-4-6",            // #2 Balance: Claude Sonnet 4.6 (inference profile)
+        "anthropic.claude-3-haiku-20240307-v1:0"         // #3 Fast: Claude 3 Haiku (on-demand)
     );
 
     // Reusable Clipboard Handler
@@ -640,9 +638,11 @@ public class MkPro {
                                 fTerminal.writer().println(ANSI_BLUE + "Warning: Failed to load specific configs for team " + newTeamName + ANSI_RESET);
                             }
 
-                            // Rebuild runner
+                            // Rebuild runner and refresh session
                             runner = runnerFactory.apply(currentRunnerType.get());
-                            fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new team definitions and configs." + ANSI_RESET);
+                            currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                            saveSessionId(currentSession.id());
+                            fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new team definitions and configs. New session: " + currentSession.id() + ANSI_RESET);
                         } else {
                             fTerminal.writer().println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
                         }
@@ -943,7 +943,9 @@ public class MkPro {
                         }
                         fTerminal.writer().println(ANSI_BLUE + "Updated all agents to [" + selectedProvider + "] " + selectedModel + ANSI_RESET);
                         runner = runnerFactory.apply(currentRunnerType.get());
-                        fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new configurations." + ANSI_RESET);
+                        currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                        saveSessionId(currentSession.id());
+                        fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new configurations. New session: " + currentSession.id() + ANSI_RESET);
                     } else {
                         agentConfigs.put(selectedAgent, new AgentConfig(selectedProvider, selectedModel));
                         centralMemory.saveAgentConfig(currentProjectPath, currentTeam.get(), selectedAgent, selectedProvider.name(), selectedModel);
@@ -951,7 +953,9 @@ public class MkPro {
                         
                         if ("Coordinator".equalsIgnoreCase(selectedAgent)) {
                             runner = runnerFactory.apply(currentRunnerType.get());
-                            fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt." + ANSI_RESET);
+                            currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                            saveSessionId(currentSession.id());
+                            fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt. New session: " + currentSession.id() + ANSI_RESET);
                         }
                     }
 
@@ -969,7 +973,7 @@ public class MkPro {
                             
                             if (parts.length == 3 && newProvider != agentConfigs.get(agentName).getProvider()) {
                                 if (newProvider == Provider.GEMINI) newModel = "gemini-1.5-flash";
-                                else if (newProvider == Provider.BEDROCK) newModel = "anthropic.claude-3-sonnet-20240229-v1:0";
+                                else if (newProvider == Provider.BEDROCK) newModel = "global.anthropic.claude-opus-4-6-v1";
                                 else if (newProvider == Provider.OLLAMA) newModel = "devstral-small-2";
                             }
 
@@ -979,6 +983,9 @@ public class MkPro {
                             
                             if ("Coordinator".equalsIgnoreCase(agentName)) {
                                 runner = runnerFactory.apply(currentRunnerType.get());
+                                currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                                saveSessionId(currentSession.id());
+                                fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt. New session: " + currentSession.id() + ANSI_RESET);
                             }
                         } catch (IllegalArgumentException e) {
                             fTerminal.writer().println(ANSI_BLUE + "Invalid provider: " + providerStr + ". Use OLLAMA, GEMINI, or BEDROCK." + ANSI_RESET);

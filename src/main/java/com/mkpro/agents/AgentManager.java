@@ -370,7 +370,11 @@ public class AgentManager {
         if (config.getProvider() == Provider.GEMINI) {
             return new Gemini(config.getModelName(), apiKey);
         } else if (config.getProvider() == Provider.BEDROCK) {
-            return new BedrockBaseLM(config.getModelName(), null);
+            String bedrockUrl = System.getenv("BEDROCK_URL");
+            if (bedrockUrl == null || bedrockUrl.isEmpty()) {
+                bedrockUrl = "https://bedrock-runtime.ap-south-1.amazonaws.com/model";
+            }
+            return new BedrockBaseLM(config.getModelName(), bedrockUrl);
         } else {
             return new OllamaBaseLM(config.getModelName(), ollamaServerUrl);
         }

@@ -737,7 +737,7 @@ public class MkPro {
 
                             // Rebuild runner and refresh session
                             runner = runnerFactory.apply(currentRunnerType.get());
-                            currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                            currentSession = runner.sessionService().createSession(APP_NAME, "Coordinator").blockingGet();
                             saveSessionId(currentSession.id());
                             fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new team definitions and configs. New session: " + currentSession.id() + ANSI_RESET);
                         } else {
@@ -1309,7 +1309,7 @@ public class MkPro {
                         }
                         fTerminal.writer().println(ANSI_BLUE + "Updated all agents to [" + selectedProvider + "] " + selectedModel + ANSI_RESET);
                         runner = runnerFactory.apply(currentRunnerType.get());
-                        currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                        currentSession = runner.sessionService().createSession(APP_NAME, "Coordinator").blockingGet();
                         saveSessionId(currentSession.id());
                         fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new configurations. New session: " + currentSession.id() + ANSI_RESET);
                     } else {
@@ -1319,7 +1319,7 @@ public class MkPro {
                         
                         if ("Coordinator".equalsIgnoreCase(selectedAgent)) {
                             runner = runnerFactory.apply(currentRunnerType.get());
-                            currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                            currentSession = runner.sessionService().createSession(APP_NAME, "Coordinator").blockingGet();
                             saveSessionId(currentSession.id());
                             fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt. New session: " + currentSession.id() + ANSI_RESET);
                         }
@@ -1349,7 +1349,7 @@ public class MkPro {
                             
                             if ("Coordinator".equalsIgnoreCase(agentName)) {
                                 runner = runnerFactory.apply(currentRunnerType.get());
-                                currentSession = runner.sessionService().createSession("mkpro", "Coordinator").blockingGet();
+                                currentSession = runner.sessionService().createSession(APP_NAME, "Coordinator").blockingGet();
                                 saveSessionId(currentSession.id());
                                 fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt. New session: " + currentSession.id() + ANSI_RESET);
                             }

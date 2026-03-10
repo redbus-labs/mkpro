@@ -298,11 +298,12 @@ public class AgentManager {
         } else if (config.getProvider() == Provider.OLLAMA) {
             return new OllamaBaseLM(config.getModelName(), ollamaServerUrl);
         } else if (config.getProvider() == Provider.BEDROCK) {
+            // Base URL only (no /model) - BedrockBaseLM appends /model/{modelId}/converse
             String bedrockUrl = System.getenv("BEDROCK_URL");
             if (bedrockUrl == null || bedrockUrl.isEmpty()) {
                 String region = System.getenv("BEDROCK_REGION");
                 if (region == null || region.isEmpty()) region = "ap-south-1";
-                bedrockUrl = "https://bedrock-runtime." + region + ".amazonaws.com/model";
+                bedrockUrl = "https://bedrock-runtime." + region + ".amazonaws.com";
             }
             return new BedrockBaseLM(config.getModelName(), bedrockUrl);
         } else {

@@ -163,8 +163,6 @@ public class AgentManager {
         List<BaseTool> codeEditorTools = new ArrayList<>();
         codeEditorTools.add(MkProTools.createSafeWriteFileTool());
         codeEditorTools.add(MkProTools.createReadFileTool());
-        codeEditorTools.add(McpServerConnectTools.createScanProjectTool());
-        codeEditorTools.add(McpServerConnectTools.createSaveComponentTool());
 
         List<BaseTool> coderTools = new ArrayList<>();
         coderTools.add(MkProTools.createReadFileTool());
@@ -173,11 +171,6 @@ public class AgentManager {
         coderTools.add(MkProTools.createReadImageTool());
         coderTools.add(MkProTools.createReadClipboardTool());
         coderTools.add(MkProTools.createImageCropTool());
-        coderTools.add(McpServerConnectTools.createScanProjectTool());
-        coderTools.add(McpServerConnectTools.createSaveComponentTool());
-        if (hasEnabledMcpServers) {
-            coderTools.add(McpServerConnectTools.createMcpFetchDesignTool(centralMemory));
-        }
         if (vectorStore != null && embeddingService != null) {
             coderTools.add(MkProTools.createSearchCodebaseTool(vectorStore, embeddingService));
         }
@@ -208,14 +201,6 @@ public class AgentManager {
         architectTools.add(MkProTools.createReadFileTool());
         architectTools.add(MkProTools.createListDirTool());
         architectTools.add(MkProTools.createReadImageTool());
-        architectTools.add(McpServerConnectTools.createScanProjectTool());
-        architectTools.add(McpServerConnectTools.createSaveComponentTool());
-        if (hasEnabledMcpServers) {
-            architectTools.add(McpServerConnectTools.createMcpConnectTool(centralMemory));
-            architectTools.add(McpServerConnectTools.createMcpFetchDesignTool(centralMemory));
-            architectTools.add(McpServerConnectTools.createOpenComponentPreviewTool());
-            architectTools.add(McpServerConnectTools.createListComponentsTool());
-        }
         if (vectorStore != null && embeddingService != null) {
             architectTools.add(MkProTools.createSearchCodebaseTool(vectorStore, embeddingService));
             architectTools.add(MkProTools.createMultiProjectSearchTool(embeddingService));
@@ -346,10 +331,10 @@ public class AgentManager {
         coordinatorTools.add(MkProTools.createListProjectsTool(centralMemory));
         coordinatorTools.add(MkProTools.createListDirTool());
 
-        // MCP Server Connect tools — only register when servers are enabled
+        // MCP tools — list_mcp_servers always available; others only when servers are enabled
         coordinatorTools.add(McpServerConnectTools.createListMcpServersTool(centralMemory));
-        coordinatorTools.add(McpServerConnectTools.createScanProjectTool());
         if (hasEnabledMcpServers) {
+            coordinatorTools.add(McpServerConnectTools.createScanProjectTool());
             coordinatorTools.add(McpServerConnectTools.createMcpConnectTool(centralMemory));
             coordinatorTools.add(McpServerConnectTools.createMcpFetchDesignTool(centralMemory));
             coordinatorTools.add(McpServerConnectTools.createSaveComponentTool());

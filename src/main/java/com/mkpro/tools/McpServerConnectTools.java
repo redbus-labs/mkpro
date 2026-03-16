@@ -1193,99 +1193,33 @@ public class McpServerConnectTools {
 
         StringBuilder sb = new StringBuilder();
 
-        // Always include the MCP error-handling policy so the agent knows what to do
-        sb.append("\n\n═══ MCP SERVER ERROR POLICY (MANDATORY) ═══\n");
-        sb.append("When ANY MCP tool (mcp_fetch_design, mcp_server_connect, etc.) returns an error:\n");
-        sb.append("  1. IMMEDIATELY report the error message to the user exactly as returned.\n");
-        sb.append("  2. STOP. Do NOT try to work around, fix, or bypass the error.\n");
-        sb.append("  3. Do NOT delegate to SysAdmin or any other agent to connect, curl, or enable servers.\n");
-        sb.append("  4. Do NOT attempt to use shell commands (curl, nc, telnet, etc.) to reach MCP servers.\n");
-        sb.append("  5. Simply inform the user of the issue and return control to them.\n");
-        sb.append("Examples of errors you MUST just report and stop:\n");
-        sb.append("  - 'server is DISABLED' → tell user to enable via /mcp and try again.\n");
-        sb.append("  - 'server is not reachable' → tell user the server appears to be down.\n");
-        sb.append("  - 'connection refused/timed out' → tell user to check if the server is running.\n\n");
+        sb.append("\n\n── MCP (applies ONLY when user provides a Figma URL) ──\n");
+        sb.append("These MCP instructions are ONLY relevant when the user's message contains a figma.com/design/ URL.\n");
+        sb.append("For all other requests, ignore this section entirely and delegate normally.\n\n");
 
         if (enabledServers.isEmpty()) {
-            sb.append("═══ MCP SERVERS — ALL DISABLED ═══\n");
-            sb.append("All configured MCP servers are currently DISABLED.\n\n");
-            sb.append("MANDATORY BEHAVIOR when user provides a Figma URL (figma.com/design/...):\n");
-            sb.append("  1. Tell the user: \"Figma MCP server is currently disabled. Please enable it using /mcp → [T] Toggle, then try again.\"\n");
-            sb.append("  2. STOP IMMEDIATELY. Return control to the user.\n");
-            sb.append("  3. Do NOT generate any code from the Figma URL.\n");
-            sb.append("  4. Do NOT delegate to SysAdmin, Coder, Architect, or ANY other agent.\n");
-            sb.append("  5. Do NOT use curl, shell commands, or any workaround to access the server.\n");
-            sb.append("  6. Do NOT attempt to create UI components based on the URL content.\n");
-            sb.append("You have NO Figma design tools available. You CANNOT process Figma URLs.\n");
+            sb.append("MCP Status: All servers DISABLED. If user provides a Figma URL, tell them to enable via /mcp.\n");
             return sb.toString();
         }
 
-        sb.append("═══ MCP SERVERS AVAILABLE ═══\n");
+        sb.append("Enabled MCP servers:\n");
         for (McpServer s : enabledServers) {
             sb.append(String.format("  • %s (%s): %s\n", s.getName(), s.getType(), s.getUrl()));
         }
 
-        sb.append("\n═══ FIGMA DESIGN-TO-CODE WORKFLOW ═══\n");
-        sb.append("Figma is a DESIGN KNOWLEDGE source. The generated code MUST match the project type.\n\n");
-
-        sb.append("When a user provides a Figma URL (containing figma.com/design/), follow this workflow:\n\n");
-
-        sb.append("STEP 1 — DETECT PROJECT TYPE (MANDATORY FIRST STEP):\n");
-        sb.append("  Call scan_project FIRST to detect the current project type.\n");
-        sb.append("  The detected project type determines the target platform:\n");
-        sb.append("    android         → target_platform='android'  (generate Kotlin/Compose or XML layouts)\n");
-        sb.append("    ios             → target_platform='ios'      (generate SwiftUI or UIKit code)\n");
-        sb.append("    react / nextjs  → target_platform='react'    (generate TSX/JSX components)\n");
-        sb.append("    flutter         → target_platform='flutter'  (generate Dart widgets)\n");
-        sb.append("    vue / angular   → target_platform='react'    (generate framework-appropriate components)\n");
-        sb.append("    web             → target_platform='web'      (generate HTML/CSS/JS)\n");
-        sb.append("    java_maven/gradle → target_platform='web'    (generate HTML/CSS for resources)\n");
-        sb.append("    unknown         → target_platform='general'\n");
-        sb.append("  ONLY override the detected platform if the user EXPLICITLY requests a different one:\n");
-        sb.append("    e.g. 'create in html', 'make it in swift', 'build react component'\n");
-        sb.append("  If user says nothing about platform, ALWAYS use the detected project type.\n\n");
-
-        sb.append("STEP 2 — FETCH DESIGN DATA:\n");
-        sb.append("  Call mcp_fetch_design with the FULL Figma URL and the target_platform from Step 1.\n");
-        sb.append("  This fetches design_context + metadata + screenshot in one call.\n");
-        sb.append("  If this returns an error, FOLLOW THE MCP ERROR POLICY ABOVE — report and stop.\n\n");
-
-        sb.append("STEP 3 — ANALYZE the fetched design data:\n");
-        sb.append("  Extract layout structure, colors, typography, spacing, border radius, shadows, images, component hierarchy.\n\n");
-
-        sb.append("STEP 4 — GENERATE CODE matching the target platform:\n");
-        sb.append("  Use the EXACT design tokens (colors, fonts, sizes, spacing) from the fetched data.\n");
-        sb.append("  CRITICAL: The code MUST be in the language/framework matching the detected project:\n");
-        sb.append("    Android project → Kotlin + Jetpack Compose (or XML layouts + Kotlin Activity/Fragment)\n");
-        sb.append("    iOS project     → SwiftUI views (or UIKit with Storyboard)\n");
-        sb.append("    React project   → TSX/JSX component with CSS/styled-components\n");
-        sb.append("    Flutter project → Dart StatelessWidget/StatefulWidget\n");
-        sb.append("    Web project     → self-contained HTML/CSS/JS file\n");
-        sb.append("  NEVER generate HTML for an Android/iOS/Flutter/React project.\n");
-        sb.append("  NEVER generate Kotlin for a web/React/Flutter project.\n\n");
-
-        sb.append("STEP 5 — SAVE using save_component:\n");
-        sb.append("  Use the correct filename and extension for the platform:\n");
-        sb.append("    Android → SearchScreen.kt, PassengersScreen.kt, etc.\n");
-        sb.append("    iOS     → SearchView.swift, PassengersView.swift, etc.\n");
-        sb.append("    React   → SearchResults.tsx, Passengers.tsx, etc.\n");
-        sb.append("    Flutter → search_screen.dart, passengers_page.dart, etc.\n");
-        sb.append("    Web     → search-results.html, passengers.html, etc.\n");
-        sb.append("  save_component auto-detects the project and saves to the correct directory.\n\n");
-
-        sb.append("STEP 6 — For HTML/web files only, call open_component_preview.\n\n");
-
-        sb.append("CRITICAL RULES:\n");
-        sb.append("  - ALWAYS call scan_project BEFORE mcp_fetch_design to detect the project type.\n");
-        sb.append("  - The PROJECT TYPE determines the output language, NOT a default assumption.\n");
-        sb.append("  - NEVER generate HTML/web code for Android, iOS, Flutter, or React projects.\n");
-        sb.append("  - Use EXACT design tokens from the fetched data.\n");
-        sb.append("  - ALWAYS save output files using save_component.\n");
-        sb.append("  - NEVER ask the user for design details. Use whatever data the tool returned.\n");
-        sb.append("  - Even if some fetches fail (e.g. design_context times out), use the metadata and screenshot.\n");
-        sb.append("  - Call mcp_fetch_design ONLY ONCE. Do NOT retry or call it again.\n");
-        sb.append("  - After fetching, IMMEDIATELY generate code and save it. Do not hesitate.\n");
-        sb.append("  - If mcp_fetch_design returns an error, REPORT IT TO THE USER AND STOP. Do not work around it.\n");
+        sb.append("\nFigma URL workflow:\n");
+        sb.append("  1. scan_project → detect project type (android/ios/react/flutter/web)\n");
+        sb.append("  2. mcp_fetch_design → fetch design data (call ONCE only)\n");
+        sb.append("  3. Analyze the fetched design data yourself. Extract key design tokens:\n");
+        sb.append("     colors, fonts, spacing, border radius, component names, layout structure.\n");
+        sb.append("  4. Delegate to Coder with a CONCISE instruction:\n");
+        sb.append("     - The platform (e.g. 'Kotlin Jetpack Compose' or 'SwiftUI')\n");
+        sb.append("     - A summary of design tokens (key colors as hex, font sizes, spacing values)\n");
+        sb.append("     - The component/screen name and layout description\n");
+        sb.append("     - Tell the Coder to generate code directly — do NOT pass raw design data\n");
+        sb.append("  5. After Coder returns code, YOU call save_component to save it\n");
+        sb.append("  6. open_component_preview (HTML/web only)\n");
+        sb.append("If mcp_fetch_design errors, report to user and stop.\n");
         return sb.toString();
     }
 }

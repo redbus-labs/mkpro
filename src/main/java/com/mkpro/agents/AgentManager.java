@@ -7,6 +7,7 @@ import com.google.adk.memory.InMemoryMemoryService;
 import com.google.adk.models.OllamaBaseLM;
 import com.google.adk.models.Gemini;
 import com.google.adk.models.BedrockBaseLM;
+import com.google.adk.models.AzureBaseLM;
 import com.google.adk.models.BaseLlm;
 import com.google.adk.runner.InMemoryRunner;
 import com.google.adk.runner.MapDbRunner;
@@ -397,6 +398,8 @@ public class AgentManager {
             return new OllamaBaseLM(config.getModelName(), ollamaServerUrl);
         } else if (config.getProvider() == Provider.BEDROCK) {
             return new BedrockBaseLM(config.getModelName(), null);
+        } else if (config.getProvider() == Provider.AZURE) {
+            return new AzureBaseLM(config.getModelName());
         }
         return null;
     }

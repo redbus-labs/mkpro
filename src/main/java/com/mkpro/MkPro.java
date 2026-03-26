@@ -1286,6 +1286,7 @@ public class MkPro {
                                 if (newProvider == Provider.GEMINI) newModel = "gemini-1.5-flash";
                                 else if (newProvider == Provider.BEDROCK) newModel = "anthropic.claude-3-sonnet-20240229-v1:0";
                                 else if (newProvider == Provider.OLLAMA) newModel = "devstral-small-2";
+                                else if (newProvider == Provider.AZURE) newModel = "gpt-4o";
                             }
 
                             agentConfigs.put(agentName, new AgentConfig(newProvider, newModel));
@@ -1296,7 +1297,7 @@ public class MkPro {
                                 runner = runnerFactory.apply(currentRunnerType.get());
                             }
                         } catch (IllegalArgumentException e) {
-                            fTerminal.writer().println(ANSI_BLUE + "Invalid provider: " + providerStr + ". Use OLLAMA, GEMINI, or BEDROCK." + ANSI_RESET);
+                            fTerminal.writer().println(ANSI_BLUE + "Invalid provider: " + providerStr + ". Use OLLAMA, GEMINI, BEDROCK, or AZURE." + ANSI_RESET);
                         }
                     }
                 } else {

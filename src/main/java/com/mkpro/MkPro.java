@@ -85,6 +85,11 @@ public class MkPro {
     public static final String ANSI_BLUE = "\u001b[34m";
     public static final String ANSI_GREEN = "\u001b[32m";
     public static final String ANSI_RED = "\u001b[31m";
+    public static final String ANSI_CYAN = "\u001b[36m";
+    public static final String ANSI_PURPLE = "\u001b[35m";
+    public static final String ANSI_LIGHT_PURPLE = "\u001b[38;5;177m";
+    public static final String ANSI_WHITE = "\u001b[37m";
+    public static final String ANSI_BOLD = "\u001b[1m";
 
      private static final List<String> GEMINI_MODELS = Arrays.asList(
         "gemini-3.1-pro-preview",
@@ -145,6 +150,9 @@ public class MkPro {
     }
 
     public static void main(String[] args) {
+        // Print Logo/Banner
+        printBanner();
+
         // Check for flags
         boolean useUI = false;
         boolean verbose = false;
@@ -318,6 +326,102 @@ public class MkPro {
         }
         
         logger.close();
+    }
+
+    private static void printBanner() {
+        String username = System.getProperty("user.name");
+        String date = java.time.format.DateTimeFormatter.ofPattern("EEE MMM dd, yyyy").format(java.time.LocalDate.now());
+
+        String[] logoLines = {
+            "  ███╗   ███╗██╗  ██╗██████╗ ██████╗  ██████╗ ",
+            "  ████╗ ████║██║ ██╔╝██╔══██╗██╔══██╗██╔═══██╗",
+            "  ██╔████╔██║█████╔╝ ██████╔╝██████╔╝██║   ██║",
+            "  ██║╚██╔╝██║██╔═██╗ ██╔═══╝ ██╔══██╗██║   ██║",
+            "  ██║ ╚═╝ ██║██║  ██╗██║     ██║  ██║██║   ██║",
+            "  ██║     ██║██║  ██╗██║     ██║  ██║╚██████╔╝",
+            "  ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝ ╚═════╝ ",
+            "                                              "
+        };
+
+        System.out.println("");
+        
+        // Find the maximum length of the logo lines
+        int maxLength = 0;
+        for (String line : logoLines) {
+            if (line.length() > maxLength) {
+                maxLength = line.length();
+            }
+        }
+
+        // Horizontal reveal animation for the logo
+        for (int col = 1; col <= maxLength; col++) {
+            // Move cursor up by the number of lines to overwrite them
+            if (col > 1) {
+                System.out.print("\033[" + logoLines.length + "A");
+            }
+            
+            for (String line : logoLines) {
+                int endIdx = Math.min(col, line.length());
+                String visiblePart = line.substring(0, endIdx);
+                // Print the visible part with color, then clear to the end of the line
+                System.out.println(ANSI_LIGHT_PURPLE + ANSI_BOLD + visiblePart + ANSI_RESET + "\033[K");
+            }
+            
+            try {
+                Thread.sleep(15); // 15ms per column for a fast horizontal sweep
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        // Animate the info text typing effect horizontally (character by character)
+        String[] infoLines = {
+            ANSI_WHITE + "  Logged in as: " + ANSI_CYAN + username + ANSI_RESET,
+            ANSI_WHITE + "  Plan: " + ANSI_GREEN + "MkPro AI Professional" + ANSI_RESET,
+            ANSI_WHITE + "  Today's Date: " + ANSI_YELLOW + date + ANSI_RESET,
+            "",
+            ANSI_WHITE + "  Tips for getting started:" + ANSI_RESET,
+            ANSI_WHITE + "  1. Ask questions, edit files, or run commands." + ANSI_RESET,
+            ANSI_WHITE + "  2. Be specific for the best results." + ANSI_RESET,
+            ANSI_WHITE + "  3. " + ANSI_CYAN + "/help" + ANSI_WHITE + " for more information." + ANSI_RESET
+        };
+
+        for (String line : infoLines) {
+            if (line.isEmpty()) {
+                System.out.println();
+                continue;
+            }
+            
+            // Strip ANSI codes for length calculation, but we need to print them correctly.
+            // For simplicity in this CLI, we'll just print the whole styled string if it contains ANSI,
+            // or we can do a simple char-by-char print if we handle ANSI blocks.
+            // To keep it clean and avoid breaking ANSI codes mid-print, we'll print the line 
+            // but simulate typing by flushing small chunks.
+            
+            boolean inAnsi = false;
+            for (int i = 0; i < line.length(); i++) {
+                char c = line.charAt(i);
+                System.out.print(c);
+                
+                if (c == '\033') {
+                    inAnsi = true;
+                }
+                if (inAnsi && c == 'm') {
+                    inAnsi = false;
+                }
+                
+                if (!inAnsi) {
+                    System.out.flush();
+                    try {
+                        Thread.sleep(5); // 5ms per character
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+            System.out.println();
+        }
+        System.out.println("");
     }
 
     private static Path setupTeamsDir() {

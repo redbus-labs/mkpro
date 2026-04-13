@@ -9,6 +9,7 @@ import com.google.common.collect.ImmutableMap;
 import io.reactivex.rxjava3.core.Single;
 
 import com.mkpro.CentralMemory;
+import com.mkpro.MkPro;
 import com.mkpro.models.McpServer;
 
 import java.awt.Desktop;
@@ -96,7 +97,7 @@ public class McpServerConnectTools {
                 .or(() -> initResp.headers().firstValue("Mcp-Session-Id"))
                 .orElse(null);
 
-        System.out.println(ANSI_BLUE + "[MCP] Session initialized" +
+        MkPro.printAbove(ANSI_BLUE + "[MCP] Session initialized" +
                 (sessionId != null ? " (session=" + sessionId.substring(0, Math.min(8, sessionId.length())) + "...)" : "") +
                 ANSI_RESET);
 
@@ -135,7 +136,7 @@ public class McpServerConnectTools {
         try {
             sessionId = getOrCreateSession(serverUrl);
         } catch (Exception e) {
-            System.out.println(ANSI_YELLOW + "[MCP] Session init failed, trying direct request: " + e.getMessage() + ANSI_RESET);
+            MkPro.printAbove(ANSI_YELLOW + "[MCP] Session init failed, trying direct request: " + e.getMessage() + ANSI_RESET);
             sessionId = null;
         }
 
@@ -156,7 +157,7 @@ public class McpServerConnectTools {
         if (response.statusCode() >= 400) {
             String body = response.body();
             if (body.contains("initialize") || body.contains("session") || body.contains("expired")) {
-                System.out.println(ANSI_BLUE + "[MCP] Session expired, re-initializing..." + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[MCP] Session expired, re-initializing..." + ANSI_RESET);
                 synchronized (SESSION_LOCK) {
                     SESSION_CACHE.remove(serverUrl);
                 }
@@ -283,15 +284,15 @@ public class McpServerConnectTools {
                         String msg = hasDisabled
                                 ? "No enabled MCP server found matching '" + serverRef + "'. The server may be disabled — enable it via /mcp → [T] Toggle."
                                 : "No MCP server found matching '" + serverRef + "'. Add one using /mcp → [A] Add new server.";
-                        System.out.println(ANSI_YELLOW + "[MCP] ✗ " + msg + ANSI_RESET);
+                        MkPro.printAbove(ANSI_YELLOW + "[MCP] ✗ " + msg + ANSI_RESET);
                         return Collections.singletonMap("error", msg);
                     }
-                    System.out.println(ANSI_BLUE + "[MCP] → " + serverUrl + " | " + action + ANSI_RESET);
+                    MkPro.printAbove(ANSI_BLUE + "[MCP] → " + serverUrl + " | " + action + ANSI_RESET);
 
                     try {
                         checkServerReachable(serverUrl);
                     } catch (Exception e) {
-                        System.out.println(ANSI_YELLOW + "[MCP] ✗ " + e.getMessage() + ANSI_RESET);
+                        MkPro.printAbove(ANSI_YELLOW + "[MCP] ✗ " + e.getMessage() + ANSI_RESET);
                         return Collections.singletonMap("error", e.getMessage());
                     }
 
@@ -323,10 +324,10 @@ public class McpServerConnectTools {
                         result.put("status", "connected");
                         result.put("server_url", serverUrl);
                         result.put("response", body);
-                        System.out.println(ANSI_GREEN + "[MCP] ✓ Connected" + ANSI_RESET);
+                        MkPro.printAbove(ANSI_GREEN + "[MCP] ✓ Connected" + ANSI_RESET);
                         return result;
                     } catch (Exception e) {
-                        System.out.println(ANSI_YELLOW + "[MCP] ✗ " + e.getMessage() + ANSI_RESET);
+                        MkPro.printAbove(ANSI_YELLOW + "[MCP] ✗ " + e.getMessage() + ANSI_RESET);
                         return Collections.singletonMap("error", "MCP connection failed: " + e.getMessage());
                     }
                 });
@@ -1086,7 +1087,7 @@ public class McpServerConnectTools {
     // ── General Helpers ──────────────────────────────────────────────
 
     private static void progress(String msg) {
-        System.out.println(ANSI_BLUE + "[MCP-Figma] " + msg + ANSI_RESET);
+        MkPro.printAbove(ANSI_BLUE + "[MCP-Figma] " + msg + ANSI_RESET);
         System.out.flush();
     }
 

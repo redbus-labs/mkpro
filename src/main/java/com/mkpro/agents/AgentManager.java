@@ -38,6 +38,7 @@ import com.mkpro.tools.McpServerConnectTools.ProjectInfo;
 import com.mkpro.ActionLogger;
 import com.mkpro.CentralMemory;
 import com.mkpro.SessionHelper;
+import com.mkpro.MkPro;
 
 import com.google.adk.memory.EmbeddingService;
 import com.google.adk.memory.VectorStore;
@@ -436,7 +437,7 @@ public class AgentManager {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String instruction = (String) args.get("instruction");
-                System.out.println(ANSI_BLUE + ">> Delegating to " + agentName + "..." + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + ">> Delegating to " + agentName + "..." + ANSI_RESET);
                 AgentConfig config = agentConfigs.get(agentName);
                 
                 return Single.fromCallable(() -> {

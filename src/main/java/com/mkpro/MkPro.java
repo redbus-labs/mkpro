@@ -254,6 +254,7 @@ public class MkPro {
         } catch (IOException e) {
             System.err.println(ANSI_BLUE + "Warning: Could not read session_summary.txt" + ANSI_RESET);
         }
+        summaryContext = sanitizeInstructionContext(summaryContext);
         
         String username = System.getProperty("user.name");
 
@@ -499,6 +500,15 @@ public class MkPro {
         return null;
     }
 
+    private static String sanitizeInstructionContext(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        return text.replace("{", "[").replace("}", "]");
+    }
+
+    private static final java.util.concurrent.atomic.AtomicLong globalStopEpoch = new java.util.concurrent.atomic.AtomicLong(0);
+    private static final java.util.concurrent.atomic.AtomicBoolean inputLocked = new java.util.concurrent.atomic.AtomicBoolean(false);
     private static LineReader globalLineReader;
 
     public static void printAbove(String message) {
@@ -507,6 +517,43 @@ public class MkPro {
         } else {
             System.out.println(message);
         }
+    }
+
+    public static void signalStop() {
+        globalStopEpoch.incrementAndGet();
+    }
+
+    public static long getStopEpoch() {
+        return globalStopEpoch.get();
+    }
+
+    public static boolean drainTerminalInput() {
+        try {
+            if (globalLineReader != null) {
+                org.jline.utils.NonBlockingReader reader = globalLineReader.getTerminal().reader();
+                boolean hadInput = false;
+                while (reader.ready()) {
+                    reader.read();
+                    hadInput = true;
+                }
+                return hadInput;
+            }
+            return System.in.available() > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static void lockInput() {
+        inputLocked.set(true);
+    }
+
+    public static void unlockInput() {
+        inputLocked.set(false);
+    }
+
+    public static boolean isInputLocked() {
+        return inputLocked.get();
     }
 
     private static void runConsoleLoop(String apiKey, String summaryContext, java.util.concurrent.atomic.AtomicReference<RunnerType> currentRunnerType, String initialModelName, Provider initialProvider, Session initialSession, InMemorySessionService sessionService, InMemoryArtifactService artifactService, InMemoryMemoryService memoryService, CentralMemory centralMemory, ActionLogger logger, boolean verbose) {
@@ -586,7 +633,7 @@ public class MkPro {
         }
               
         
-        String augmentedContext = summaryContext + historyContext.toString();
+        String augmentedContext = sanitizeInstructionContext(summaryContext + historyContext.toString());
 
         // Runner Building Logic
         java.util.function.Function<RunnerType, Runner> runnerFactory = (rType) -> {
@@ -700,6 +747,7 @@ public class MkPro {
         final java.util.concurrent.atomic.AtomicInteger pendingTasks = new java.util.concurrent.atomic.AtomicInteger(0);
         final java.util.concurrent.atomic.AtomicBoolean isThinking = new java.util.concurrent.atomic.AtomicBoolean(false);
         final java.util.concurrent.atomic.AtomicBoolean isShuttingDown = new java.util.concurrent.atomic.AtomicBoolean(false);
+        final java.util.concurrent.atomic.AtomicLong taskEpoch = new java.util.concurrent.atomic.AtomicLong(0);
         
         final java.util.concurrent.BlockingQueue<Runnable> agentQueue = new java.util.concurrent.LinkedBlockingQueue<>();
         final java.util.concurrent.ExecutorService agentExecutor = new java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, agentQueue);
@@ -719,6 +767,13 @@ public class MkPro {
             // Update busy flag based on tasks
             isThinking.set(pendingTasks.get() > 0);
 
+            if (isInputLocked()) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException ignored) {}
+                continue;
+            }
+
             String line = injectedInput.getAndSet(null);
 
             if (line != null) {
@@ -734,13 +789,16 @@ public class MkPro {
                     fTerminal.flush();
                 } catch (UserInterruptException e) {
                     if (isShuttingDown.get()) break;
-                    fLineReader.printAbove(ANSI_BLUE + "\n[!] Interrupted by user." + ANSI_RESET);
+                    fLineReader.printAbove(ANSI_BLUE + "\n[!] Ctrl+C detected. Exiting mkpro..." + ANSI_RESET);
                     agentQueue.clear();
                     pendingTasks.set(0);
                     isThinking.set(false);
+                    taskEpoch.incrementAndGet();
+                    signalStop();
                     Disposable d = activeTask.getAndSet(null);
                     if (d != null) d.dispose();
-                    continue; 
+                    isShuttingDown.set(true);
+                    break;
                 } catch (EndOfFileException e) {
                     break;
                 }
@@ -762,6 +820,8 @@ public class MkPro {
                 Disposable d = activeTask.getAndSet(null);
                 if (d != null) d.dispose();
                 isThinking.set(false);
+                taskEpoch.incrementAndGet();
+                signalStop();
                 
                 if (line.equalsIgnoreCase("/stop")) {
                     continue;
@@ -1632,16 +1692,23 @@ public class MkPro {
             }
 
             final String finalLine = line;
-            if (isThinking.get()) {
+            final long taskToken = taskEpoch.get();
+            if (pendingTasks.get() > 0) {
                  fLineReader.printAbove(ANSI_BLUE + "Task queued..." + ANSI_RESET);
             }
+            pendingTasks.incrementAndGet();
+            isThinking.set(true);
 
             final Session sessionToUse = currentSession;
             final Runner runnerToUse = runner;
 
             agentExecutor.submit(() -> {
+                if (taskEpoch.get() != taskToken) {
+                    pendingTasks.updateAndGet(value -> value > 0 ? value - 1 : 0);
+                    isThinking.set(pendingTasks.get() > 0);
+                    return;
+                }
                 logger.log("USER", finalLine);
-                isThinking.set(true);
 
                 java.util.List<Part> parts = new java.util.ArrayList<>();
                 parts.add(Part.fromText(finalLine));
@@ -1681,7 +1748,7 @@ public class MkPro {
                         .filter(event -> event.content().isPresent())
                         .subscribe(
                             event -> {
-                                if (!isThinking.get()) return; // Stop processing if cancelled
+                                if (taskEpoch.get() != taskToken) return; // Stop processing if cancelled
                                 event.content().flatMap(Content::parts).orElse(Collections.emptyList()).forEach(part -> 
                                     part.text().ifPresent(text -> {
                                         responseBuilder.append(text);
@@ -1697,13 +1764,14 @@ public class MkPro {
                                 );
                             },
                             error -> {
+                                if (taskEpoch.get() != taskToken) return;
                                 isThinking.set(false);
                                 fLineReader.printAbove(ANSI_BLUE + "\nError processing request: " + error.getMessage() + ANSI_RESET);
                                 logger.log("ERROR", error.getMessage());
                                 activeTask.set(null);
                             },
                             () -> {
-                                if (!isThinking.get()) return; // Stop processing if cancelled
+                                if (taskEpoch.get() != taskToken) return; // Stop processing if cancelled
                                 if (lineBuffer.length() > 0) {
                                     fLineReader.printAbove(ANSI_LIGHT_ORANGE + lineBuffer.toString() + ANSI_RESET);
                                 }
@@ -1724,12 +1792,17 @@ public class MkPro {
                     activeTask.set(sub);
                     
                     // Keep thread alive until task finishes
-                    while (isThinking.get() && !sub.isDisposed()) {
+                    while (taskEpoch.get() == taskToken && isThinking.get() && !sub.isDisposed()) {
                          Thread.sleep(100);
                     }
                 } catch (Exception e) {
-                    fLineReader.printAbove(ANSI_BLUE + "Error starting request: " + e.getMessage() + ANSI_RESET);
-                    isThinking.set(false);
+                    if (taskEpoch.get() == taskToken) {
+                        fLineReader.printAbove(ANSI_BLUE + "Error starting request: " + e.getMessage() + ANSI_RESET);
+                        isThinking.set(false);
+                    }
+                } finally {
+                    pendingTasks.updateAndGet(value -> value > 0 ? value - 1 : 0);
+                    isThinking.set(pendingTasks.get() > 0);
                 }
             });
         }

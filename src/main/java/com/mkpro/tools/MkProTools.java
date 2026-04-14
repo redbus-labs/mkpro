@@ -286,6 +286,7 @@ public class MkProTools {
                 return Single.fromCallable(() -> {
                     try {
                         Path path = Paths.get(filePath);
+                        long stopToken = MkPro.getStopEpoch();
                         String oldContent = "";
                         if (Files.exists(path)) {
                             oldContent = Files.readString(path);
@@ -344,45 +345,41 @@ public class MkProTools {
                         }
 
                         MkPro.printAbove(ANSI_BLUE + "---------------------------------------------" + ANSI_RESET);
-                        
-                        // Auto-approve logic
-                        MkPro.printAbove(ANSI_YELLOW + "Auto-approving in 7s... (Press Enter to pause/reject) " + ANSI_RESET);
-                        
-                        boolean interrupted = false;
-                        for (int i = 7; i > 0; i--) {
-                            MkPro.printAbove("\r" + ANSI_YELLOW + "Auto-approving in " + i + "s... (Press Enter to pause/reject)   " + ANSI_RESET);
-                            // Check if input is available (non-blocking check)
-                            try {
-                                if (System.in.available() > 0) {
-                                    interrupted = true;
-                                    break;
+
+                        boolean inputLocked = false;
+                        try {
+                            MkPro.lockInput();
+                            inputLocked = true;
+
+                            // Auto-approve logic
+                            MkPro.printAbove(ANSI_YELLOW + "Auto-approving in 7s... (Press Enter to pause/reject) " + ANSI_RESET);
+                            
+                            boolean interrupted = false;
+                            for (int i = 7; i > 0; i--) {
+                                MkPro.printAbove("\r" + ANSI_YELLOW + "Auto-approving in " + i + "s... (Press Enter to pause/reject)   " + ANSI_RESET);
+                                // Check if input is available (non-blocking check)
+                                try {
+                                    if (MkPro.getStopEpoch() != stopToken) {
+                                        MkPro.printAbove(ANSI_YELLOW + "Cancelled by /stop." + ANSI_RESET);
+                                        return Collections.singletonMap("status", "Cancelled by /stop: " + filePath);
+                                    }
+                                    if (MkPro.drainTerminalInput()) {
+                                        interrupted = true;
+                                        break;
+                                    }
+                                    Thread.sleep(1000);
+                                } catch (Exception e) {
+                                    // Ignore
                                 }
-                                Thread.sleep(1000);
-                            } catch (Exception e) {
-                                // Ignore
                             }
-                        }
-                        MkPro.printAbove(""); // Newline
+                            MkPro.printAbove(""); // Newline
 
-                        if (!interrupted) {
-                            MkPro.printAbove(ANSI_GREEN + "Time's up! Auto-approving changes." + ANSI_RESET);
-                            if (path.getParent() != null) {
-                                Files.createDirectories(path.getParent());
-                            }
-                            if (Files.exists(path)) {
-                                MkPro.printAbove(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
-                                Maker.backItUp(path.toFile());
-                            }
-                            Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                            return Collections.singletonMap("status", "File written successfully (Auto-approved): " + filePath);
-                        }
-
-                        // Fallback to manual confirmation if interrupted
-                        MkPro.printAbove(ANSI_YELLOW + "Apply these changes? [y/N]: " + ANSI_RESET);
-                        Scanner scanner = new Scanner(System.in);
-                        if (scanner.hasNextLine()) {
-                            String input = scanner.nextLine().trim();
-                            if ("y".equalsIgnoreCase(input) || "yes".equalsIgnoreCase(input)) {
+                            if (!interrupted) {
+                                MkPro.printAbove(ANSI_GREEN + "Time's up! Auto-approving changes." + ANSI_RESET);
+                                if (MkPro.getStopEpoch() != stopToken) {
+                                    MkPro.printAbove(ANSI_YELLOW + "Cancelled by /stop." + ANSI_RESET);
+                                    return Collections.singletonMap("status", "Cancelled by /stop: " + filePath);
+                                }
                                 if (path.getParent() != null) {
                                     Files.createDirectories(path.getParent());
                                 }
@@ -391,15 +388,42 @@ public class MkProTools {
                                     Maker.backItUp(path.toFile());
                                 }
                                 Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                                MkPro.printAbove(ANSI_GREEN + "File written successfully." + ANSI_RESET);
-                                return Collections.singletonMap("status", "File written successfully: " + filePath);
-                            } else {
-                                MkPro.printAbove(ANSI_RED + "Changes rejected by user." + ANSI_RESET);
-                                return Collections.singletonMap("status", "User rejected changes for: " + filePath);
+                                return Collections.singletonMap("status", "File written successfully (Auto-approved): " + filePath);
+                            }
+
+                            // Fallback to manual confirmation if interrupted
+                            MkPro.printAbove(ANSI_YELLOW + "Apply these changes? [y/N]: " + ANSI_RESET);
+                            Scanner scanner = new Scanner(System.in);
+                            if (scanner.hasNextLine()) {
+                                String input = scanner.nextLine().trim();
+                                if (input.toLowerCase().startsWith("/stop")) {
+                                    MkPro.signalStop();
+                                    MkPro.printAbove(ANSI_YELLOW + "Cancelled by /stop." + ANSI_RESET);
+                                    return Collections.singletonMap("status", "Cancelled by /stop: " + filePath);
+                                }
+                                if ("y".equalsIgnoreCase(input) || "yes".equalsIgnoreCase(input)) {
+                                    if (path.getParent() != null) {
+                                        Files.createDirectories(path.getParent());
+                                    }
+                                    if (Files.exists(path)) {
+                                        MkPro.printAbove(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
+                                        Maker.backItUp(path.toFile());
+                                    }
+                                    Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                                    MkPro.printAbove(ANSI_GREEN + "File written successfully." + ANSI_RESET);
+                                    return Collections.singletonMap("status", "File written successfully: " + filePath);
+                                } else {
+                                    MkPro.printAbove(ANSI_RED + "Changes rejected by user." + ANSI_RESET);
+                                    return Collections.singletonMap("status", "User rejected changes for: " + filePath);
+                                }
+                            }
+                            
+                            return Collections.singletonMap("status", "No input received. Changes rejected.");
+                        } finally {
+                            if (inputLocked) {
+                                MkPro.unlockInput();
                             }
                         }
-                        
-                        return Collections.singletonMap("status", "No input received. Changes rejected.");
 
                     } catch (IOException e) {
                         return Collections.singletonMap("error", "Error processing safe write: " + e.getMessage());

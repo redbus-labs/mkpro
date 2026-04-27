@@ -108,9 +108,9 @@ public class MkPro {
     );
 
     private static final List<String> BEDROCK_MODELS = Arrays.asList(
-        "anthropic.claude-3-sonnet-20240229-v1:0",
-        "anthropic.claude-3-haiku-20240307-v1:0",
-        "anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "anthropic.claude-opus-4-7",
+        "anthropic.claude-opus-4-6-v1"
+        "anthropic.claude-sonnet-4-6",
         "meta.llama3-70b-instruct-v1:0",
         "meta.llama3-8b-instruct-v1:0",
         "amazon.titan-text-express-v1"
@@ -1399,7 +1399,7 @@ public class MkPro {
                             
                             if (parts.length == 3 && newProvider != agentConfigs.get(agentName).getProvider()) {
                                 if (newProvider == Provider.GEMINI) newModel = "gemini-1.5-flash";
-                                else if (newProvider == Provider.BEDROCK) newModel = "anthropic.claude-3-sonnet-20240229-v1:0";
+                                else if (newProvider == Provider.BEDROCK) newModel = "anthropic.claude-opus-4-6-v1";
                                 else if (newProvider == Provider.OLLAMA) newModel = "devstral-small-2";
                                 else if (newProvider == Provider.SARVAM) newModel = "sarvam-m";
                                 else if (newProvider == Provider.AZURE) newModel = "gpt-4o";

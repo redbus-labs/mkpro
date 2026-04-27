@@ -109,7 +109,7 @@ public class MkPro {
 
     private static final List<String> BEDROCK_MODELS = Arrays.asList(
         "anthropic.claude-opus-4-7",
-        "anthropic.claude-opus-4-6-v1"
+        "anthropic.claude-opus-4-6-v1",
         "anthropic.claude-sonnet-4-6",
         "meta.llama3-70b-instruct-v1:0",
         "meta.llama3-8b-instruct-v1:0",

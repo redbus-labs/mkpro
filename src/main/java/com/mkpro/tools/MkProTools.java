@@ -40,8 +40,8 @@ import javax.imageio.ImageIO;
 import java.io.File;
 
 import com.google.adk.memory.EmbeddingService;
-import com.google.adk.memory.MapDBVectorStore;
 import com.google.adk.memory.Vector;
+import com.mkpro.vectorstore.SearchableVectorStore;
 
 import com.mkpro.IndexingHelper;
 
@@ -53,7 +53,7 @@ public class MkProTools {
     public static final String ANSI_RED = "\u001b[31m";
     public static final String ANSI_GREEN = "\u001b[32m";
 
-    public static BaseTool createSearchCodebaseTool(MapDBVectorStore vectorStore, EmbeddingService embeddingService) {
+    public static BaseTool createSearchCodebaseTool(SearchableVectorStore vectorStore, EmbeddingService embeddingService) {
         return new BaseTool(
                 "search_codebase",
                 "Semantically searches the codebase using vector embeddings. Use this to find relevant code snippets based on meaning."
@@ -83,10 +83,7 @@ public class MkProTools {
                 
                 return embeddingService.generateEmbedding(query)
                     .map(embedding -> {
-                        // Ensure embedding is float[] if ADK expects it, or double[]. 
-                        // Checking ADK docs/source previously: generateEmbedding returns Single<double[]>.n                        // VectorStore.searchVectors likely takes double[].
-                        
-                        List<Vector> results = vectorStore.searchTopNVectors( embedding, 0.0, 5); // Top 5, threshold 0.6
+                        List<Vector> results = vectorStore.searchTopNVectors(embedding, 0.0, 5);
                         
                         if (results.isEmpty()) {
                             return Collections.singletonMap("result", "No relevant code found for query: " + query);

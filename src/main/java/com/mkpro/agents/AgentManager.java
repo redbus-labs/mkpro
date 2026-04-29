@@ -40,9 +40,9 @@ import com.mkpro.CentralMemory;
 import com.mkpro.SessionHelper;
 
 import com.google.adk.memory.EmbeddingService;
-import com.google.adk.memory.VectorStore;
 
 import java.nio.file.Path;
+import com.mkpro.vectorstore.SearchableVectorStore;
 import java.nio.file.Paths;
 import java.nio.file.Files;
 import java.time.LocalDate;
@@ -61,7 +61,6 @@ import java.io.File;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import com.google.adk.memory.MapDBVectorStore;
 import com.mkpro.models.AgentDefinition;
 import com.mkpro.models.AgentsConfig;
 import com.google.adk.sessions.BaseSessionService;
@@ -77,7 +76,7 @@ public class AgentManager {
     private final CentralMemory centralMemory;
     private final RunnerType runnerType;
     private final Map<String, AgentDefinition> agentDefinitions;
-    private final MapDBVectorStore vectorStore;
+    private final SearchableVectorStore vectorStore;
     private final EmbeddingService embeddingService;
 
     public static final String ANSI_RESET = "\u001b[0m";
@@ -109,13 +108,13 @@ public class AgentManager {
     public AgentManager(InMemorySessionService sessionService, 
                         InMemoryArtifactService artifactService, 
                         InMemoryMemoryService memoryService, 
-                        String apiKey, 
-                        String ollamaServerUrl, 
-                        ActionLogger logger, 
-                        CentralMemory centralMemory, 
-                        RunnerType runnerType, 
-                        Path teamsConfigPath, 
-                        MapDBVectorStore vectorStore, 
+                        String apiKey,
+                        String ollamaServerUrl,
+                        ActionLogger logger,
+                        CentralMemory centralMemory,
+                        RunnerType runnerType,
+                        Path teamsConfigPath,
+                        SearchableVectorStore vectorStore,
                         EmbeddingService embeddingService) {
         this.sessionService = sessionService;
         this.artifactService = artifactService;
@@ -399,7 +398,14 @@ public class AgentManager {
         } else if (config.getProvider() == Provider.OLLAMA) {
             return new OllamaBaseLM(config.getModelName(), ollamaServerUrl);
         } else if (config.getProvider() == Provider.BEDROCK) {
-            return new BedrockBaseLM(config.getModelName(), null);
+            // Base URL only (no /model) - BedrockBaseLM appends /model/{modelId}/converse
+            String bedrockUrl = System.getenv("BEDROCK_URL");
+            if (bedrockUrl == null || bedrockUrl.isEmpty()) {
+                String region = System.getenv("BEDROCK_REGION");
+                if (region == null || region.isEmpty()) region = "ap-south-1";
+                bedrockUrl = "https://bedrock-runtime." + region + ".amazonaws.com";
+            }
+            return new BedrockBaseLM(config.getModelName(), bedrockUrl);
         } else if (config.getProvider() == Provider.SARVAM) {
             SarvamAiConfig sarvamConfig = SarvamAiConfig.builder().build();
             return SarvamAi.builder()
@@ -408,8 +414,9 @@ public class AgentManager {
                 .build();
         } else if (config.getProvider() == Provider.AZURE) {
             return new AzureBaseLM(config.getModelName());
+        } else {
+            return new OllamaBaseLM(config.getModelName(), ollamaServerUrl);
         }
-        return null;
     }
 
     private BaseTool createDelegationTool(String toolName, String description, String agentName, 

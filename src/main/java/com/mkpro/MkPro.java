@@ -73,7 +73,6 @@ import io.reactivex.rxjava3.disposables.Disposable;
 import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
-import com.google.adk.memory.MapDBVectorStore;
 
 public class MkPro {
 
@@ -107,13 +106,12 @@ public class MkPro {
         "gemini-1.5-flash-8b"
     );
 
+    // Top Bedrock models for ap-south-1 (from foundation-models API)
     private static final List<String> BEDROCK_MODELS = Arrays.asList(
-        "anthropic.claude-opus-4-7",
-        "anthropic.claude-opus-4-6-v1",
-        "anthropic.claude-sonnet-4-6",
-        "meta.llama3-70b-instruct-v1:0",
-        "meta.llama3-8b-instruct-v1:0",
-        "amazon.titan-text-express-v1"
+        "global.anthropic.claude-opus-4-7",              // Claude Opus 4.7 (inference profile)
+        "global.anthropic.claude-opus-4-6-v1",           // Claude Opus 4.6 (inference profile)
+        "global.anthropic.claude-sonnet-4-6",            // Claude Sonnet 4.6 (inference profile)
+        "anthropic.claude-3-haiku-20240307-v1:0"         // Claude 3 Haiku (on-demand)
     );
     
     private static final List<String> SARVAM_MODELS = Arrays.asList(
@@ -267,13 +265,12 @@ public class MkPro {
         CentralMemory centralMemory = new CentralMemory();
         Session mkSession = sessionService.createSession(APP_NAME, "Coordinator").blockingGet();
         mkSession.state().put("MKPRO", "REDBUS");
-
         // Discover Available Ports
         int wsPortTemp = useRegistry ? InstanceRegistry.findAvailablePort(wsPortArg != 0 ? wsPortArg : 8087) : (wsPortArg != 0 ? wsPortArg : 8087);
         final int wsPort = wsPortTemp;
         int httpPortTemp = useRegistry ? InstanceRegistry.findAvailablePort(httpPortArg != 0 ? httpPortArg : 8088) : (httpPortArg != 0 ? httpPortArg : 8088);
         final int httpPort = httpPortTemp;
-        
+
         if (instanceName == null) {
             instanceName = Paths.get(System.getProperty("user.dir")).getFileName().toString();
         }
@@ -303,8 +300,8 @@ public class MkPro {
             if (finalUseRegistry) InstanceRegistry.unregisterInstance(finalInstanceName);
         }));
 
-        ActionLogger logger = new ActionLogger("mkpro_logs.db");
-        logger.setWebSocketServer(wsServer);
+        ActionLogger logger = createActionLogger(initialRunnerType, useUI, isVerbose);
+        ActionLogger.setWebSocketServer(wsServer);
 
         java.util.concurrent.atomic.AtomicReference<RunnerType> currentRunnerType = new java.util.concurrent.atomic.AtomicReference<>(initialRunnerType);
 
@@ -332,6 +329,44 @@ public class MkPro {
         }
         
         logger.close();
+    }
+
+    private static ActionLogger createActionLogger(RunnerType runnerType, boolean useUI, boolean verbose) {
+        if (runnerType == RunnerType.IN_MEMORY) {
+            return ActionLogger.inMemory();
+        }
+        String defaultPath = "mkpro_logs.db";
+        try {
+            return new ActionLogger(defaultPath);
+        } catch (Exception e) {
+            boolean isLocked = e.getMessage() != null && e.getMessage().toLowerCase().contains("locked");
+            if (!isLocked) throw e;
+
+            if (useUI) {
+                if (verbose) System.out.println(ANSI_BLUE + "mkpro_logs.db is locked. Using in-memory logger." + ANSI_RESET);
+                return ActionLogger.inMemory();
+            }
+
+            System.out.println(ANSI_BLUE + defaultPath + " is already in use by another process." + ANSI_RESET);
+            System.out.print(ANSI_BLUE + "Create a new log file? (y/n) [y]: " + ANSI_YELLOW);
+            Scanner promptScanner = new Scanner(System.in);
+            String choice = promptScanner.hasNextLine() ? promptScanner.nextLine().trim() : "";
+            System.out.print(ANSI_RESET);
+            if (choice.equalsIgnoreCase("n") || choice.equalsIgnoreCase("no")) {
+                System.out.println(ANSI_BLUE + "Using in-memory logger (logs will not persist)." + ANSI_RESET);
+                return ActionLogger.inMemory();
+            }
+
+            String newPath = "mkpro_logs_" + System.currentTimeMillis() + ".db";
+            try {
+                ActionLogger logger = new ActionLogger(newPath);
+                System.out.println(ANSI_BRIGHT_GREEN + "Using new log file: " + newPath + ANSI_RESET);
+                return logger;
+            } catch (Exception ex) {
+                System.err.println(ANSI_BLUE + "Could not create " + newPath + ": " + ex.getMessage() + ". Falling back to in-memory." + ANSI_RESET);
+                return ActionLogger.inMemory();
+            }
+        }
     }
 
     private static void printBanner() {
@@ -559,10 +594,10 @@ public class MkPro {
             System.err.println(ANSI_BLUE + "Warning: Failed to load agent configs from central memory: " + e.getMessage() + ANSI_RESET);
         }
 
-        // Vector Store Init
+        // Vector Store Init (IN_MEMORY -> no file locks; MAP_DB/POSTGRES -> persistent, fallback to in-memory if locked)
         EmbeddingService embeddingService = IndexingHelper.createEmbeddingService();
         String projectName = Paths.get("").toAbsolutePath().getFileName().toString();
-        MapDBVectorStore vectorStore = IndexingHelper.getOrCreateStore(projectName);
+        com.mkpro.vectorstore.SearchableVectorStore vectorStore = IndexingHelper.getOrCreateStore(projectName, currentRunnerType.get());
 
         // Inject recent history from ActionLogger
         List<String> recentLogs = logger.getRecentLogs(10);
@@ -799,9 +834,11 @@ public class MkPro {
                                 fTerminal.writer().println(ANSI_BLUE + "Warning: Failed to load specific configs for team " + newTeamName + ANSI_RESET);
                             }
 
-                            // Rebuild runner
+                            // Rebuild runner and refresh session
                             runner = runnerFactory.apply(currentRunnerType.get());
-                            fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new team definitions and configs." + ANSI_RESET);
+                            currentSession = runner.sessionService().createSession(APP_NAME, "Coordinator").blockingGet();
+                            saveSessionId(currentSession.id());
+                            fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new team definitions and configs. New session: " + currentSession.id() + ANSI_RESET);
                         } else {
                             fTerminal.writer().println(ANSI_BLUE + "Invalid selection." + ANSI_RESET);
                         }
@@ -1373,7 +1410,9 @@ public class MkPro {
                         }
                         fTerminal.writer().println(ANSI_BLUE + "Updated all agents to [" + selectedProvider + "] " + selectedModel + ANSI_RESET);
                         runner = runnerFactory.apply(currentRunnerType.get());
-                        fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new configurations." + ANSI_RESET);
+                        currentSession = runner.sessionService().createSession(APP_NAME, "Coordinator").blockingGet();
+                        saveSessionId(currentSession.id());
+                        fTerminal.writer().println(ANSI_BLUE + "Runner rebuilt with new configurations. New session: " + currentSession.id() + ANSI_RESET);
                     } else {
                         agentConfigs.put(selectedAgent, new AgentConfig(selectedProvider, selectedModel));
                         centralMemory.saveAgentConfig(currentProjectPath, currentTeam.get(), selectedAgent, selectedProvider.name(), selectedModel);
@@ -1381,7 +1420,9 @@ public class MkPro {
                         
                         if ("Coordinator".equalsIgnoreCase(selectedAgent)) {
                             runner = runnerFactory.apply(currentRunnerType.get());
-                            fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt." + ANSI_RESET);
+                            currentSession = runner.sessionService().createSession(APP_NAME, "Coordinator").blockingGet();
+                            saveSessionId(currentSession.id());
+                            fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt. New session: " + currentSession.id() + ANSI_RESET);
                         }
                     }
 
@@ -1399,7 +1440,7 @@ public class MkPro {
                             
                             if (parts.length == 3 && newProvider != agentConfigs.get(agentName).getProvider()) {
                                 if (newProvider == Provider.GEMINI) newModel = "gemini-1.5-flash";
-                                else if (newProvider == Provider.BEDROCK) newModel = "anthropic.claude-opus-4-6-v1";
+                                else if (newProvider == Provider.BEDROCK) newModel = "global.anthropic.claude-opus-4-7";
                                 else if (newProvider == Provider.OLLAMA) newModel = "devstral-small-2";
                                 else if (newProvider == Provider.SARVAM) newModel = "sarvam-m";
                                 else if (newProvider == Provider.AZURE) newModel = "gpt-4o";
@@ -1411,6 +1452,9 @@ public class MkPro {
                             
                             if ("Coordinator".equalsIgnoreCase(agentName)) {
                                 runner = runnerFactory.apply(currentRunnerType.get());
+                                currentSession = runner.sessionService().createSession(APP_NAME, "Coordinator").blockingGet();
+                                saveSessionId(currentSession.id());
+                                fTerminal.writer().println(ANSI_BLUE + "Coordinator runner rebuilt. New session: " + currentSession.id() + ANSI_RESET);
                             }
                         } catch (IllegalArgumentException e) {
                             fTerminal.writer().println(ANSI_BLUE + "Invalid provider: " + providerStr + ". Use OLLAMA, GEMINI, BEDROCK, SARVAM, or AZURE." + ANSI_RESET);

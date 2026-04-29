@@ -1,55 +1,38 @@
 package com.mkpro;
 
 import com.google.adk.memory.EmbeddingService;
-import com.google.adk.memory.MemoryEntry;
 import com.google.adk.memory.VectorStore;
 import com.google.adk.memory.Vector;
 import com.google.adk.memory.ZeroEmbeddingService;
-import com.google.adk.memory.MapDBVectorStore;
-import com.google.genai.types.Content;
+import com.mkpro.models.RunnerType;
+import com.mkpro.vectorstore.SearchableVectorStore;
+import com.mkpro.vectorstore.VectorStoreProvider;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import java.util.concurrent.ConcurrentHashMap;
 
 public class IndexingHelper {
 
     public static final String ANSI_RESET = "\u001b[0m";
     public static final String ANSI_BLUE = "\u001b[34m";
-    
-    private static final Map<String, MapDBVectorStore> storeCache = new ConcurrentHashMap<>();
 
     public static EmbeddingService createEmbeddingService() {
         return new ZeroEmbeddingService(768);
     }
 
-//    public static MapDBVectorStore createVectorStore() {
-//        String projectName = Paths.get("").toAbsolutePath().getFileName().toString();
-//        // Sanitize project name
-//        projectName = projectName.replaceAll("[^a-zA-Z0-9._-]", "_");
-//        return getOrCreateStore(projectName);
-//    }
-    
-    public static MapDBVectorStore getOrCreateStore(String projectName) {
-        return storeCache.computeIfAbsent(projectName, k -> {
-            String vectorDbPath = Paths.get(System.getProperty("user.home"), ".mkpro", "vectors", k + ".db").toString();
-            File dbFile = new File(vectorDbPath);
-            if (dbFile.getParentFile() != null) {
-                dbFile.getParentFile().mkdirs();
-            }
-            return new MapDBVectorStore(vectorDbPath, k);
-        });
+    /**
+     * Returns a SearchableVectorStore for the project. Delegates to VectorStoreProvider.
+     */
+    public static SearchableVectorStore getOrCreateStore(String projectName, RunnerType runnerType) {
+        return VectorStoreProvider.getOrCreate(projectName, runnerType);
     }
 
     public static void indexCodebase(VectorStore vectorStore, EmbeddingService embeddingService) {
@@ -119,40 +102,18 @@ public class IndexingHelper {
 
             for (File dbFile : dbFiles) {
                 String projectName = dbFile.getName().replace(".db", "");
-                
-                // Filter if targets specified
                 if (targetProjects != null && !targetProjects.isEmpty() && !targetProjects.contains(projectName)) {
                     continue;
                 }
-
                 try {
-                    // Reuse cached store or create/cache new one
-                    VectorStore store = getOrCreateStore(projectName);
-                    
-                    // Use searchTopNVectors if available on MapDBVectorStore, otherwise standard searchVectors
-                    // Assuming MapDBVectorStore implements VectorStore which has searchVectors(embedding, threshold)
-                    // But if we want limit, we might need to filter manually or use a specific implementation method.
-                    // Given the previous manual edit hint, let's cast to MapDBVectorStore if needed or just assume the interface has it?
-                    // Actually, let's use the standard interface method and limit manually.
-                    // But wait, the previous error said `searchVectors` takes (double[], double).
-                    
-                    // Let's try casting to MapDBVectorStore to access searchTopNVectors if it's specific.
-                    if (store instanceof MapDBVectorStore) {
-                         List<Vector> matches = ((MapDBVectorStore) store).searchTopNVectors(embedding, 0.6, limit);
-                         if (!matches.isEmpty()) {
-                            resultBuilder.append("\n=== Project: ").append(projectName).append(" ===\n");
-                            for (Vector vector : matches) {
-                                // Score might not be available in Vector object
-                                resultBuilder.append(vector.getContent()).append("\n\n");
-                            }
+                    SearchableVectorStore store = VectorStoreProvider.tryOpenForSearch(projectName);
+                    if (store == null) continue; // Locked, skip quietly
+                    List<Vector> matches = store.searchTopNVectors(embedding, 0.6, limit);
+                    if (!matches.isEmpty()) {
+                        resultBuilder.append("\n=== Project: ").append(projectName).append(" ===\n");
+                        for (Vector vector : matches) {
+                            resultBuilder.append(vector.getContent()).append("\n\n");
                         }
-                    } else {
-                        // Fallback to standard interface
-                        // Note: return type of searchVectors depends on ADK version. 
-                        // If it returns List<SearchResult>, we need to access that.
-                        // If it returns List<Vector>, we use that.
-                        // I will assume standard usage is searchVectors -> List<SearchResult> but I can't import SearchResult.
-                        // So I will rely on MapDBVectorStore specific method for now as per user hint.
                     }
                 } catch (Exception e) {
                     resultBuilder.append("Error searching project ").append(projectName).append(": ").append(e.getMessage()).append("\n");

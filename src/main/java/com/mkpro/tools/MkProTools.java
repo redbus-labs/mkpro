@@ -13,6 +13,7 @@ import com.google.common.collect.ImmutableMap;
 import io.reactivex.rxjava3.core.Single;
 import com.mkpro.ActionLogger;
 import com.mkpro.CentralMemory;
+import com.mkpro.MkPro;
 
 import java.util.Collections;
 import java.util.List;
@@ -79,7 +80,7 @@ public class MkProTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String query = (String) args.get("query");
-                System.out.println(ANSI_BLUE + "[VectorSearch] Searching for: " + query + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[VectorSearch] Searching for: " + query + ANSI_RESET);
                 
                 return embeddingService.generateEmbedding(query)
                     .map(embedding -> {
@@ -131,7 +132,7 @@ public class MkProTools {
 
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                System.out.println(ANSI_BLUE + "[System] Reading clipboard..." + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[System] Reading clipboard..." + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         // Check for headless mode, though on many servers this might just fail or return empty
@@ -215,7 +216,7 @@ public class MkProTools {
                 int width = ((Double) args.get("width")).intValue();
                 int height = ((Double) args.get("height")).intValue();
 
-                System.out.println(ANSI_BLUE + "[System] Cropping image: " + imagePath + " [" + x + "," + y + " " + width + "x" + height + "]" + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[System] Cropping image: " + imagePath + " [" + x + "," + y + " " + width + "x" + height + "]" + ANSI_RESET);
 
                 return Single.fromCallable(() -> {
                     try {
@@ -285,14 +286,15 @@ public class MkProTools {
                 return Single.fromCallable(() -> {
                     try {
                         Path path = Paths.get(filePath);
+                        long stopToken = MkPro.getStopEpoch();
                         String oldContent = "";
                         if (Files.exists(path)) {
                             oldContent = Files.readString(path);
                         } else {
-                             System.out.println(ANSI_BLUE + "[CodeEditor] Creating NEW file: " + filePath + ANSI_RESET);
+                             MkPro.printAbove(ANSI_BLUE + "[CodeEditor] Creating NEW file: " + filePath + ANSI_RESET);
                         }
 
-                        System.out.println(ANSI_BLUE + "\n--- PROPOSED CHANGES FOR: " + filePath + " ---" + ANSI_RESET);
+                        MkPro.printAbove(ANSI_BLUE + "\n--- PROPOSED CHANGES FOR: " + filePath + " ---" + ANSI_RESET);
                         
                         // Simple Diff Preview
                         String[] oldLines = oldContent.split("\n");
@@ -300,13 +302,13 @@ public class MkProTools {
                         
                         // Heuristic: If file is huge, just show head/tail or size diff
                         if (newLines.length > 50 && oldLines.length > 50) {
-                            System.out.println(ANSI_YELLOW + "File is large (" + newLines.length + " lines). Showing first 10 and last 10 lines." + ANSI_RESET);
+                            MkPro.printAbove(ANSI_YELLOW + "File is large (" + newLines.length + " lines). Showing first 10 and last 10 lines." + ANSI_RESET);
                              for (int i = 0; i < Math.min(10, newLines.length); i++) {
-                                System.out.println(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
+                                MkPro.printAbove(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
                             }
-                            System.out.println("...");
+                            MkPro.printAbove("...");
                             for (int i = Math.max(0, newLines.length - 10); i < newLines.length; i++) {
-                                System.out.println(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
+                                MkPro.printAbove(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
                             }
                         } else {
                             // Show full content for smaller files (simplified view)
@@ -322,83 +324,106 @@ public class MkProTools {
                                 String newL = (i < newLines.length) ? newLines[i] : null;
                                 
                                 if (oldL == null && newL != null) {
-                                    System.out.println(ANSI_GREEN + "+ " + newL + ANSI_RESET);
+                                    MkPro.printAbove(ANSI_GREEN + "+ " + newL + ANSI_RESET);
                                     hasChanges = true;
                                 } else if (oldL != null && newL == null) {
-                                    System.out.println(ANSI_RED + "- " + oldL + ANSI_RESET);
+                                    MkPro.printAbove(ANSI_RED + "- " + oldL + ANSI_RESET);
                                     hasChanges = true;
                                 } else if (!oldL.equals(newL)) {
-                                    System.out.println(ANSI_RED + "- " + oldL + ANSI_RESET);
-                                    System.out.println(ANSI_GREEN + "+ " + newL + ANSI_RESET);
+                                    MkPro.printAbove(ANSI_RED + "- " + oldL + ANSI_RESET);
+                                    MkPro.printAbove(ANSI_GREEN + "+ " + newL + ANSI_RESET);
                                     hasChanges = true;
                                 } else {
                                     // Context lines (optional, maybe skip for brevity if unchanged)
-                                    // System.out.println("  " + oldL);
+                                    // MkPro.printAbove("  " + oldL);
                                 }
                             }
                             
                             if (!hasChanges) {
-                                System.out.println(ANSI_YELLOW + "No textual changes detected." + ANSI_RESET);
+                                MkPro.printAbove(ANSI_YELLOW + "No textual changes detected." + ANSI_RESET);
                             }
                         }
 
-                        System.out.println(ANSI_BLUE + "---------------------------------------------" + ANSI_RESET);
-                        
-                        // Auto-approve logic
-                        System.out.print(ANSI_YELLOW + "Auto-approving in 7s... (Press Enter to pause/reject) " + ANSI_RESET);
-                        
-                        boolean interrupted = false;
-                        for (int i = 7; i > 0; i--) {
-                            System.out.print("\r" + ANSI_YELLOW + "Auto-approving in " + i + "s... (Press Enter to pause/reject)   " + ANSI_RESET);
-                            // Check if input is available (non-blocking check)
-                            try {
-                                if (System.in.available() > 0) {
-                                    interrupted = true;
-                                    break;
+                        MkPro.printAbove(ANSI_BLUE + "---------------------------------------------" + ANSI_RESET);
+
+                        boolean inputLocked = false;
+                        try {
+                            MkPro.lockInput();
+                            inputLocked = true;
+
+                            // Auto-approve logic
+                            MkPro.printAbove(ANSI_YELLOW + "Auto-approving in 7s... (Press Enter to pause/reject) " + ANSI_RESET);
+                            
+                            boolean interrupted = false;
+                            for (int i = 7; i > 0; i--) {
+                                MkPro.printAbove("\r" + ANSI_YELLOW + "Auto-approving in " + i + "s... (Press Enter to pause/reject)   " + ANSI_RESET);
+                                // Check if input is available (non-blocking check)
+                                try {
+                                    if (MkPro.getStopEpoch() != stopToken) {
+                                        MkPro.printAbove(ANSI_YELLOW + "Cancelled by /stop." + ANSI_RESET);
+                                        return Collections.singletonMap("status", "Cancelled by /stop: " + filePath);
+                                    }
+                                    if (MkPro.drainTerminalInput()) {
+                                        interrupted = true;
+                                        break;
+                                    }
+                                    Thread.sleep(1000);
+                                } catch (Exception e) {
+                                    // Ignore
                                 }
-                                Thread.sleep(1000);
-                            } catch (Exception e) {
-                                // Ignore
                             }
-                        }
-                        System.out.println(); // Newline
+                            MkPro.printAbove(""); // Newline
 
-                        if (!interrupted) {
-                            System.out.println(ANSI_GREEN + "Time's up! Auto-approving changes." + ANSI_RESET);
-                            if (path.getParent() != null) {
-                                Files.createDirectories(path.getParent());
-                            }
-                            if (Files.exists(path)) {
-                                System.out.println(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
-                                Maker.backItUp(path.toFile());
-                            }
-                            Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                            return Collections.singletonMap("status", "File written successfully (Auto-approved): " + filePath);
-                        }
-
-                        // Fallback to manual confirmation if interrupted
-                        System.out.print(ANSI_YELLOW + "Apply these changes? [y/N]: " + ANSI_RESET);
-                        Scanner scanner = new Scanner(System.in);
-                        if (scanner.hasNextLine()) {
-                            String input = scanner.nextLine().trim();
-                            if ("y".equalsIgnoreCase(input) || "yes".equalsIgnoreCase(input)) {
+                            if (!interrupted) {
+                                MkPro.printAbove(ANSI_GREEN + "Time's up! Auto-approving changes." + ANSI_RESET);
+                                if (MkPro.getStopEpoch() != stopToken) {
+                                    MkPro.printAbove(ANSI_YELLOW + "Cancelled by /stop." + ANSI_RESET);
+                                    return Collections.singletonMap("status", "Cancelled by /stop: " + filePath);
+                                }
                                 if (path.getParent() != null) {
                                     Files.createDirectories(path.getParent());
                                 }
                                 if (Files.exists(path)) {
-                                    System.out.println(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
+                                    MkPro.printAbove(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
                                     Maker.backItUp(path.toFile());
                                 }
                                 Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                                System.out.println(ANSI_GREEN + "File written successfully." + ANSI_RESET);
-                                return Collections.singletonMap("status", "File written successfully: " + filePath);
-                            } else {
-                                System.out.println(ANSI_RED + "Changes rejected by user." + ANSI_RESET);
-                                return Collections.singletonMap("status", "User rejected changes for: " + filePath);
+                                return Collections.singletonMap("status", "File written successfully (Auto-approved): " + filePath);
+                            }
+
+                            // Fallback to manual confirmation if interrupted
+                            MkPro.printAbove(ANSI_YELLOW + "Apply these changes? [y/N]: " + ANSI_RESET);
+                            Scanner scanner = new Scanner(System.in);
+                            if (scanner.hasNextLine()) {
+                                String input = scanner.nextLine().trim();
+                                if (input.toLowerCase().startsWith("/stop")) {
+                                    MkPro.signalStop();
+                                    MkPro.printAbove(ANSI_YELLOW + "Cancelled by /stop." + ANSI_RESET);
+                                    return Collections.singletonMap("status", "Cancelled by /stop: " + filePath);
+                                }
+                                if ("y".equalsIgnoreCase(input) || "yes".equalsIgnoreCase(input)) {
+                                    if (path.getParent() != null) {
+                                        Files.createDirectories(path.getParent());
+                                    }
+                                    if (Files.exists(path)) {
+                                        MkPro.printAbove(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
+                                        Maker.backItUp(path.toFile());
+                                    }
+                                    Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                                    MkPro.printAbove(ANSI_GREEN + "File written successfully." + ANSI_RESET);
+                                    return Collections.singletonMap("status", "File written successfully: " + filePath);
+                                } else {
+                                    MkPro.printAbove(ANSI_RED + "Changes rejected by user." + ANSI_RESET);
+                                    return Collections.singletonMap("status", "User rejected changes for: " + filePath);
+                                }
+                            }
+                            
+                            return Collections.singletonMap("status", "No input received. Changes rejected.");
+                        } finally {
+                            if (inputLocked) {
+                                MkPro.unlockInput();
                             }
                         }
-                        
-                        return Collections.singletonMap("status", "No input received. Changes rejected.");
 
                     } catch (IOException e) {
                         return Collections.singletonMap("error", "Error processing safe write: " + e.getMessage());
@@ -434,7 +459,7 @@ public class MkProTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String filePath = (String) args.get("file_path");
-                System.out.println(ANSI_BLUE + "[Coder] Reading file: " + filePath + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[Coder] Reading file: " + filePath + ANSI_RESET);
                 try {
                     Path path = Paths.get(filePath);
                     if (!Files.exists(path)) {
@@ -485,7 +510,7 @@ public class MkProTools {
                 Boolean recursive = (Boolean) args.get("recursive");
                 if (recursive == null) recursive = false;
 
-                System.out.println(ANSI_BLUE + "[Coder] Listing directory " + (recursive ? "(recursive)" : "") + ": " + dirPath + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[Coder] Listing directory " + (recursive ? "(recursive)" : "") + ": " + dirPath + ANSI_RESET);
                 try {
                     Path startPath = Paths.get(dirPath);
                     if (!Files.exists(startPath) || !Files.isDirectory(startPath)) {
@@ -579,7 +604,7 @@ public class MkProTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String url = (String) args.get("url");
-                System.out.println(ANSI_BLUE + "[Coordinator] Fetching URL: " + url + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[Coordinator] Fetching URL: " + url + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         HttpRequest request = HttpRequest.newBuilder()
@@ -646,7 +671,7 @@ public class MkProTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String query = (String) args.get("query");
-                System.out.println(ANSI_BLUE + "[Search] Googling: " + query + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[Search] Googling: " + query + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         String encodedQuery = java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8);
@@ -725,7 +750,7 @@ public class MkProTools {
                 Double limitD = (Double) args.get("limit"); // JSON numbers often come as Double
                 int limit = limitD != null ? limitD.intValue() : 5;
 
-                System.out.println(ANSI_BLUE + "[MultiVectorSearch] Searching for: " + query + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[MultiVectorSearch] Searching for: " + query + ANSI_RESET);
                 
                 return Single.fromCallable(() -> {
                     String result = IndexingHelper.searchMultipleProjects(query, projects, embeddingService, limit);
@@ -761,7 +786,7 @@ public class MkProTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String filePath = (String) args.get("file_path");
-                System.out.println(ANSI_BLUE + "[Coder] Analyzing image: " + filePath + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[Coder] Analyzing image: " + filePath + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         Path path = Paths.get(filePath);
@@ -816,7 +841,7 @@ public class MkProTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String filePath = (String) args.get("file_path");
-                System.out.println(ANSI_BLUE + "[Coder] Writing file: " + filePath + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[Coder] Writing file: " + filePath + ANSI_RESET);
                 String content = (String) args.get("content");
                 return Single.fromCallable(() -> {
                     try {
@@ -868,11 +893,11 @@ public class MkProTools {
 
                 // Security Check
                 if (!Maker.isAllowed(command)) {
-                    System.out.println(ANSI_RED + "[SysAdmin] BLOCKED: " + command + ANSI_RESET);
+                    MkPro.printAbove(ANSI_RED + "[SysAdmin] BLOCKED: " + command + ANSI_RESET);
                     return Single.just(Collections.singletonMap("error", "Command blocked by security policy: " + command));
                 }
 
-                System.out.println(ANSI_BLUE + "[SysAdmin] Executing: " + command + (Boolean.TRUE.equals(background) ? " (Background)" : "") + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[SysAdmin] Executing: " + command + (Boolean.TRUE.equals(background) ? " (Background)" : "") + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         ProcessBuilder pb;
@@ -993,7 +1018,7 @@ public class MkProTools {
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String content = (String) args.get("content");
                 String currentPath = Paths.get("").toAbsolutePath().toString();
-                System.out.println(ANSI_BLUE + "[Coordinator] Saving to central memory for: " + currentPath + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[Coordinator] Saving to central memory for: " + currentPath + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         centralMemory.saveMemory(currentPath, content);
@@ -1033,7 +1058,7 @@ public class MkProTools {
                 String pathArg = (String) args.get("project_path");
                 String currentPath = (pathArg != null && !pathArg.isBlank()) ? pathArg : Paths.get("").toAbsolutePath().toString();
                 
-                System.out.println(ANSI_BLUE + "[Coordinator] Reading central memory for: " + currentPath + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[Coordinator] Reading central memory for: " + currentPath + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         String memory = centralMemory.getMemory(currentPath);
@@ -1068,7 +1093,7 @@ public class MkProTools {
 
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                System.out.println(ANSI_BLUE + "[Coordinator] Listing central memory projects..." + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[Coordinator] Listing central memory projects..." + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         Map<String, String> memories = centralMemory.getAllMemories();
@@ -1111,7 +1136,7 @@ public class MkProTools {
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String description = (String) args.get("description");
                 String currentPath = Paths.get("").toAbsolutePath().toString();
-                System.out.println(ANSI_BLUE + "[GoalTracker] Adding goal: " + description + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[GoalTracker] Adding goal: " + description + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         com.mkpro.models.Goal goal = new com.mkpro.models.Goal(description);
@@ -1145,7 +1170,7 @@ public class MkProTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String currentPath = Paths.get("").toAbsolutePath().toString();
-                System.out.println(ANSI_BLUE + "[GoalTracker] Listing goals..." + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[GoalTracker] Listing goals..." + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         List<com.mkpro.models.Goal> goals = centralMemory.getGoals(currentPath);
@@ -1198,7 +1223,7 @@ public class MkProTools {
                 String statusStr = (String) args.get("status");
                 String currentPath = Paths.get("").toAbsolutePath().toString();
                 
-                System.out.println(ANSI_BLUE + "[GoalTracker] Updating goal " + goalId + " to " + statusStr + ANSI_RESET);
+                MkPro.printAbove(ANSI_BLUE + "[GoalTracker] Updating goal " + goalId + " to " + statusStr + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
                         List<com.mkpro.models.Goal> goals = centralMemory.getGoals(currentPath);

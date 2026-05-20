@@ -5,7 +5,7 @@ setlocal
 set "SCRIPT_DIR=%~dp0"
 
 :: Define the path to the shaded JAR
-set "JAR_PATH=%SCRIPT_DIR%target\mkpro-2.0.jar"
+set "JAR_PATH=%SCRIPT_DIR%target\mkpro-3.0.jar"
 
 :: Check if the JAR exists
 if not exist "%JAR_PATH%" (
@@ -15,6 +15,6 @@ if not exist "%JAR_PATH%" (
 )
 
 :: Run the application
-java -jar "%JAR_PATH%" %*
+java -Dmkpro.db.name=%~n0 -jar "%JAR_PATH%" %*
 
 endlocal

@@ -20,6 +20,10 @@ public class AgentRequest {
         this.tools = tools;
     }
 
+    public AgentRequest(String userPrompt) {
+        this.userPrompt = userPrompt;
+    }
+
     public String getAgentName() { return agentName; }
     public String getInstruction() { return instruction; }
     public String getModelName() { return modelName; }

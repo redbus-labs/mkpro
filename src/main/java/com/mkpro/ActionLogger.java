@@ -176,4 +176,16 @@ public class ActionLogger {
             db.close();
         }
     }
+
+    public static void shutdown() {
+        shippingExecutor.shutdown();
+        try {
+            if (!shippingExecutor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                shippingExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            shippingExecutor.shutdownNow();
+        }
+        close();
+    }
 }

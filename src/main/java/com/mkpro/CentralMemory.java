@@ -1,322 +1,286 @@
 package com.mkpro;
 
+import com.mkpro.models.AgentConfig;
+import com.mkpro.models.AgentStat;
+import com.mkpro.models.Goal;
+import com.mkpro.models.McpServer;
+import com.mkpro.models.Provider;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
-import org.mapdb.HTreeMap;
-import org.mapdb.IndexTreeList;
 import org.mapdb.Serializer;
-import com.mkpro.models.AgentStat;
 
-import java.io.File;
-import java.nio.file.Paths;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Collectors;
 
+/**
+ * CentralMemory is the source of truth for the application's persistent state.
+ * It uses MapDB to store memories, goals, agent statistics, agent configurations,
+ * and server settings.
+ */
 public class CentralMemory {
 
-    private final String dbPath;
-
-    public CentralMemory() {
-        String userHome = System.getProperty("user.home");
-        File mkproDir = new File(userHome, ".mkpro");
-        if (!mkproDir.exists()) {
-            mkproDir.mkdirs();
-        }
-        this.dbPath = new File(mkproDir, "central_memory.db").getAbsolutePath();
+    public interface MemoryListener {
+        void onUpdate(String key, Object value);
     }
 
-    private DB openDB() {
-        return DBMaker.fileDB(dbPath)
+    private final DB db;
+    private final ConcurrentMap<String, String> memories;
+    private final ConcurrentMap<String, List<Goal>> project_goals;
+    private final ConcurrentMap<String, List<McpServer>> mcp_servers;
+    private final List<AgentStat> agent_stats;
+    private final ConcurrentMap<String, AgentConfig> agent_configs;
+    private final ConcurrentMap<String, List<String>> ollama_servers;
+    private final ConcurrentMap<String, String> selected_ollama_server;
+
+    private final List<MemoryListener> listeners = new ArrayList<>();
+    private static CentralMemory instance;
+
+    /**
+     * Singleton accessor for CentralMemory.
+     */
+    public static synchronized CentralMemory getInstance() {
+        if (instance == null) {
+            instance = new CentralMemory();
+        }
+        return instance;
+    }
+
+    @SuppressWarnings("unchecked")
+    public CentralMemory() {
+        this.db = DBMaker.fileDB("central_memory.db")
+                .closeOnJvmShutdown()
                 .transactionEnable()
                 .make();
+
+        this.memories = db.hashMap("memories", Serializer.STRING, Serializer.STRING).createOrOpen();
+        this.project_goals = db.hashMap("project_goals", Serializer.STRING, Serializer.JAVA).createOrOpen();
+        this.mcp_servers = db.hashMap("mcp_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
+        this.agent_stats = (List<AgentStat>) db.indexTreeList("agent_stats", Serializer.JAVA).createOrOpen();
+        this.agent_configs = db.hashMap("agent_configs", Serializer.STRING, Serializer.JAVA).createOrOpen();
+        this.ollama_servers = db.hashMap("ollama_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
+        this.selected_ollama_server = db.hashMap("selected_ollama_server", Serializer.STRING, Serializer.STRING).createOrOpen();
     }
 
-    public void saveMemory(String projectPath, String content) {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> projectMemories = db.hashMap("project_memories")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
+    public void addListener(MemoryListener l) {
+        listeners.add(l);
+    }
 
-            // Append timestamp
-            String timestampedContent = String.format("--- Saved: %s ---\n%s", Instant.now(), content);
-            
-            String existing = projectMemories.get(projectPath);
-            if (existing != null) {
-                timestampedContent = existing + "\n\n" + timestampedContent;
-            }
-            
-            projectMemories.put(projectPath, timestampedContent);
-            db.commit();
+    private void notifyListeners(String key, Object value) {
+        for (MemoryListener l : listeners) {
+            l.onUpdate(key, value);
         }
     }
 
-    public String getMemory(String projectPath) {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> projectMemories = db.hashMap("project_memories")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
-            return projectMemories.get(projectPath);
-        }
+    // --- Memories ---
+
+    public String getMemory(String path) {
+        return memories.getOrDefault(path, "");
     }
-    
+
+    public void saveMemory(String path, String content) {
+        memories.put(path, content);
+        db.commit();
+        notifyListeners("memory:" + path, content);
+    }
+
     public Map<String, String> getAllMemories() {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> projectMemories = db.hashMap("project_memories")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
-            Map<String, String> copy = new HashMap<>();
-            projectMemories.forEach((k, v) -> copy.put((String)k, (String)v));
-            return copy;
+        return new HashMap<>(memories);
+    }
+
+    // --- Goals ---
+
+    public List<Goal> getGoals(String path) {
+        return project_goals.getOrDefault(path, Collections.emptyList());
+    }
+
+    public void addGoal(String path, Goal goal) {
+        List<Goal> goals = new ArrayList<>(getGoals(path));
+        goals.add(goal);
+        setGoals(path, goals);
+    }
+
+    public void updateGoal(String path, Goal updatedGoal) {
+        List<Goal> goals = new ArrayList<>(getGoals(path));
+        boolean found = false;
+        for (int i = 0; i < goals.size(); i++) {
+            if (goals.get(i).getId().equals(updatedGoal.getId())) {
+                goals.set(i, updatedGoal);
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            setGoals(path, goals);
         }
     }
 
-    public void saveAgentConfig(String projectPath, String teamName, String agentName, String provider, String modelName) {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> configs = db.hashMap("agent_configs")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
-            String key = projectPath + ":" + teamName + ":" + agentName;
-            configs.put(key, provider + "|" + modelName);
-            db.commit();
-        }
+    public void setGoals(String path, List<Goal> goals) {
+        project_goals.put(path, goals);
+        db.commit();
+        notifyListeners("goals:" + path, goals);
     }
 
-    public Map<String, String> getAgentConfigs(String projectPath, String teamName) {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> configs = db.hashMap("agent_configs")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
-            Map<String, String> teamConfigs = new HashMap<>();
-            
-            String prefix = projectPath + ":" + teamName + ":";
-            configs.forEach((k, v) -> {
-                String key = (String) k;
-                if (key.startsWith(prefix)) {
-                    teamConfigs.put(key.substring(prefix.length()), (String) v);
-                }
-            });
-            
-            return teamConfigs;
-        }
-    }
-
-    public Map<String, String> getAllAgentConfigs() {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> configs = db.hashMap("agent_configs")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
-            Map<String, String> copy = new HashMap<>();
-            configs.forEach((k, v) -> copy.put((String)k, (String)v));
-            return copy;
-        }
-    }
+    // --- Agent Stats ---
 
     public void saveAgentStat(AgentStat stat) {
-        try (DB db = openDB()) {
-            IndexTreeList<AgentStat> stats = (IndexTreeList<AgentStat>) db.indexTreeList("agent_stats", Serializer.JAVA)
-                    .createOrOpen();
-            stats.add(stat);
-            db.commit();
-        }
+        agent_stats.add(stat);
+        db.commit();
+        notifyListeners("agent_stats", getAgentStats());
     }
 
     public List<AgentStat> getAgentStats() {
-        try (DB db = openDB()) {
-            IndexTreeList<AgentStat> stats = (IndexTreeList<AgentStat>) db.indexTreeList("agent_stats", Serializer.JAVA)
-                    .createOrOpen();
-            return new ArrayList<>(stats);
+        return new ArrayList<>(agent_stats);
+    }
+
+    // --- Agent Configs ---
+
+    public AgentConfig getAgentConfigs(String agentName) {
+        return agent_configs.get(agentName);
+    }
+
+    public List<AgentConfig> getAgentConfigs(String agentName, String projectPath) {
+        AgentConfig config = agent_configs.get(agentName);
+        if (config != null) {
+            return Collections.singletonList(config);
         }
+        return Collections.emptyList();
+    }
+
+    public Map<String, String> getAgentConfigsAsMap(String agentName, String projectPath) {
+        List<AgentConfig> configs = getAgentConfigs(agentName, projectPath);
+        Map<String, String> map = new HashMap<>();
+        if (!configs.isEmpty()) {
+            AgentConfig config = configs.get(0);
+            map.put("modelName", config.getModelName());
+            map.put("provider", config.getProvider() != null ? config.getProvider().name() : "");
+        }
+        return map;
+    }
+
+    public void saveAgentConfig(String agentName, AgentConfig config) {
+        agent_configs.put(agentName, config);
+        db.commit();
+        notifyListeners("agent_config:" + agentName, config);
+    }
+
+    public void deleteAgentConfig(String agentName) {
+        agent_configs.remove(agentName);
+        db.commit();
+        notifyListeners("agent_config_deleted:" + agentName, null);
+    }
+
+    public void saveAgentConfig(String agentName, String modelName, String provider, String systemPrompt, String projectPath) {
+        Provider p;
+        try {
+            p = Provider.valueOf(provider.toUpperCase());
+        } catch (Exception e) {
+            p = Provider.OLLAMA;
+        }
+        AgentConfig config = new AgentConfig(p, modelName);
+        saveAgentConfig(agentName, config);
+    }
+
+    public Map<String, AgentConfig> getAllAgentConfigs() {
+        return new HashMap<>(agent_configs);
+    }
+
+    // --- Ollama Servers ---
+
+    public List<String> getOllamaServers() {
+        return ollama_servers.getOrDefault("list", Collections.emptyList());
     }
 
     public void saveOllamaServers(List<String> servers) {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> config = db.hashMap("ollama_config")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
-            config.put("servers", String.join(",", servers));
-            db.commit();
-        }
-    }
-
-    public List<String> getOllamaServers() {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> config = db.hashMap("ollama_config")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
-            String servers = config.get("servers");
-            if (servers == null || servers.isEmpty()) {
-                List<String> defaults = new ArrayList<>();
-                defaults.add("http://localhost:11434");
-                return defaults;
-            }
-            return new ArrayList<>(List.of(servers.split(",")));
-        }
-    }
-
-    public void saveSelectedOllamaServer(String url) {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> config = db.hashMap("ollama_config")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
-            config.put("selected_server", url);
-            db.commit();
-        }
+        ollama_servers.put("list", servers);
+        db.commit();
+        notifyListeners("ollama_servers", servers);
     }
 
     public String getSelectedOllamaServer() {
-        try (DB db = openDB()) {
-            HTreeMap<String, String> config = db.hashMap("ollama_config")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.STRING)
-                    .createOrOpen();
-            String selected = config.get("selected_server");
-            return selected != null ? selected : "http://localhost:11434";
-        }
+        return selected_ollama_server.getOrDefault("url", "");
     }
 
-    public void addGoal(String projectPath, com.mkpro.models.Goal goal) {
-        try (DB db = openDB()) {
-            HTreeMap<String, ArrayList<com.mkpro.models.Goal>> projectGoals = db.hashMap("project_goals")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.JAVA)
-                    .createOrOpen();
-            
-            ArrayList<com.mkpro.models.Goal> goals = projectGoals.get(projectPath);
-            if (goals == null) {
-                goals = new ArrayList<>();
-            }
-            goals.add(goal);
-            projectGoals.put(projectPath, goals);
-            db.commit();
-        }
+    public void saveSelectedOllamaServer(String url) {
+        selected_ollama_server.put("url", url);
+        db.commit();
+        notifyListeners("selected_ollama_server", url);
     }
 
-    public List<com.mkpro.models.Goal> getGoals(String projectPath) {
-        try (DB db = openDB()) {
-            HTreeMap<String, ArrayList<com.mkpro.models.Goal>> projectGoals = db.hashMap("project_goals")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.JAVA)
-                    .createOrOpen();
-            
-            ArrayList<com.mkpro.models.Goal> goals = projectGoals.get(projectPath);
-            if (goals == null) {
-                return new ArrayList<>();
-            }
-            return new ArrayList<>(goals);
-        }
+    // --- MCP Servers ---
+
+    public List<McpServer> getMcpServers() {
+        return mcp_servers.getOrDefault("all", Collections.emptyList());
     }
 
-    public void updateGoal(String projectPath, com.mkpro.models.Goal updatedGoal) {
-        try (DB db = openDB()) {
-            HTreeMap<String, ArrayList<com.mkpro.models.Goal>> projectGoals = db.hashMap("project_goals")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.JAVA)
-                    .createOrOpen();
-            
-            ArrayList<com.mkpro.models.Goal> goals = projectGoals.get(projectPath);
-            if (goals != null) {
-                for (int i = 0; i < goals.size(); i++) {
-                    if (goals.get(i).getId().equals(updatedGoal.getId())) {
-                        goals.set(i, updatedGoal);
-                        break;
-                    }
-                }
-                projectGoals.put(projectPath, goals);
-                db.commit();
-            }
-        }
-    }
-    
-    public void setGoals(String projectPath, List<com.mkpro.models.Goal> goals) {
-        try (DB db = openDB()) {
-            HTreeMap<String, ArrayList<com.mkpro.models.Goal>> projectGoals = db.hashMap("project_goals")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.JAVA)
-                    .createOrOpen();
-            
-            projectGoals.put(projectPath, new ArrayList<>(goals));
-            db.commit();
-        }
+    public void saveMcpServers(List<McpServer> servers) {
+        mcp_servers.put("all", servers);
+        db.commit();
+        notifyListeners("mcp_servers", servers);
     }
 
-    // ── MCP Server Registry ──────────────────────────────────────────
-
-    public void saveMcpServers(List<com.mkpro.models.McpServer> servers) {
-        try (DB db = openDB()) {
-            HTreeMap<String, ArrayList<com.mkpro.models.McpServer>> mcpMap = db.hashMap("mcp_servers")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.JAVA)
-                    .createOrOpen();
-            mcpMap.put("registry", new ArrayList<>(servers));
-            db.commit();
-        }
-    }
-
-    public List<com.mkpro.models.McpServer> getMcpServers() {
-        try (DB db = openDB()) {
-            HTreeMap<String, ArrayList<com.mkpro.models.McpServer>> mcpMap = db.hashMap("mcp_servers")
-                    .keySerializer(Serializer.STRING)
-                    .valueSerializer(Serializer.JAVA)
-                    .createOrOpen();
-            ArrayList<com.mkpro.models.McpServer> servers = mcpMap.get("registry");
-            return servers != null ? new ArrayList<>(servers) : new ArrayList<>();
-        }
-    }
-
-    public void addMcpServer(com.mkpro.models.McpServer server) {
-        List<com.mkpro.models.McpServer> servers = getMcpServers();
+    public void addMcpServer(McpServer server) {
+        List<McpServer> servers = new ArrayList<>(getMcpServers());
+        servers.removeIf(s -> s.getId().equals(server.getId()));
         servers.add(server);
         saveMcpServers(servers);
     }
 
-    public boolean removeMcpServer(String serverId) {
-        List<com.mkpro.models.McpServer> servers = getMcpServers();
-        boolean removed = servers.removeIf(s -> s.getId().equals(serverId));
-        if (removed) saveMcpServers(servers);
-        return removed;
+    public void removeMcpServer(String id) {
+        List<McpServer> servers = new ArrayList<>(getMcpServers());
+        if (servers.removeIf(s -> s.getId().equals(id))) {
+            saveMcpServers(servers);
+        }
     }
 
-    public boolean toggleMcpServer(String serverId) {
-        List<com.mkpro.models.McpServer> servers = getMcpServers();
-        for (com.mkpro.models.McpServer s : servers) {
-            if (s.getId().equals(serverId)) {
+    public void toggleMcpServer(String id) {
+        List<McpServer> servers = new ArrayList<>(getMcpServers());
+        for (McpServer s : servers) {
+            if (s.getId().equals(id)) {
                 s.setEnabled(!s.isEnabled());
                 saveMcpServers(servers);
-                return true;
+                break;
             }
         }
-        return false;
     }
 
-    public List<com.mkpro.models.McpServer> getEnabledMcpServers() {
-        List<com.mkpro.models.McpServer> all = getMcpServers();
-        List<com.mkpro.models.McpServer> enabled = new ArrayList<>();
-        for (com.mkpro.models.McpServer s : all) {
-            if (s.isEnabled()) enabled.add(s);
-        }
-        return enabled;
+    public List<McpServer> getEnabledMcpServers() {
+        return getMcpServers().stream()
+                .filter(McpServer::isEnabled)
+                .collect(Collectors.toList());
     }
 
-    public void updateMcpServerConnection(String serverId) {
-        List<com.mkpro.models.McpServer> servers = getMcpServers();
-        for (com.mkpro.models.McpServer s : servers) {
-            if (s.getId().equals(serverId)) {
+    public void updateMcpServerConnection(String id) {
+        List<McpServer> servers = new ArrayList<>(getMcpServers());
+        for (McpServer s : servers) {
+            if (s.getId().equals(id)) {
                 s.setLastConnectedAt(System.currentTimeMillis());
                 saveMcpServers(servers);
-                return;
+                break;
             }
         }
+    }
+
+    // --- Synchronization ---
+
+    @SuppressWarnings("unchecked")
+    public void updateFromRemote(String key, Object value) {
+        if (key.startsWith("memory:")) {
+            memories.put(key.substring(7), (String) value);
+        } else if (key.startsWith("goals:")) {
+            project_goals.put(key.substring(6), (List<Goal>) value);
+        } else if (key.equals("mcp_servers")) {
+            mcp_servers.put("all", (List<McpServer>) value);
+        } else if (key.equals("agent_stats")) {
+            agent_stats.clear();
+            agent_stats.addAll((List<AgentStat>) value);
+        } else if (key.startsWith("agent_config:")) {
+            agent_configs.put(key.substring(13), (AgentConfig) value);
+        } else if (key.equals("ollama_servers")) {
+            ollama_servers.put("list", (List<String>) value);
+        } else if (key.equals("selected_ollama_server")) {
+            selected_ollama_server.put("url", (String) value);
+        }
+        db.commit();
     }
 }

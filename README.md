@@ -109,14 +109,23 @@ Do you have a specific server or script in this project you want to start up now
 
 ## 💎 Supported Gemini Models
 
-`mkpro` is optimized for the latest Gemini 3 and 1.5 series models. You can configure any agent to use these models via the `/config` command or team YAML files:
+`mkpro` is optimized for the latest Gemini 3, 2.0 and 1.5 series models. You can configure any agent to use these models via the `/config` command or team YAML files:
 
 | Model | Best For |
 | :--- | :--- |
-| **gemini-3-pro** | **Ultimate Multimodal Reasoning**. The flagship model for complex architecture, agentic workflows, and deep interactivity. Includes 'Deep Think' reasoning capabilities. |
-| **gemini-3-flash** | **Frontier Speed**. Lightning-fast intelligence for rapid iterations, testing, and system administration. |
+| **gemini-3.1-pro-preview** | **Next-gen Pro Preview**. Preview of the most capable Gemini model. |
+| **gemini-3.1-flash-lite** | **Ultra-efficient Flash**. Smallest and fastest model for high-frequency tasks. |
+| **gemini-3-flash-preview** | **Gemini 3 Flash Preview**. Early access to the next-gen flash model. |
+| **gemini-3-pro** | **Gemini 3 (Future/Flagship)**. Speculative next-generation flagship model. |
+| **gemini-3-flash** | **Gemini 3 Flash (Future/Speed)**. Speculative next-generation speed-optimized model. |
+| **gemini-2.0-flash** | **Next-gen Speed & Multimodal**. High performance and low latency. |
+| **gemini-2.0-flash-thinking-exp**| **Advanced Reasoning**. Experimental model with deep reasoning capabilities. |
+| **gemini-2.0-pro-exp** | **Ultimate Intelligence**. The most capable model for complex reasoning and architecture. |
 | **gemini-1.5-pro** | **Large Context Reasoning**. Stable option for processing massive codebases (up to 2M tokens). |
 | **gemini-1.5-flash** | **Efficiency**. Cost-effective and reliable for high-frequency sub-agent tasks. |
+| **gemini-1.5-flash-8b** | **High-speed, small-scale**. Optimized for high-volume, lower-complexity tasks. |
+
+*Full supported list: gemini-3.1-pro-preview, gemini-3.1-flash-lite, gemini-3-flash-preview, gemini-3-pro, gemini-3-flash, gemini-2.0-flash, gemini-2.0-flash-lite-preview-02-05, gemini-2.0-pro-exp-02-05, gemini-2.0-flash-thinking-exp-01-21, gemini-1.5-pro, gemini-1.5-pro-latest, gemini-1.5-pro-002, gemini-1.5-flash, gemini-1.5-flash-latest, gemini-1.5-flash-002, gemini-1.5-flash-8b, gemini-1.5-flash-8b-latest, gemini-1.5-flash-8b-001.*
 
 ## 🦙 Supported Ollama Models
 
@@ -128,48 +137,56 @@ For local, privacy-first inference, `mkpro` supports a wide range of models via 
 | **Qwen 2.5 Coder** | **Code Repair & Polyglot**. Excellent at fixing bugs and supporting 92+ languages. | `qwen2.5-coder:32b` |
 | **Llama 3.3** | **General Reasoning**. Powerful all-rounder from Meta with strong logic capabilities. | `llama3.3` |
 | **Phi-4** | **Complex Reasoning**. Microsoft's small but mighty model, optimized for deep logical tasks. | `phi4` |
-| **Mistral Large 2** | **Reasoning & Instruction**. High-performance model for complex instructions. | `mistral-large` |
+| **Llama 3.1** | **General Purpose**. High-quality model from Meta for a variety of tasks. | `llama3.1` |
+| **Codestral** | **FSE (Full-Stack Engineering)**. Mistral's model optimized for code generation and tasks. | `codestral` |
+| **Command R** | **Retrieval & Long Context**. Optimized for RAG and long-context understanding. | `command-r` |
 
-To use these, ensure you have pulled them in Ollama (e.g., `ollama pull deepseek-coder-v2`) and update your config.
-
-## ☁️ Supported AWS Bedrock Models
-
-`mkpro` integrates with **AWS Bedrock** to provide access to industry-leading enterprise models. Configure your AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) to use these.
-
-| Model | Best For | Model ID |
-| :--- | :--- | :--- |
-| **Claude 4.5 Opus** | **Advanced Software Engineering**. Leading model for complex, long-running coding tasks and research. | `anthropic.claude-opus-4-5-20251101-v1:0` |
-| **Claude 3.5 Sonnet (v2)** | **Balanced Performance**. Exceptional at coding, multi-step reasoning, and tool use. | `anthropic.claude-3-5-sonnet-20241022-v2:0` |
-| **Amazon Nova Pro** | **Enterprise Reasoning**. Powerful multimodal model for software development and mathematical analysis. | `amazon.nova-pro-v1:0` |
-| **Amazon Nova 2 Lite** | **Speed & Economy**. Cost-effective reasoning with a massive 1M token context window. | `amazon.nova-2-lite-v1:0` |
-| **Mistral Large 3** | **Multimodal Workloads**. High-precision model optimized for math and coding benchmarks. | `mistral.mistral-large-2411-v1:0` |
-
-## 🛠️ Setup & Installation
+## 🚀 Getting Started
 
 ### Prerequisites
-- **Google Agent Development Kit (ADK)**: This project requires the **redbus version** of ADK. You must clone and install it locally from [redbus-labs/adk-java](https://github.com/redbus-labs/adk-java) before building `mkpro`.
-- **Java 17+** and **Maven** (for building).
-- **Ollama** (Optional): For local privacy-first inference.
-- **Google API Key** (Optional): Set `GOOGLE_API_KEY` for Gemini.
-- **AWS Credentials** (Optional): Set standard AWS env vars for Bedrock.
 
-### Build
+- **Java 17+**
+- **Maven**
+- **Google Cloud API Key** (for Gemini) or **AWS Credentials** (for Bedrock) or **Ollama** installed (for local models).
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/mk-sharma/mkpro.git
+   cd mkpro
+   ```
+2. Build the project:
+   ```bash
+   mvn clean install
+   ```
+
+### Configuration
+
+Set your environment variables:
 ```bash
-mvn clean package
-```
-This generates the native Windows executable `target/mkpro.exe` and a fat JAR.
+# For Gemini
+export GOOGLE_API_KEY=your_google_api_key
 
-### Run
+# For AWS Bedrock
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_REGION=your_region
+```
+
+### Running mkpro
+
+Launch the CLI:
 ```bash
-./target/mkpro.exe
+java -jar target/mkpro-1.0-SNAPSHOT.jar
 ```
 
-## 🏘️ Teams & Agent Workflows
+Once inside, you can use the `/config` command to set your default provider and model.
 
-`mkpro` now supports multiple agent team configurations. You can switch between different engineering squads depending on your task.
+## 🤝 Contributing
 
-### How it Works:
-1.  **Configuration Files**: Team definitions are stored in `~/.mkpro/teams/` as YAML files.
-2.  **Default Team**: The `default.yaml` includes the full roster of 12 agents (Architect, Coder, DevOps, etc.).
-3.  **Minimal Team**: Use `minimal.yaml` for lighter tasks requiring only the Coordinator and Coder.
-4.  **Customization**: You can create your own YAML file (e.g., `audi-security.yaml`) and load it using `/team audi-security`.
+We welcome contributions! Please feel free to submit Pull Requests or open issues for feature requests and bug reports.
+
+## 📄 License
+
+This project is licensed under the Apache License 2.0.

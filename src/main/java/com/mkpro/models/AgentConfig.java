@@ -1,6 +1,10 @@
 package com.mkpro.models;
 
-public class AgentConfig {
+import java.io.Serializable;
+
+public class AgentConfig implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private Provider provider;
     private String modelName;
 

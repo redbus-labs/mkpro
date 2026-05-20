@@ -15,6 +15,6 @@ if not exist "%JAR_PATH%" (
 )
 
 :: Run the application with registry enabled
-java -jar "%JAR_PATH%" --enable-registry %*
+java -Dmkpro.db.name=%~n0 -jar "%JAR_PATH%" --enable-registry %*
 
 endlocal

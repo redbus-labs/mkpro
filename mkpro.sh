@@ -20,4 +20,4 @@ if [ ! -f "$JAR_PATH" ]; then
 fi
 
 # Run the application
-java -jar "$JAR_PATH" "$@"
+java -Dmkpro.db.name=$(basename "$0" .sh) -jar "$JAR_PATH" "$@"

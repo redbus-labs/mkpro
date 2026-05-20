@@ -1,4 +1,5 @@
 package com.mkpro.config;
+import com.mkpro.utils.PathUtils;
 import java.nio.file.*;
 import java.io.*;
 import java.util.Properties;
@@ -9,7 +10,7 @@ public class ConfigService {
     public static final String PROP_OLLAMA_URL = "ollama_url";
 
     public static Path setupTeamsDir() {
-        Path teamsDir = Paths.get(System.getProperty("user.home"), ".mkpro", "teams");
+        Path teamsDir = PathUtils.getBaseDocumentsPath().resolve("teams");
         try {
             Files.createDirectories(teamsDir);
             Path defaultTeam = teamsDir.resolve("default.yaml");
@@ -48,18 +49,25 @@ public class ConfigService {
 
     private static String getProperty(String key, String def) {
         Properties props = new Properties();
-        try (InputStream is = Files.newInputStream(Paths.get(System.getProperty("user.home"), ".mkpro", "config.properties"))) {
-            props.load(is);
-            return props.getProperty(key, def);
+        Path path = PathUtils.getBaseDocumentsPath().resolve("config.properties");
+        try {
+            if (Files.exists(path)) {
+                try (InputStream is = Files.newInputStream(path)) {
+                    props.load(is);
+                    return props.getProperty(key, def);
+                }
+            }
         } catch (IOException e) {
-            return def;
+            // Log error if needed
         }
+        return def;
     }
 
     private static void saveProperty(String key, String val) {
         Properties props = new Properties();
-        Path path = Paths.get(System.getProperty("user.home"), ".mkpro", "config.properties");
+        Path path = PathUtils.getBaseDocumentsPath().resolve("config.properties");
         try {
+            PathUtils.ensureDirectoriesExist(path);
             if (Files.exists(path)) {
                 try (InputStream is = Files.newInputStream(path)) { props.load(is); }
             }

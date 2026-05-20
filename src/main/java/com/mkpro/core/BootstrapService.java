@@ -4,41 +4,29 @@ import com.google.adk.runner.Runner;
 import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.MapDbSessionService;
 import com.google.adk.sessions.Session;
-import com.google.adk.sessions.BaseSessionService;
 import com.google.adk.sessions.SessionKey;
-import com.google.adk.sessions.GetSessionConfig;
 import com.google.adk.artifacts.InMemoryArtifactService;
 import com.google.adk.artifacts.MapDbArtifactService;
-import com.google.adk.artifacts.BaseArtifactService;
-import com.google.adk.memory.InMemoryMemoryService;
 import com.google.adk.memory.MapDBMemoryService;
-import com.google.adk.memory.BaseMemoryService;
 import com.google.adk.memory.MapDBVectorStore;
 import com.google.adk.memory.ZeroEmbeddingService;
 import com.google.adk.memory.EmbeddingService;
-import com.google.adk.memory.VectorStore;
 import com.mkpro.CentralMemory;
 import com.mkpro.config.ConfigService;
 import com.mkpro.infra.network.discovery.DiscoveryService;
-import com.mkpro.LogHttpServer;
-import com.mkpro.SimpleWebSocketServer;
 import com.mkpro.ActionLogger;
 import com.mkpro.agents.AgentManager;
-import com.mkpro.models.AgentConfig;
 import com.mkpro.models.RunnerType;
+import com.mkpro.utils.PathUtils;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.HashMap;
 import java.util.Scanner;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static com.mkpro.MkPro.*;
 
@@ -141,10 +129,10 @@ public class BootstrapService {
         try {
             RunnerType runnerType = context.getCurrentRunnerType().get();
             
-            String dbBaseName = System.getProperty("mkpro.db.name", "mkpro_data");
-            if (dbBaseName.endsWith(".db")) {
-                dbBaseName = dbBaseName.substring(0, dbBaseName.length() - 3);
-            }
+            Path projectPath = PathUtils.getProjectPath();
+            PathUtils.ensureDirectoriesExist(projectPath.resolve("dummy"));
+
+            String dbBaseName = "mkpro_data";
 
             // Initialize Embedding Service
             EmbeddingService embeddingService = new ZeroEmbeddingService(1536);
@@ -152,30 +140,27 @@ public class BootstrapService {
 
             // Initialize Storage Services based on RunnerType
             if (runnerType == RunnerType.MAP_DB) {
-                // Fixed: Explicit separation of database files
-                context.setSessionService(new MapDbSessionService(dbBaseName + "_sessions.db"));
-                context.setArtifactService(new MapDbArtifactService(dbBaseName + "_artifacts.db"));
-                MapDBVectorStore vectorStore = new MapDBVectorStore(dbBaseName + "_vectors.db", "default");
+                context.setSessionService(new MapDbSessionService(projectPath.resolve(dbBaseName + "_sessions.db").toString()));
+                context.setArtifactService(new MapDbArtifactService(projectPath.resolve(dbBaseName + "_artifacts.db").toString()));
+                MapDBVectorStore vectorStore = new MapDBVectorStore(projectPath.resolve(dbBaseName + "_vectors.db").toString(), "default");
                 context.setVectorStore(vectorStore);
                 context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
             } else {
-                // Default to IN_MEMORY for other types including POSTGRES for now as per instructions
                 context.setSessionService(new InMemorySessionService());
                 context.setArtifactService(new InMemoryArtifactService());
-                MapDBVectorStore vectorStore = new MapDBVectorStore(dbBaseName + "_vectors_temp.db", "default");
+                MapDBVectorStore vectorStore = new MapDBVectorStore(projectPath.resolve(dbBaseName + "_vectors_temp.db").toString(), "default");
                 context.setVectorStore(vectorStore);
                 context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
             }
 
             context.setCentralMemory(new CentralMemory());
             context.setDiscoveryService(new DiscoveryService());
-            context.setActionLogger(new ActionLogger(dbBaseName + "_logs.db"));
+            context.setActionLogger(new ActionLogger(projectPath.resolve(dbBaseName + "_logs.db").toString()));
             
             ConfigService configService = new ConfigService();
             Path teamsDir = ConfigService.setupTeamsDir();
             context.setTeamsDir(teamsDir);
             
-            // Load configurations before AgentManager
             String geminiKey = configService.getSetting(ConfigService.PROP_GEMINI_KEY, null);
             String ollamaUrl = configService.getSetting(ConfigService.PROP_OLLAMA_URL, "http://localhost:11434");
             context.setApiKey(geminiKey);
@@ -194,7 +179,6 @@ public class BootstrapService {
             }
             context.getCurrentTeam().set(teamName);
 
-            // Initialize AgentManager and Runner
             AgentManager am = new AgentManager(
                 context.getSessionService(),
                 context.getArtifactService(),
@@ -209,14 +193,11 @@ public class BootstrapService {
                 context.getEmbeddingService()
             );
             context.setAgentManager(am);
-            
-            // Load all agent configurations from CentralMemory into the context
             context.setAgentConfigs(context.getCentralMemory().getAllAgentConfigs());
 
             Runner runner = am.createRunner(context.getAgentConfigs(), "");
             context.setRunner(runner);
             
-            // Ensure a session exists
             String sessionId = "default-session";
             SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sessionId);
             Session session = null;
@@ -224,32 +205,24 @@ public class BootstrapService {
             try {
                 session = context.getSessionService().getSession(sessionKey, com.google.adk.sessions.GetSessionConfig.builder().build()).blockingGet();
             } catch (Exception e) {
-                // Log warning and proceed to creation
                 System.err.println("Warning: Could not load existing session '" + sessionId + "'. Creating a new one.");
             }
 
             if (session == null) {
-                session = context.getSessionService().createSession(sessionKey).blockingGet();
+                session = context.getSessionService().createSession(sessionKey, new java.util.HashMap<>()).blockingGet();
             }
             context.setCurrentSession(session);
 
-            int port = Integer.parseInt(configService.getSetting("server.port", "8080"));
-            int wsPort = Integer.parseInt(configService.getSetting("server.ws.port", "8081"));
-            
-            LogHttpServer logHttpServer = new LogHttpServer(port, wsPort);
-            context.setLogHttpServer(logHttpServer);
-
-            new Thread(() -> {
-                try {
-                    logHttpServer.start();
-                } catch (java.io.IOException e) {
-                    System.err.println("Failed to start LogHttpServer: " + e.getMessage());
-                }
-            }, "LogHttpServer-Thread").start();
         } catch (Exception e) {
-            System.err.println("Initialization failed: " + e.getMessage());
+            System.err.println("Failed to initialize services: " + e.getMessage());
             e.printStackTrace();
+            System.exit(1);
         }
+    }
+    private void printBanner() {
+        System.out.println(ANSI_BOLD + "========================================" + ANSI_RESET);
+        System.out.println(ANSI_BOLD + "       Welcome to MkPro CLI             " + ANSI_RESET);
+        System.out.println(ANSI_BOLD + "========================================" + ANSI_RESET);
     }
 
     private void setupTerminal(MkProContext context) {
@@ -257,24 +230,14 @@ public class BootstrapService {
             Terminal terminal = TerminalBuilder.builder()
                 .system(true)
                 .build();
+            context.setTerminal(terminal);
+            
             LineReader reader = LineReaderBuilder.builder()
                 .terminal(terminal)
                 .build();
-            context.setTerminal(terminal);
             context.setLineReader(reader);
         } catch (IOException e) {
             System.err.println("Failed to initialize terminal: " + e.getMessage());
         }
-    }
-
-    private void printBanner() {
-        System.out.println(ANSI_BRIGHT_GREEN + " __  __ _    ____  ____   ___  ");
-        System.out.println("|  \\/  | | _|  _ \\|  _ \\ / _ \\ ");
-        System.out.println("| |\\/| | |/ / |_) | |_) | | | |");
-        System.out.println("| |  | |   <|  __/|  _ <| |_| |");
-        System.out.println("|_|  |_|_|\\_\\_|   |_| \\_\\\\___/ ");
-        System.out.println(ANSI_RESET);
-        System.out.println(ANSI_YELLOW + "  Autonomous Specialist Framework" + ANSI_RESET);
-        System.out.println();
     }
 }

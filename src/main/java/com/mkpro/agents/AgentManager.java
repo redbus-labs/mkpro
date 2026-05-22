@@ -198,6 +198,23 @@ public class AgentManager {
 
     public Runner createRunner(Map<String, AgentConfig> agentConfigs, String augmentedContext) {
         try {
+            // Automatically detect project context if not already provided or if augmentedContext is empty
+            String fullContext = augmentedContext != null ? augmentedContext : "";
+            if (fullContext.isEmpty() || !fullContext.contains("DETECTED PROJECT:")) {
+                try {
+                    com.mkpro.tools.McpServerConnectTools.ProjectInfo projectInfo = 
+                        com.mkpro.tools.McpServerConnectTools.detectProject(java.nio.file.Paths.get("").toAbsolutePath());
+                    if (projectInfo != null && !"unknown".equals(projectInfo.type)) {
+                        if (!fullContext.isEmpty()) {
+                            fullContext += "\n\n";
+                        }
+                        fullContext += "DETECTED PROJECT:\n" + projectInfo.toString();
+                    }
+                } catch (Exception ex) {
+                    // Ignore context detection errors
+                }
+            }
+
             // 1. Build discrete, specialized toolsets from com.mkpro.tools.*
             List<BaseTool> fileSystemTools = new ArrayList<>();
             fileSystemTools.add(FileSystemTools.create());
@@ -305,7 +322,7 @@ public class AgentManager {
                 List<BaseTool> toolsForAgent = entry.getValue();
                 
                 String toolName = "ask_" + agentName.replaceAll("([a-z])([A-Z]+)", "$1_$2").toLowerCase();
-                BaseTool delegationTool = createDelegationToolFromDef(agentName, toolName, agentConfigs, toolsForAgent, augmentedContext);
+                BaseTool delegationTool = createDelegationToolFromDef(agentName, toolName, agentConfigs, toolsForAgent, fullContext);
                 if (delegationTool != null) {
                     coordinatorTools.add(delegationTool);
                 }
@@ -319,7 +336,7 @@ public class AgentManager {
             LlmAgent coordinator = LlmAgent.builder()
                     .name("Coordinator")
                     .description("The main orchestrator agent.")
-                    .instruction(augmentedContext)
+                    .instruction(fullContext)
                     .model(coordLlm)
                     .tools(coordinatorTools) // Expose delegation tools and list mcp servers tool
                     .planning(true) // ENABLE PLANNING LOOP
@@ -344,7 +361,7 @@ public class AgentManager {
                 LlmAgent.Builder agentBuilder = LlmAgent.builder()
                         .name(def.getName())
                         .description(def.getDescription())
-                        .instruction(augmentedContext + "\n\nSpecific Instruction: " + def.getInstruction())
+                        .instruction(fullContext + "\n\nSpecific Instruction: " + def.getInstruction())
                         .model(llm)
                         .planning(true); // ENABLE PLANNING LOOP
 

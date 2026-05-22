@@ -1,23 +1,25 @@
 package com.mkpro.core;
 
+import com.google.adk.artifacts.MapDbArtifactService;
+import com.google.adk.memory.MapDBMemoryService;
+import com.google.adk.memory.ZeroEmbeddingService;
 import com.google.adk.runner.Runner;
-import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.MapDbSessionService;
+import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.Session;
 import com.google.adk.sessions.SessionKey;
 import com.google.adk.artifacts.InMemoryArtifactService;
-import com.google.adk.artifacts.MapDbArtifactService;
-import com.google.adk.memory.MapDBMemoryService;
-import com.google.adk.memory.MapDBVectorStore;
-import com.google.adk.memory.ZeroEmbeddingService;
 import com.google.adk.memory.EmbeddingService;
+import com.google.adk.memory.MapDBVectorStore;
 import com.mkpro.CentralMemory;
-import com.mkpro.config.ConfigService;
 import com.mkpro.infra.network.discovery.DiscoveryService;
+import com.mkpro.LogHttpServer;
+import com.mkpro.SimpleWebSocketServer;
 import com.mkpro.ActionLogger;
-import com.mkpro.agents.AgentManager;
+import com.mkpro.config.ConfigService;
 import com.mkpro.models.RunnerType;
 import com.mkpro.utils.PathUtils;
+import com.mkpro.agents.AgentManager;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.reader.LineReader;
@@ -26,7 +28,9 @@ import org.jline.reader.LineReaderBuilder;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Scanner;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.mkpro.MkPro.*;
 
@@ -175,10 +179,12 @@ public class BootstrapService {
                     teamFile = teamsDir.resolve(teamName + ".yml");
                 } else {
                     teamName = "default";
+                    teamFile = teamsDir.resolve("default.yaml");
                 }
             }
             context.getCurrentTeam().set(teamName);
 
+            // Construct AgentManager specifically with the active team file instead of the directory
             AgentManager am = new AgentManager(
                 context.getSessionService(),
                 context.getArtifactService(),
@@ -188,7 +194,7 @@ public class BootstrapService {
                 context.getActionLogger(),
                 context.getCentralMemory(),
                 context.getCurrentRunnerType().get(),
-                context.getTeamsDir(),
+                teamFile, // Pass the resolved teamFile path directly to avoid cross-loading all team yaml configs
                 (MapDBVectorStore) context.getVectorStore(),
                 context.getEmbeddingService()
             );
@@ -199,7 +205,7 @@ public class BootstrapService {
             context.setRunner(runner);
             
             String sessionId = "default-session";
-            SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sessionId);
+            com.google.adk.sessions.SessionKey sessionKey = new com.google.adk.sessions.SessionKey("mkpro", "Coordinator", sessionId);
             Session session = null;
 
             try {
@@ -219,6 +225,7 @@ public class BootstrapService {
             System.exit(1);
         }
     }
+
     private void printBanner() {
         System.out.println(ANSI_BOLD + "========================================" + ANSI_RESET);
         System.out.println(ANSI_BOLD + "       Welcome to MkPro CLI             " + ANSI_RESET);

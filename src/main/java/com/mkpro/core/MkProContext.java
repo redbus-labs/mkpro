@@ -20,6 +20,7 @@ import org.jline.terminal.Terminal;
 import org.jline.reader.LineReader;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -94,7 +95,24 @@ public class MkProContext {
             // Update configurations
             this.agentConfigs = this.centralMemory.getAllAgentConfigs();
 
-            // 3. Reconstruct AgentManager
+            // Resolve active team file path specifically to avoid cross-loading all team config files
+            Path teamFile = this.teamsDir;
+            if (this.teamsDir != null && Files.isDirectory(this.teamsDir)) {
+                String tName = this.currentTeam.get();
+                Path resolved = this.teamsDir.resolve(tName);
+                if (!Files.exists(resolved)) {
+                    if (Files.exists(this.teamsDir.resolve(tName + ".yaml"))) {
+                        resolved = this.teamsDir.resolve(tName + ".yaml");
+                    } else if (Files.exists(this.teamsDir.resolve(tName + ".yml"))) {
+                        resolved = this.teamsDir.resolve(tName + ".yml");
+                    }
+                }
+                if (Files.exists(resolved)) {
+                    teamFile = resolved;
+                }
+            }
+
+            // 3. Reconstruct AgentManager with specific active team file
             this.agentManager = new AgentManager(
                 this.sessionService,
                 this.artifactService,
@@ -104,7 +122,7 @@ public class MkProContext {
                 this.actionLogger,
                 this.centralMemory,
                 rType,
-                this.teamsDir,
+                teamFile, // Pass specific team config file instead of directory
                 (MapDBVectorStore) this.vectorStore,
                 this.embeddingService
             );

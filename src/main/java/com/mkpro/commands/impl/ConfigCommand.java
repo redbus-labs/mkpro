@@ -22,6 +22,31 @@ public class ConfigCommand implements Command {
         }
 
         String subCommand = args[0];
+
+        // Support legacy main/master syntax: /config <agent> <provider> [model]
+        if (!subCommand.equalsIgnoreCase("list") && !subCommand.equalsIgnoreCase("set") && !subCommand.equalsIgnoreCase("reset")) {
+            if (args.length >= 2) {
+                String agent = args[0];
+                String providerStr = args[1];
+                String model;
+                if (args.length >= 3) {
+                    model = args[2];
+                } else {
+                    if (providerStr.equalsIgnoreCase("GEMINI")) {
+                        model = "gemini-1.5-flash";
+                    } else {
+                        model = "llama3";
+                    }
+                }
+                applyConfig(agent, providerStr, model, context);
+                return;
+            } else {
+                System.out.println("Usage: config [list | set <agent> <provider> <model> | reset <agent>]");
+                System.out.println("Or legacy: config <agent> <provider> [model]");
+                return;
+            }
+        }
+
         if (subCommand.equalsIgnoreCase("list")) {
             Map<String, AgentConfig> configs = context.getCentralMemory().getAllAgentConfigs();
             AgentConfig globalDefault = configs.get("default");

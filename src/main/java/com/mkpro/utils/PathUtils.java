@@ -11,22 +11,13 @@ public class PathUtils {
 
     public static Path getBaseDocumentsPath() {
         String userHome = System.getProperty("user.home");
+        // Always target the standard local Documents folder to prevent OneDrive sync lock and corruption issues
         Path documents = Paths.get(userHome, "Documents");
-        
-        // On Windows, check for OneDrive/Documents first
-        if (System.getProperty("os.name").toLowerCase().contains("win")) {
-            Path oneDriveDocs = Paths.get(userHome, "OneDrive", "Documents");
-            if (Files.exists(oneDriveDocs)) {
-                documents = oneDriveDocs;
-            }
-        }
-        
         return documents.resolve(APP_DIR);
     }
 
     public static Path getProjectPath() {
-        String projectName = Paths.get("").toAbsolutePath().getFileName().toString();
-        return getBaseDocumentsPath().resolve(projectName);
+        return Paths.get(System.getProperty("user.dir"));
     }
 
     public static void ensureDirectoriesExist(Path path) throws IOException {

@@ -1,4 +1,4 @@
-﻿package com.mkpro.ui;
+package com.mkpro.ui;
 
 import com.google.adk.events.Event;
 import com.google.genai.types.Content;

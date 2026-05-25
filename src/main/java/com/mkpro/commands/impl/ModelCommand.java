@@ -54,7 +54,7 @@ public class ModelCommand implements Command {
         // First select agent
         List<String> agents = new ArrayList<>(context.getAgentConfigs().keySet());
         if (!agents.contains("default")) agents.add(0, "default");
-        agents.add("All Agents");
+        agents.add(0, "All Agents");
         
         String agent = ConsoleUtils.selectOption(context, "Select agent to configure:", agents);
         if (agent == null) return;

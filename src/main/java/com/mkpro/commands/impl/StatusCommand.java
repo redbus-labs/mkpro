@@ -9,20 +9,23 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.stream.Collectors;
 
+import static com.mkpro.MkPro.ANSI_GREEN;
+import static com.mkpro.MkPro.ANSI_RESET;
+
 public class StatusCommand implements Command {
     @Override
     public void execute(String[] args, MkProContext context) throws Exception {
         Map<String, AgentConfig> configs = context.getAgentConfigs();
         
-        System.out.println("System Status:");
-        System.out.println(" - API Key: " + (context.getApiKey() != null ? "Set (ends in " + context.getApiKey().substring(Math.max(0, context.getApiKey().length() - 4)) + ")" : "Not Set"));
-        System.out.println(" - Ollama Server: " + context.getOllamaUrl());
-        System.out.println(" - Active Team: " + context.getCurrentTeam().get());
-        System.out.println(" - Active Session: " + (context.getCurrentSession() != null ? context.getCurrentSession().id() : "None"));
-        System.out.println(" - Storage Mode: " + context.getCurrentRunnerType().get());
-        System.out.println(" - Maker Enabled: " + context.getMakerEnabled().get());
+        System.out.println(ANSI_GREEN + "System Status:" + ANSI_RESET);
+        System.out.println(ANSI_GREEN + " - API Key: " + (context.getApiKey() != null ? "Set (ends in " + context.getApiKey().substring(Math.max(0, context.getApiKey().length() - 4)) + ")" : "Not Set") + ANSI_RESET);
+        System.out.println(ANSI_GREEN + " - Ollama Server: " + context.getOllamaUrl() + ANSI_RESET);
+        System.out.println(ANSI_GREEN + " - Active Team: " + context.getCurrentTeam().get() + ANSI_RESET);
+        System.out.println(ANSI_GREEN + " - Active Session: " + (context.getCurrentSession() != null ? context.getCurrentSession().id() : "None") + ANSI_RESET);
+        System.out.println(ANSI_GREEN + " - Storage Mode: " + context.getCurrentRunnerType().get() + ANSI_RESET);
+        System.out.println(ANSI_GREEN + " - Maker Enabled: " + context.getMakerEnabled().get() + ANSI_RESET);
         
-        System.out.println("\nActive Team Agents:");
+        System.out.println(ANSI_GREEN + "\nActive Team Agents:" + ANSI_RESET);
         
         // Retrieve dynamically active agents from the loaded Team definitions in AgentManager
         List<String> allAgents = new ArrayList<>();
@@ -43,7 +46,7 @@ public class StatusCommand implements Command {
         for (String agent : allAgents) {
             AgentConfig config = configs.get(agent);
             if (config != null) {
-                System.out.println(String.format(" - %s: %s (%s) [Custom Override]", agent, config.getModelName(), config.getProvider()));
+                System.out.println(ANSI_GREEN + String.format(" - %s: %s (%s) [Custom Override]", agent, config.getModelName(), config.getProvider()) + ANSI_RESET);
             } else {
                 // Determine defined defaults for the agent
                 String model = "llama3";
@@ -67,7 +70,7 @@ public class StatusCommand implements Command {
                     provider = globalDefault.getProvider().name();
                 }
                 
-                System.out.println(String.format(" - %s: %s (%s) [Global Default]", agent, model, provider));
+                System.out.println(ANSI_GREEN + String.format(" - %s: %s (%s) [Global Default]", agent, model, provider) + ANSI_RESET);
             }
         }
     }

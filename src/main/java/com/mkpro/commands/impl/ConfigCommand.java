@@ -102,7 +102,7 @@ public class ConfigCommand implements Command {
                 .filter(a -> !a.equalsIgnoreCase("default") && !a.equalsIgnoreCase("All Agents"))
                 .collect(Collectors.toList());
         agents.add(0, "default");
-        agents.add("All Agents");
+        agents.add(0, "All Agents");
         
         String agent = ConsoleUtils.selectOption(context, "Select agent to configure:", agents);
         if (agent == null) return;

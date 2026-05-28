@@ -30,6 +30,7 @@ public class CentralMemory {
     private final Path dbPath;
     private final List<MemoryListener> listeners = new ArrayList<>();
     private static CentralMemory instance;
+    private static boolean centralMemoryLockWarned = false;
 
     /**
      * Singleton accessor for CentralMemory.
@@ -55,10 +56,21 @@ public class CentralMemory {
      * Note: MapDB's DB implements Closeable.
      */
     private DB openDB() {
-        return DBMaker.fileDB(dbPath.toString())
-                .closeOnJvmShutdown()
-                .transactionEnable()
-                .make();
+        try {
+            return DBMaker.fileDB(dbPath.toString())
+                    .closeOnJvmShutdown()
+                    .transactionEnable()
+                    .make();
+        } catch (Exception e) {
+            if (!centralMemoryLockWarned) {
+                System.err.println("\u001b[33m[Warning] central_memory.db is locked by another running instance of mkpro. Central memory operations will use in-memory fallbacks.\u001b[0m");
+                centralMemoryLockWarned = true;
+            }
+            return DBMaker.memoryDB()
+                    .closeOnJvmShutdown()
+                    .transactionEnable()
+                    .make();
+        }
     }
 
     public void addListener(MemoryListener l) {

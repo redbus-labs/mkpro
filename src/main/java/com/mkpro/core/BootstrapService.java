@@ -20,6 +20,7 @@ import com.mkpro.config.ConfigService;
 import com.mkpro.models.RunnerType;
 import com.mkpro.utils.PathUtils;
 import com.mkpro.agents.AgentManager;
+import com.mkpro.InstanceRegistry;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.reader.LineReader;
@@ -134,7 +135,8 @@ public class BootstrapService {
             RunnerType runnerType = context.getCurrentRunnerType().get();
             
             Path projectPath = PathUtils.getProjectPath();
-            PathUtils.ensureDirectoriesExist(projectPath.resolve("dummy"));
+            Path mkproDir = projectPath.resolve(".mkpro");
+            PathUtils.ensureDirectoriesExist(mkproDir.resolve("dummy"));
 
             String dbBaseName = "mkpro_data";
 
@@ -144,22 +146,33 @@ public class BootstrapService {
 
             // Initialize Storage Services based on RunnerType
             if (runnerType == RunnerType.MAP_DB) {
-                context.setSessionService(new MapDbSessionService(projectPath.resolve(dbBaseName + "_sessions.db").toString()));
-                context.setArtifactService(new MapDbArtifactService(projectPath.resolve(dbBaseName + "_artifacts.db").toString()));
-                MapDBVectorStore vectorStore = new MapDBVectorStore(projectPath.resolve(dbBaseName + "_vectors.db").toString(), "default");
-                context.setVectorStore(vectorStore);
-                context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
+                try {
+                    context.setSessionService(new MapDbSessionService(mkproDir.resolve(dbBaseName + "_sessions.db").toString()));
+                    context.setArtifactService(new MapDbArtifactService(mkproDir.resolve(dbBaseName + "_artifacts.db").toString()));
+                    MapDBVectorStore vectorStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors.db").toString(), "default");
+                    context.setVectorStore(vectorStore);
+                    context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
+                } catch (Exception lockEx) {
+                    System.err.println("\u001b[33m[Warning] Storage databases (_sessions.db, _artifacts.db, or _vectors.db) are locked by another running instance of mkpro.\u001b[0m");
+                    System.err.println("\u001b[33m[Warning] Falling back to in-memory sessions/artifacts and temporary vector databases for this instance.\u001b[0m");
+                    
+                    context.setSessionService(new InMemorySessionService());
+                    context.setArtifactService(new InMemoryArtifactService());
+                    MapDBVectorStore vectorStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors_temp_" + System.currentTimeMillis() + ".db").toString(), "default");
+                    context.setVectorStore(vectorStore);
+                    context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
+                }
             } else {
                 context.setSessionService(new InMemorySessionService());
                 context.setArtifactService(new InMemoryArtifactService());
-                MapDBVectorStore vectorStore = new MapDBVectorStore(projectPath.resolve(dbBaseName + "_vectors_temp.db").toString(), "default");
+                MapDBVectorStore vectorStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors_temp.db").toString(), "default");
                 context.setVectorStore(vectorStore);
                 context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
             }
 
             context.setCentralMemory(new CentralMemory());
             context.setDiscoveryService(new DiscoveryService());
-            context.setActionLogger(new ActionLogger(projectPath.resolve(dbBaseName + "_logs.db").toString()));
+            context.setActionLogger(new ActionLogger(mkproDir.resolve(dbBaseName + "_logs.db").toString()));
             
             ConfigService configService = new ConfigService();
             Path teamsDir = ConfigService.setupTeamsDir();
@@ -205,31 +218,22 @@ public class BootstrapService {
             context.setRunner(runner);
             
             String sessionId = "default-session";
-            com.google.adk.sessions.SessionKey sessionKey = new com.google.adk.sessions.SessionKey("mkpro", "Coordinator", sessionId);
+            SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sessionId);
             Session session = null;
-
             try {
                 session = context.getSessionService().getSession(sessionKey, com.google.adk.sessions.GetSessionConfig.builder().build()).blockingGet();
-            } catch (Exception e) {
-                System.err.println("Warning: Could not load existing session '" + sessionId + "'. Creating a new one.");
-            }
-
+            } catch (Exception e) {}
             if (session == null) {
                 session = context.getSessionService().createSession(sessionKey, new java.util.HashMap<>()).blockingGet();
             }
             context.setCurrentSession(session);
 
+            System.out.println(ANSI_BRIGHT_GREEN + "Services initialized successfully." + ANSI_RESET);
         } catch (Exception e) {
             System.err.println("Failed to initialize services: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
         }
-    }
-
-    private void printBanner() {
-        System.out.println(ANSI_BOLD + "========================================" + ANSI_RESET);
-        System.out.println(ANSI_BOLD + "       Welcome to MkPro CLI             " + ANSI_RESET);
-        System.out.println(ANSI_BOLD + "========================================" + ANSI_RESET);
     }
 
     private void setupTerminal(MkProContext context) {
@@ -238,13 +242,25 @@ public class BootstrapService {
                 .system(true)
                 .build();
             context.setTerminal(terminal);
-            
+
             LineReader reader = LineReaderBuilder.builder()
                 .terminal(terminal)
                 .build();
             context.setLineReader(reader);
         } catch (IOException e) {
-            System.err.println("Failed to initialize terminal: " + e.getMessage());
+            System.err.println("Could not initialize JLine terminal.");
         }
+    }
+
+    private void printBanner() {
+        System.out.println(ANSI_CYAN + "========================================" + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "   __  __ _    ____  ____   ___ " + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "  |  \\/  | | _|  _ \\|  _ \\ / _ \\" + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "  | |\\/| | |/ / |_) | |_) | | | |" + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "  | |  | |   <|  __/|  _ <| |_| |" + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "  |_|  |_|_|\\_\\_|   |_| \\_\\\\___/ " + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "========================================" + ANSI_RESET);
+        System.out.println(ANSI_YELLOW + " Multi-Agent Development Framework " + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "========================================" + ANSI_RESET);
     }
 }

@@ -90,18 +90,22 @@ public class MkProContext {
 
             // 2. Re-create base services matching current RunnerType
             Path projectPath = com.mkpro.utils.PathUtils.getProjectPath();
+            Path mkproDir = projectPath.resolve(".mkpro");
+            try {
+                com.mkpro.utils.PathUtils.ensureDirectoriesExist(mkproDir.resolve("dummy"));
+            } catch (Exception e) {}
             String dbBaseName = "mkpro_data";
 
             if (rType == RunnerType.MAP_DB) {
-                this.sessionService = new com.google.adk.sessions.MapDbSessionService(projectPath.resolve(dbBaseName + "_sessions.db").toString());
-                this.artifactService = new com.google.adk.artifacts.MapDbArtifactService(projectPath.resolve(dbBaseName + "_artifacts.db").toString());
-                MapDBVectorStore mvStore = new MapDBVectorStore(projectPath.resolve(dbBaseName + "_vectors.db").toString(), "default");
+                this.sessionService = new com.google.adk.sessions.MapDbSessionService(mkproDir.resolve(dbBaseName + "_sessions.db").toString());
+                this.artifactService = new com.google.adk.artifacts.MapDbArtifactService(mkproDir.resolve(dbBaseName + "_artifacts.db").toString());
+                MapDBVectorStore mvStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors.db").toString(), "default");
                 this.vectorStore = mvStore;
                 this.memoryService = new com.google.adk.memory.MapDBMemoryService(mvStore, this.embeddingService);
             } else {
                 this.sessionService = new com.google.adk.sessions.InMemorySessionService();
                 this.artifactService = new com.google.adk.artifacts.InMemoryArtifactService();
-                MapDBVectorStore mvStore = new MapDBVectorStore(projectPath.resolve(dbBaseName + "_vectors_temp.db").toString(), "default");
+                MapDBVectorStore mvStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors_temp.db").toString(), "default");
                 this.vectorStore = mvStore;
                 this.memoryService = new com.google.adk.memory.MapDBMemoryService(mvStore, this.embeddingService);
             }

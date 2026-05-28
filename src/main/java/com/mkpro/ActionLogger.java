@@ -52,9 +52,36 @@ public class ActionLogger {
 
     public static synchronized void init(String dbPath) {
         if (db == null || db.isClosed()) {
-            db = DBMaker.fileDB(dbPath).make();
+            if (dbPath == null || ":memory:".equals(dbPath)) {
+                db = DBMaker.memoryDB()
+                        .transactionEnable()
+                        .closeOnJvmShutdown()
+                        .make();
+            } else {
+                try {
+                    db = DBMaker.fileDB(dbPath)
+                            .cleanerHackEnable()
+                            .transactionEnable()
+                            .closeOnJvmShutdown()
+                            .make();
+                } catch (Exception e) {
+                    System.err.println("\u001b[33m[Warning] Logging database (" + dbPath + ") is locked by another running instance of mkpro. Falling back to in-memory logger.\u001b[0m");
+                    db = DBMaker.memoryDB()
+                            .transactionEnable()
+                            .closeOnJvmShutdown()
+                            .make();
+                }
+            }
             logs = db.indexTreeList("logs", Serializer.STRING).createOrOpen();
         }
+    }
+
+    public static synchronized void close() {
+        if (db != null && !db.isClosed()) {
+            db.close();
+        }
+        db = null;
+        logs = null;
     }
 
     public static synchronized void setWebSocketServer(SimpleWebSocketServer server) {
@@ -168,12 +195,6 @@ public class ActionLogger {
                 String json = mapper.writeValueAsString(message);
                 wsServer.broadcast(json);
             } catch (Exception e) {}
-        }
-    }
-
-    public static synchronized void close() {
-        if (db != null && !db.isClosed()) {
-            db.close();
         }
     }
 

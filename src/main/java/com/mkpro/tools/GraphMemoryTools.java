@@ -7,12 +7,8 @@ import com.google.genai.types.Schema;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.reactivex.rxjava3.core.Single;
-import org.graphify.core.model.Entity;
-import org.graphify.core.model.EntityType;
-import org.graphify.core.model.Relationship;
-import org.graphify.core.model.ExtractionResult;
-import org.graphify.persistence.mapdb.MapDbGraphRepository;
-import org.graphify.viz.GraphVisualizerApp;
+import com.mkpro.graph.*;
+import com.mkpro.graph.viz.GraphVisualizerApp;
 import com.mkpro.utils.PathUtils;
 
 import java.nio.file.Path;

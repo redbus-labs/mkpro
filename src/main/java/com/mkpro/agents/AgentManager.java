@@ -10,6 +10,7 @@ import com.google.adk.models.BedrockBaseLM;
 import com.google.adk.models.AzureBaseLM;
 import com.google.adk.models.BaseLlm;
 import com.google.adk.runner.Runner;
+import com.google.adk.runner.MapDbRunner;
 import com.google.adk.sessions.BaseSessionService;
 import com.google.adk.sessions.Session;
 import com.google.adk.sessions.SessionKey;
@@ -386,7 +387,14 @@ public class AgentManager {
             }
 
             // Create Runner using Builder
-            Runner.Builder runnerBuilder = Runner.builder()
+            Runner.Builder agentBuilder;
+            if (this.runnerType == RunnerType.MAP_DB) {
+                agentBuilder = MapDbRunner.builder();
+            } else {
+                agentBuilder = Runner.builder();
+            }
+
+            agentBuilder
                     .agent(coordinator)
                     .appName("mkpro")
                     .sessionService(sessionService)
@@ -395,7 +403,7 @@ public class AgentManager {
 
             logger.log("INFO", "Creating runner for type: " + runnerType);
             
-            return runnerBuilder.build();
+            return agentBuilder.build();
 
         } catch (Exception e) {
             logger.log("ERROR", "Error creating runner: " + e.getMessage());

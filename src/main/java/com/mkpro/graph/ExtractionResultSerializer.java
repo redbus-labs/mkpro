@@ -1,8 +1,5 @@
-package org.graphify.persistence.serializer;
+package com.mkpro.graph;
 
-import org.graphify.core.model.Entity;
-import org.graphify.core.model.ExtractionResult;
-import org.graphify.core.model.Relationship;
 import org.mapdb.DataInput2;
 import org.mapdb.DataOutput2;
 import org.mapdb.Serializer;

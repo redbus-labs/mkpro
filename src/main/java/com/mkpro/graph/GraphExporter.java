@@ -1,7 +1,5 @@
-package org.graphify.export;
+package com.mkpro.graph;
 
-import org.graphify.core.model.ExtractionResult;
-import org.graphify.analysis.AnalysisResult;
 import java.nio.file.Path;
 
 /**

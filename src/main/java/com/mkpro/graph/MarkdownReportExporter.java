@@ -1,8 +1,4 @@
-package org.graphify.export;
-
-import org.graphify.core.model.Entity;
-import org.graphify.core.model.ExtractionResult;
-import org.graphify.analysis.AnalysisResult;
+package com.mkpro.graph;
 
 import java.io.IOException;
 import java.nio.file.Files;

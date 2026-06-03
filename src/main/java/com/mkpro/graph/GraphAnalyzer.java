@@ -1,7 +1,5 @@
-package org.graphify.analysis;
+package com.mkpro.graph;
 
-import org.graphify.core.model.Entity;
-import org.graphify.graph.RelationshipEdge;
 import org.jgrapht.Graph;
 
 public interface GraphAnalyzer {

@@ -1,17 +1,6 @@
 // Test comment for CodeEditor verification
-package org.graphify.cli;
+package com.mkpro.graph;
 
-import org.graphify.analysis.AnalysisResult;
-import org.graphify.analysis.DefaultGraphAnalyzer;
-import org.graphify.core.model.Entity;
-import org.graphify.core.model.ExtractionResult;
-import org.graphify.export.JsonGraphExporter;
-import org.graphify.export.MarkdownReportExporter;
-import org.graphify.graph.JGraphTBuilder;
-import org.graphify.graph.RelationshipEdge;
-import org.graphify.parser.JavaParserScanner;
-import org.graphify.persistence.api.GitUtil;
-import org.graphify.persistence.mapdb.MapDbGraphRepository;
 import org.jgrapht.Graph;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;

@@ -156,6 +156,7 @@ public class BootstrapService {
                     System.err.println("\u001b[33m[Warning] Storage databases (_sessions.db, _artifacts.db, or _vectors.db) are locked by another running instance of mkpro.\u001b[0m");
                     System.err.println("\u001b[33m[Warning] Falling back to in-memory sessions/artifacts and temporary vector databases for this instance.\u001b[0m");
                     
+                    context.getCurrentRunnerType().set(RunnerType.IN_MEMORY);
                     context.setSessionService(new InMemorySessionService());
                     context.setArtifactService(new InMemoryArtifactService());
                     MapDBVectorStore vectorStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors_temp_" + System.currentTimeMillis() + ".db").toString(), "default");

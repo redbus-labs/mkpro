@@ -1,10 +1,9 @@
-package org.graphify.parser;
+package com.mkpro.graph;
 
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
-import org.graphify.core.model.*;
 
 import java.io.IOException;
 import java.nio.file.Files;

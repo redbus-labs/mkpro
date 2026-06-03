@@ -1,8 +1,5 @@
-package org.graphify.persistence.mapdb;
+package com.mkpro.graph;
 
-import org.graphify.core.model.ExtractionResult;
-import org.graphify.persistence.api.GraphRepository;
-import org.graphify.persistence.serializer.ExtractionResultSerializer;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.mapdb.HTreeMap;

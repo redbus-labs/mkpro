@@ -1,4 +1,4 @@
-package org.graphify.graph;
+package com.mkpro.graph;
 
 import org.jgrapht.graph.DefaultWeightedEdge;
 

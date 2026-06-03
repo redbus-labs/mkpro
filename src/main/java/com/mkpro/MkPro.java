@@ -60,6 +60,7 @@ public class MkPro {
         registry.register(new ModelCommand());
         registry.register(new RememberCommand());
         registry.register(new ExportRunnerCommand());
+        registry.register(new VisualizeCommand());
         // Add others like ResetCommand, SummarizeCommand, etc.
     }
 }

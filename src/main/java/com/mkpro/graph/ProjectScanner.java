@@ -1,6 +1,5 @@
-package org.graphify.parser;
+package com.mkpro.graph;
 
-import org.graphify.core.model.ExtractionResult;
 import java.nio.file.Path;
 
 /**

@@ -1,4 +1,4 @@
-package org.graphify.core.model;
+package com.mkpro.graph;
 
 import java.util.List;
 

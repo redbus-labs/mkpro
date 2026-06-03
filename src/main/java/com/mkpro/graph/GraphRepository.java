@@ -1,6 +1,5 @@
-package org.graphify.persistence.api;
+package com.mkpro.graph;
 
-import org.graphify.core.model.ExtractionResult;
 import java.util.Optional;
 
 /**

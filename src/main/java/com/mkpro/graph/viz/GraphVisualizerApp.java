@@ -1,13 +1,6 @@
-package org.graphify.viz;
+package com.mkpro.graph.viz;
 
-import org.graphify.core.model.Entity;
-import org.graphify.core.model.Relationship;
-import org.graphify.core.model.ExtractionResult;
-import org.graphify.parser.JavaParserScanner;
-import org.graphify.persistence.api.GitUtil;
-import org.graphify.persistence.mapdb.MapDbGraphRepository;
-import org.graphify.viz.compute.LayoutKernelProvider;
-import org.graphify.viz.ui.MainFrame;
+import com.mkpro.graph.*;
 import org.jocl.*;
 
 import javax.swing.*;
@@ -68,7 +61,7 @@ public class GraphVisualizerApp {
         hostPositions = new float[numNodes * 2];
         Random rnd = new Random();
         for (int i = 0; i < hostPositions.length; i++) {
-            hostPositions[i] = (rnd.nextFloat() - 0.5f) * 600;
+            hostPositions[i] = (rnd.nextFloat() - 0.5f) * 1000;
         }
         memPositions = clCreateBuffer(kernelProvider.getContext(), 
             CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, 
@@ -134,7 +127,7 @@ public class GraphVisualizerApp {
         int numNodes = entities.size();
         int numEdges = relationships.size();
         float k = 80.0f;
-        float dt = 0.1f;
+        float dt = 0.05f;
         
         clSetKernelArg(kernel, 0, Sizeof.cl_mem, Pointer.to(memPositions));
         clSetKernelArg(kernel, 1, Sizeof.cl_mem, Pointer.to(memEdges));
@@ -147,6 +140,24 @@ public class GraphVisualizerApp {
         
         clEnqueueNDRangeKernel(kernelProvider.getCommandQueue(), kernel, 1, null, new long[]{numNodes}, null, 0, null, null);
         clEnqueueReadBuffer(kernelProvider.getCommandQueue(), memPositions, CL_TRUE, 0, Sizeof.cl_float * hostPositions.length, Pointer.to(hostPositions), 0, null, null);
+
+        // Safety check for NaN or Infinity
+        boolean invalid = false;
+        for (float f : hostPositions) {
+            if (Float.isNaN(f) || Float.isInfinite(f)) {
+                invalid = true;
+                break;
+            }
+        }
+        if (invalid) {
+            System.err.println("[Simulation Warning] Simulation exploded (NaN/Inf detected)! Resetting positions...");
+            Random rnd = new Random();
+            for (int i = 0; i < hostPositions.length; i++) {
+                hostPositions[i] = (rnd.nextFloat() - 0.5f) * 1000;
+            }
+            clEnqueueWriteBuffer(kernelProvider.getCommandQueue(), memPositions, CL_TRUE, 0, Sizeof.cl_float * hostPositions.length, Pointer.to(hostPositions), 0, null, null);
+        }
+
         frame.updateGraph(entities, relationships, hostPositions, entityIdToIndex);
     }
 

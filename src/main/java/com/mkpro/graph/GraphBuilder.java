@@ -1,7 +1,5 @@
-package org.graphify.graph;
+package com.mkpro.graph;
 
-import org.graphify.core.model.Entity;
-import org.graphify.core.model.ExtractionResult;
 import org.jgrapht.Graph;
 
 public interface GraphBuilder {

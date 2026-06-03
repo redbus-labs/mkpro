@@ -1,9 +1,7 @@
-package org.graphify.export;
+package com.mkpro.graph;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import org.graphify.core.model.ExtractionResult;
-import org.graphify.analysis.AnalysisResult;
 
 import java.io.IOException;
 import java.nio.file.Path;

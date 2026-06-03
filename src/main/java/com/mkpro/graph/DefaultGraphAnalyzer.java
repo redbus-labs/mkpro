@@ -1,8 +1,5 @@
-package org.graphify.analysis;
+package com.mkpro.graph;
 
-import org.graphify.core.model.Entity;
-import org.graphify.core.model.EntityType;
-import org.graphify.graph.RelationshipEdge;
 import org.jgrapht.Graph;
 import org.jgrapht.alg.scoring.PageRank;
 import org.jgrapht.alg.connectivity.KosarajuStrongConnectivityInspector;

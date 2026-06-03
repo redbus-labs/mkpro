@@ -1,7 +1,6 @@
-package org.graphify.viz.ui;
+package com.mkpro.graph.viz;
 
-import org.graphify.core.model.Entity;
-import org.graphify.core.model.Relationship;
+import com.mkpro.graph.*;
 
 import javax.swing.*;
 import java.awt.*;
@@ -47,6 +46,15 @@ public class GraphCanvas extends JPanel {
         float centerX = w / 2f;
         float centerY = h / 2f;
 
+        // Auto-calculate scale factor to fit graph in window
+        float maxCoord = 1.0f;
+        for (int i = 0; i < entities.size(); i++) {
+            maxCoord = Math.max(maxCoord, Math.abs(positions[i * 2]));
+            maxCoord = Math.max(maxCoord, Math.abs(positions[i * 2 + 1]));
+        }
+        // Use 90% of the available space to provide some margin
+        float scale = (Math.min(w, h) / 2.0f) / maxCoord * 0.9f;
+
         // Draw relationships
         g2d.setColor(new Color(180, 180, 180, 150));
         g2d.setStroke(new BasicStroke(1.2f));
@@ -54,10 +62,10 @@ public class GraphCanvas extends JPanel {
             Integer sIdx = entityIdToIndex.get(rel.sourceId());
             Integer tIdx = entityIdToIndex.get(rel.targetId());
             if (sIdx != null && tIdx != null) {
-                float x1 = centerX + positions[sIdx * 2];
-                float y1 = centerY + positions[sIdx * 2 + 1];
-                float x2 = centerX + positions[tIdx * 2];
-                float y2 = centerY + positions[tIdx * 2 + 1];
+                float x1 = centerX + positions[sIdx * 2] * scale;
+                float y1 = centerY + positions[sIdx * 2 + 1] * scale;
+                float x2 = centerX + positions[tIdx * 2] * scale;
+                float y2 = centerY + positions[tIdx * 2 + 1] * scale;
                 
                 // Highlight edges connected to selected entity
                 if (rel.sourceId().equals(selectedEntityId) || rel.targetId().equals(selectedEntityId)) {
@@ -75,8 +83,8 @@ public class GraphCanvas extends JPanel {
         // Draw entities
         for (int i = 0; i < entities.size(); i++) {
             Entity entity = entities.get(i);
-            float x = centerX + positions[i * 2];
-            float y = centerY + positions[i * 2 + 1];
+            float x = centerX + positions[i * 2] * scale;
+            float y = centerY + positions[i * 2 + 1] * scale;
 
             boolean isSelected = entity.id().equals(selectedEntityId);
             

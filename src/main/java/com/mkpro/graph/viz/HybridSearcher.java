@@ -1,6 +1,6 @@
-package org.graphify.viz.search;
+package com.mkpro.graph.viz;
 
-import org.graphify.core.model.Entity;
+import com.mkpro.graph.*;
 import java.util.*;
 import java.util.stream.Collectors;
 

@@ -1,4 +1,4 @@
-package org.graphify.parser;
+package com.mkpro.graph;
 
 import com.github.javaparser.ParseProblemException;
 import com.github.javaparser.StaticJavaParser;
@@ -11,7 +11,6 @@ import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
-import org.graphify.core.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

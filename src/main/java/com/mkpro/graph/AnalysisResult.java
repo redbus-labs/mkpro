@@ -1,6 +1,5 @@
-package org.graphify.analysis;
+package com.mkpro.graph;
 
-import org.graphify.core.model.Entity;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;

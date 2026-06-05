@@ -12,6 +12,7 @@ import java.net.URI;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /**
  * P2PMessageBus manages peer-to-peer WebSocket communication.
@@ -21,9 +22,14 @@ import java.util.concurrent.ConcurrentHashMap;
 public class P2PMessageBus extends WebSocketServer {
 
     private final Set<WebSocketClient> outboundPeers = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private Consumer<JSONObject> messageHandler;
 
     public P2PMessageBus(int port) {
         super(new InetSocketAddress(port));
+    }
+
+    public void setMessageHandler(Consumer<JSONObject> handler) {
+        this.messageHandler = handler;
     }
 
     @Override
@@ -123,6 +129,8 @@ public class P2PMessageBus extends WebSocketServer {
      * @param message The received JSONObject.
      */
     protected void onMessageReceived(JSONObject message) {
-        // Default implementation does nothing.
+        if (messageHandler != null) {
+            messageHandler.accept(message);
+        }
     }
 }

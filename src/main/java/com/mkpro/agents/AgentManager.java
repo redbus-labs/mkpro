@@ -110,7 +110,7 @@ public class AgentManager {
         this.artifactService = artifactService;
         this.memoryService = memoryService;
         this.apiKey = apiKey;
-        this.ollamaServerUrl = ollamaServerUrl;
+        this.ollamaServerUrl = (ollamaServerUrl == null || ollamaServerUrl.isEmpty()) ? "http://localhost:11434" : ollamaServerUrl;
         this.logger = logger;
         this.centralMemory = centralMemory;
         this.runnerType = runnerType;
@@ -188,7 +188,7 @@ public class AgentManager {
                         .modelName(config.getModelName())
                         .build();
             case OLLAMA:
-                return new OllamaBaseLM(ollamaServerUrl, config.getModelName());
+                return new OllamaBaseLM(  config.getModelName(),ollamaServerUrl);
             case BEDROCK:
                 return new BedrockBaseLM(config.getModelName());
             case AZURE:

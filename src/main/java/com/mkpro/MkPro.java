@@ -49,7 +49,6 @@ public class MkPro {
     }
 
     private static void registerCommands(CommandRegistry registry) {
-        registry.register(new HelpCommand(registry));
         registry.register(new StatusCommand());
         registry.register(new StatsCommand());
         registry.register(new McpCommand());
@@ -61,6 +60,8 @@ public class MkPro {
         registry.register(new RememberCommand());
         registry.register(new ExportRunnerCommand());
         registry.register(new VisualizeCommand());
+        registry.register(new NetworkCommand());
+        registry.register(new HelpCommand(registry));
         // Add others like ResetCommand, SummarizeCommand, etc.
     }
 }

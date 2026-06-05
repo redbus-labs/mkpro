@@ -35,9 +35,7 @@ public class ModelRegistry {
 
     public static List<String> GEMINI_MODELS = new ArrayList<>();
     public static List<String> BEDROCK_MODELS = new ArrayList<>();
-    public static final List<String> OLLAMA_MODELS = Collections.unmodifiableList(Arrays.asList(
-        "llama3", "qwen2.5-coder", "mistral", "phi3", "codegemma", "starCoder2"
-    ));
+    public static List<String> OLLAMA_MODELS = new ArrayList<>();
     public static List<String> AZURE_MODELS = new ArrayList<>();
 
     static {
@@ -47,6 +45,9 @@ public class ModelRegistry {
     private static void loadModels() {
         // Set default lists first
         setDefaultModels();
+        
+        // Fetch Ollama models dynamically
+        fetchOllamaModels();
 
         Path localFile = PathUtils.getBaseDocumentsPath().resolve(MODELS_FILE);
 
@@ -105,10 +106,63 @@ public class ModelRegistry {
             "anthropic.claude-3-5-sonnet-20240620-v1:0", "meta.llama3-70b-instruct-v1:0",
             "meta.llama3-8b-instruct-v1:0", "amazon.titan-text-express-v1"
         ));
-        // OLLAMA_MODELS is now a static final constant
         AZURE_MODELS = new ArrayList<>(Arrays.asList(
             "gpt-4o", "gpt-4-turbo", "gpt-35-turbo"
         ));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void fetchOllamaModels() {
+        CompletableFuture.runAsync(() -> {
+            ConfigService config = new ConfigService();
+            String ollamaUrl = config.getSetting(ConfigService.PROP_OLLAMA_URL, "http://localhost:11434");
+            
+            if (ollamaUrl.endsWith("/")) {
+                ollamaUrl = ollamaUrl.substring(0, ollamaUrl.length() - 1);
+            }
+
+            try {
+                HttpClient client = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(2))
+                        .build();
+
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(ollamaUrl + "/api/tags"))
+                        .GET()
+                        .timeout(Duration.ofSeconds(5))
+                        .build();
+
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() == 200) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    Map<String, Object> data = mapper.readValue(response.body(), Map.class);
+                    List<Map<String, Object>> models = (List<Map<String, Object>>) data.get("models");
+                    
+                    if (models != null && !models.isEmpty()) {
+                        List<String> fetchedModels = new ArrayList<>();
+                        for (Map<String, Object> model : models) {
+                            String name = (String) model.get("name");
+                            if (name != null) {
+                                fetchedModels.add(name);
+                            }
+                        }
+                        if (!fetchedModels.isEmpty()) {
+                            OLLAMA_MODELS = fetchedModels;
+                            logger.info("Successfully fetched {} models from Ollama.", fetchedModels.size());
+                            return;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.debug("Ollama server not reachable at {}: {}. Using default Ollama models.", ollamaUrl, e.getMessage());
+            }
+
+            // Fallback
+            OLLAMA_MODELS = new ArrayList<>(Arrays.asList(
+                "llama3", "qwen2.5-coder", "mistral", "phi3", "codegemma", "starCoder2"
+            ));
+        });
     }
 
     @SuppressWarnings("unchecked")

@@ -13,6 +13,8 @@ import com.google.adk.memory.EmbeddingService;
 import com.google.adk.memory.MapDBVectorStore;
 import com.mkpro.CentralMemory;
 import com.mkpro.infra.network.discovery.DiscoveryService;
+import com.mkpro.infra.network.messaging.P2PMessageBus;
+import com.mkpro.infra.network.sync.SyncEngine;
 import com.mkpro.LogHttpServer;
 import com.mkpro.SimpleWebSocketServer;
 import com.mkpro.ActionLogger;
@@ -21,6 +23,7 @@ import com.mkpro.models.RunnerType;
 import com.mkpro.utils.PathUtils;
 import com.mkpro.agents.AgentManager;
 import com.mkpro.InstanceRegistry;
+import com.mkpro.graph.MapDbGraphRepository;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.reader.LineReader;
@@ -31,6 +34,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Scanner;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.mkpro.MkPro.*;
@@ -61,6 +65,14 @@ public class BootstrapService {
             
             if (context.getDiscoveryService() != null) {
                 context.getDiscoveryService().stop();
+            }
+
+            if (context.getP2pMessageBus() != null) {
+                try {
+                    context.getP2pMessageBus().stop();
+                } catch (Exception e) {
+                    // Ignore
+                }
             }
             
             ActionLogger.shutdown();
@@ -172,7 +184,27 @@ public class BootstrapService {
             }
 
             context.setCentralMemory(new CentralMemory());
-            context.setDiscoveryService(new DiscoveryService());
+            
+            // Networking Initialization
+            int p2pPort = PathUtils.findAvailablePort(9000);
+            P2PMessageBus p2pBus = new P2PMessageBus(p2pPort);
+            p2pBus.start();
+            context.setP2pMessageBus(p2pBus);
+
+            String userName = System.getProperty("user.name", "user");
+            String instanceId = (context.getInstanceName() != null ? context.getInstanceName() : userName) + "-" + UUID.randomUUID().toString().substring(0, 4);
+            context.setInstanceName(instanceId);
+
+            DiscoveryService discoveryService = new DiscoveryService();
+            discoveryService.start(p2pPort, instanceId);
+            context.setDiscoveryService(discoveryService);
+
+            String memoryDbPath = PathUtils.getBaseDocumentsPath().resolve("memory_graph.db").toString();
+            MapDbGraphRepository graphRepository = new MapDbGraphRepository(memoryDbPath);
+            SyncEngine syncEngine = new SyncEngine(p2pBus, context.getCentralMemory(), (MapDbGraphRepository) graphRepository);
+            p2pBus.setMessageHandler(syncEngine::processIncomingMessage);
+            context.setSyncEngine(syncEngine);
+
             context.setActionLogger(new ActionLogger(mkproDir.resolve(dbBaseName + "_logs.db").toString()));
             
             ConfigService configService = new ConfigService();

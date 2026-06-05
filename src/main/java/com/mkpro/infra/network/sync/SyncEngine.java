@@ -1,25 +1,35 @@
 package com.mkpro.infra.network.sync;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mkpro.CentralMemory;
+import com.mkpro.graph.ExtractionResult;
+import com.mkpro.graph.MapDbGraphRepository;
 import com.mkpro.infra.network.messaging.P2PMessageBus;
 import org.json.JSONObject;
 
 /**
  * SyncEngine coordinates state synchronization across the network by bridging
- * CentralMemory changes with the P2PMessageBus.
+ * CentralMemory and MapDbGraphRepository changes with the P2PMessageBus.
  */
 public class SyncEngine {
 
     private final P2PMessageBus messageBus;
     private final CentralMemory centralMemory;
+    private final MapDbGraphRepository repository;
+    private final ObjectMapper mapper = new ObjectMapper();
 
-    public SyncEngine(P2PMessageBus messageBus, CentralMemory centralMemory) {
+    public SyncEngine(P2PMessageBus messageBus, CentralMemory centralMemory, MapDbGraphRepository repository) {
         this.messageBus = messageBus;
         this.centralMemory = centralMemory;
+        this.repository = repository;
 
         // Hook into CentralMemory to listen for local updates
-        // Note: CentralMemory needs to implement addListener and a functional interface for this to work.
         this.centralMemory.addListener(this::onLocalMemoryChanged);
+
+        // Hook into MapDbGraphRepository to listen for graph updates
+        if (this.repository != null) {
+            this.repository.addListener(this::broadcastGraphSync);
+        }
     }
 
     /**
@@ -43,6 +53,20 @@ public class SyncEngine {
         messageBus.broadcast(syncMessage);
     }
 
+    private void broadcastGraphSync(String key, ExtractionResult result) {
+        try {
+            JSONObject syncMessage = new JSONObject();
+            syncMessage.put("type", "GRAPH_SYNC");
+            syncMessage.put("key", key);
+            syncMessage.put("result", new JSONObject(mapper.writeValueAsString(result)));
+            syncMessage.put("timestamp", System.currentTimeMillis());
+
+            messageBus.broadcast(syncMessage);
+        } catch (Exception e) {
+            System.err.println("Error broadcasting graph sync: " + e.getMessage());
+        }
+    }
+
     /**
      * Processes incoming synchronization messages from the network.
      * Updates CentralMemory while ensuring no feedback loops occur.
@@ -50,7 +74,8 @@ public class SyncEngine {
      * @param message The received JSON message.
      */
     public void processIncomingMessage(JSONObject message) {
-        if ("MEMORY_SYNC".equals(message.optString("type"))) {
+        String type = message.optString("type");
+        if ("MEMORY_SYNC".equals(type)) {
             String key = message.getString("key");
             Object value = message.get("value");
 
@@ -58,6 +83,17 @@ public class SyncEngine {
             // Note: CentralMemory.updateFromRemote should be used to prevent 
             // re-broadcasting the same change back to the network.
             centralMemory.updateFromRemote(key, value);
+        } else if ("GRAPH_SYNC".equals(type)) {
+            try {
+                String key = message.getString("key");
+                String resultJson = message.getJSONObject("result").toString();
+                ExtractionResult result = mapper.readValue(resultJson, ExtractionResult.class);
+                if (repository != null) {
+                    repository.mergeExtraction(key, result);
+                }
+            } catch (Exception e) {
+                System.err.println("Error processing incoming graph sync: " + e.getMessage());
+            }
         }
     }
 }

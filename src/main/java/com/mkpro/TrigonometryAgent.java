@@ -113,7 +113,7 @@ public class TrigonometryAgent {
         int choice = choiceStr.isBlank() ? 1 : Integer.parseInt(choiceStr);
 
         switch (choice) {
-            case 2: return new OllamaBaseLM("gpt-oss", "http://10.120.15.116:11434");
+            case 2: return new OllamaBaseLM("http://10.120.15.116:11434", "gpt-oss");
             case 3: return new RedbusADG("40");
             case 4: 
                 String apiKey = System.getenv("GEMINI_API_KEY");

@@ -7,7 +7,11 @@ import org.mapdb.Serializer;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Disk-backed transactional implementation of GraphRepository utilizing MapDB HTreeMaps.
@@ -16,6 +20,17 @@ import java.util.Optional;
 public class MapDbGraphRepository implements GraphRepository {
     private final DB db;
     private final HTreeMap<String, ExtractionResult> store;
+    private final List<GraphListener> listeners = new ArrayList<>();
+
+    public interface GraphListener {
+        void onGraphUpdated(String key, ExtractionResult result);
+    }
+
+    public void addListener(GraphListener listener) {
+        if (listener != null) {
+            listeners.add(listener);
+        }
+    }
 
     /**
      * Resolves a centralized cache path for the given project workspace inside the user's home directory.
@@ -106,6 +121,48 @@ public class MapDbGraphRepository implements GraphRepository {
         }
         store.put(commitHash, extraction);
         db.commit(); // Transactional commit to disk
+
+        // Notify listeners after commit
+        for (GraphListener listener : listeners) {
+            listener.onGraphUpdated(commitHash, extraction);
+        }
+    }
+
+    public void mergeExtraction(String key, ExtractionResult remoteResult) {
+        if (key == null || remoteResult == null) {
+            return;
+        }
+
+        ExtractionResult localResult = store.get(key);
+        if (localResult == null) {
+            store.put(key, remoteResult);
+        } else {
+            List<Entity> mergedEntities = new ArrayList<>(localResult.entities());
+            Set<String> existingEntityIds = mergedEntities.stream()
+                .map(Entity::id)
+                .collect(Collectors.toSet());
+
+            for (Entity entity : remoteResult.entities()) {
+                if (!existingEntityIds.contains(entity.id())) {
+                    mergedEntities.add(entity);
+                }
+            }
+
+            List<Relationship> mergedRelationships = new ArrayList<>(localResult.relationships());
+            Set<String> existingRelIds = mergedRelationships.stream()
+                .map(Relationship::id)
+                .collect(Collectors.toSet());
+
+            for (Relationship rel : remoteResult.relationships()) {
+                if (!existingRelIds.contains(rel.id())) {
+                    mergedRelationships.add(rel);
+                }
+            }
+
+            store.put(key, new ExtractionResult(mergedEntities, mergedRelationships));
+        }
+        db.commit();
+        // Do NOT notify listeners to prevent network loops
     }
 
     @Override

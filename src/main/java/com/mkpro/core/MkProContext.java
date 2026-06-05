@@ -7,6 +7,8 @@ import com.google.adk.artifacts.BaseArtifactService;
 import com.google.adk.memory.BaseMemoryService;
 import com.mkpro.CentralMemory;
 import com.mkpro.infra.network.discovery.DiscoveryService;
+import com.mkpro.infra.network.messaging.P2PMessageBus;
+import com.mkpro.infra.network.sync.SyncEngine;
 import com.mkpro.LogHttpServer;
 import com.mkpro.SimpleWebSocketServer;
 import com.mkpro.ActionLogger;
@@ -37,6 +39,8 @@ public class MkProContext {
     private BaseMemoryService memoryService;
     private CentralMemory centralMemory;
     private DiscoveryService discoveryService;
+    private P2PMessageBus p2pMessageBus;
+    private SyncEngine syncEngine;
     private LogHttpServer logHttpServer;
     private SimpleWebSocketServer webSocketServer;
     private ActionLogger actionLogger;
@@ -223,6 +227,22 @@ public class MkProContext {
 
     public void setDiscoveryService(DiscoveryService discoveryService) {
         this.discoveryService = discoveryService;
+    }
+
+    public P2PMessageBus getP2pMessageBus() {
+        return p2pMessageBus;
+    }
+
+    public void setP2pMessageBus(P2PMessageBus p2pMessageBus) {
+        this.p2pMessageBus = p2pMessageBus;
+    }
+
+    public SyncEngine getSyncEngine() {
+        return syncEngine;
+    }
+
+    public void setSyncEngine(SyncEngine syncEngine) {
+        this.syncEngine = syncEngine;
     }
 
     public LogHttpServer getLogHttpServer() {

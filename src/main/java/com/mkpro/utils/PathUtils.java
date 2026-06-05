@@ -1,6 +1,7 @@
 package com.mkpro.utils;
 
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -25,5 +26,22 @@ public class PathUtils {
         if (parent != null && !Files.exists(parent)) {
             Files.createDirectories(parent);
         }
+    }
+
+    /**
+     * Finds an available port starting from the given port.
+     * @param startPort The port to start searching from.
+     * @return An available port.
+     */
+    public static int findAvailablePort(int startPort) {
+        int port = startPort;
+        while (port < 65535) {
+            try (ServerSocket ignored = new ServerSocket(port)) {
+                return port;
+            } catch (IOException e) {
+                port++;
+            }
+        }
+        return -1;
     }
 }

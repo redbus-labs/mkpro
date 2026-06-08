@@ -62,8 +62,18 @@ __kernel void compute_forces(
     }
 
     // 4. Update position
-    // Simple Euler integration with some damping
-    float2 new_pos = pos_i + force * dt * 0.01f;
+    // Limit max force to prevent explosions
+    float force_len = length(force);
+    if (force_len > 100.0f) {
+        force = (force / force_len) * 100.0f;
+    }
+
+    // Apply damping and update
+    float2 new_pos = pos_i + force * dt * 0.05f;
+
+    // Boundary check
+    new_pos.x = clamp(new_pos.x, -2000.0f, 2000.0f);
+    new_pos.y = clamp(new_pos.y, -2000.0f, 2000.0f);
     
     positions[i] = new_pos;
 }

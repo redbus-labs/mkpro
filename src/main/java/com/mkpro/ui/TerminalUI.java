@@ -94,6 +94,11 @@ public class TerminalUI {
                         spinnerThread.start();
 
                         try {
+                            final String finalLine = line;
+                            long[] tokens = {0, 0, 0};
+                            long startTime = System.currentTimeMillis();
+                            StringBuilder responseBuilder = new StringBuilder();
+
                             context.getRunner().runAsync(context.getCurrentSession().sessionKey(), message)
                                 .blockingSubscribe(event -> {
                                     // Stop spinner upon receiving first response chunk
@@ -116,12 +121,21 @@ public class TerminalUI {
                                                         }
                                                         System.out.print(ANSI_LIGHT_ORANGE);
                                                     }
+                                                    responseBuilder.append(text);
                                                     System.out.print(text);
                                                     System.out.flush();
                                                 });
                                             }
                                         });
                                     });
+
+                                    // Capture tokens
+                                    event.usageMetadata().ifPresent(u -> {
+                                        tokens[0] = u.promptTokenCount().orElse(0);
+                                        tokens[1] = u.candidatesTokenCount().orElse(0);
+                                        tokens[2] = u.totalTokenCount().orElse(0);
+                                    });
+
                                     if (Boolean.FALSE.equals(event.partial().orElse(null))) {
                                         System.out.print(ANSI_RESET);
                                         System.out.println();
@@ -130,6 +144,21 @@ public class TerminalUI {
                                     isThinking.set(false);
                                     spinnerThread.interrupt();
                                     System.err.println(ANSI_RESET + "\n[Error] " + error.getMessage());
+                                }, () -> {
+                                    // ON COMPLETE - Calculate stats
+                                    long duration = System.currentTimeMillis() - startTime;
+                                    String sessId = context.getCurrentSession() != null ? context.getCurrentSession().sessionKey().getSessionId() : "default-session";
+                                    
+                                    com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
+                                    String providerStr = coordConfig != null ? coordConfig.getProvider().name() : "OLLAMA";
+                                    String modelStr = coordConfig != null ? coordConfig.getModelName() : "llama3";
+                                    
+                                    com.mkpro.models.AgentStat stat = new com.mkpro.models.AgentStat(
+                                        "Coordinator", providerStr, modelStr, duration, true, 
+                                        finalLine.length(), responseBuilder.length(), 
+                                        tokens[0], tokens[1], tokens[2], sessId
+                                    );
+                                    context.getCentralMemory().saveAgentStat(stat);
                                 });
                         } finally {
                             isThinking.set(false);

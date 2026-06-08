@@ -473,6 +473,9 @@ public class AgentManager {
         String username = System.getProperty("user.name");
         String APP_NAME = "mkpro-" + username;
         
+        long[] tokens = {0, 0, 0}; // [prompt, candidates, total]
+        String sessId = "default-session";
+        
         logger.log("SYSTEM", String.format("Delegating task to %s (%s/%s)...", 
             request.getAgentName(), request.getProvider(), request.getModelName()));
 
@@ -504,15 +507,26 @@ public class AgentManager {
                     .build();
 
             Session subSession = SessionHelper.createSession(subRunner.sessionService(), request.getAgentName()).blockingGet();
+            if (subSession != null && subSession.id() != null) {
+                sessId = subSession.id();
+            }
 
             Content content = Content.builder().role("user").parts(List.of(Part.fromText(request.getUserPrompt()))).build();
             
             subRunner.runAsync(request.getAgentName(), subSession.id(), content)
-                  .filter(e -> e.content().isPresent())
-                  .blockingForEach(e -> 
-                      e.content().flatMap(Content::parts).orElse(Collections.emptyList())
-                       .forEach(p -> p.text().ifPresent(output::append))
-                  );
+                .blockingForEach(event -> {
+                    // Capture Text
+                    event.content().ifPresent(c -> {
+                        c.parts().orElse(java.util.Collections.emptyList())
+                         .forEach(p -> p.text().ifPresent(output::append));
+                    });
+                    // Capture Tokens
+                    event.usageMetadata().ifPresent(u -> {
+                        tokens[0] = u.promptTokenCount().orElse(0);
+                        tokens[1] = u.candidatesTokenCount().orElse(0);
+                        tokens[2] = u.totalTokenCount().orElse(0);
+                    });
+                });
             
             String resultStr = output.toString();
             logger.log(request.getAgentName(), resultStr);
@@ -530,7 +544,11 @@ public class AgentManager {
                     duration, 
                     success, 
                     request.getUserPrompt().length(), 
-                    output.length()
+                    output.length(),
+                    tokens[0],
+                    tokens[1],
+                    tokens[2],
+                    sessId
                 );
                 centralMemory.saveAgentStat(stat);
             } catch (Exception e) {

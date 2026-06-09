@@ -275,7 +275,11 @@ public class AgentManager {
             sysAdminTools.addAll(shellTools);
             sysAdminTools.addAll(fileSystemTools);
             sysAdminTools.addAll(clipboardTools);
-            sysAdminTools.add(StatsTools.createGetSessionStatsTool());
+
+            List<BaseTool> gitTools = new ArrayList<>();
+            gitTools.addAll(shellTools);
+            gitTools.addAll(fileSystemTools);
+            gitTools.add(StatsTools.createGetSessionStatsTool());
 
             List<BaseTool> testerTools = new ArrayList<>();
             testerTools.addAll(fileSystemTools);
@@ -312,6 +316,8 @@ public class AgentManager {
                         toolsForAgent = coderTools;
                     } else if (nameLower.contains("sysadmin") || nameLower.contains("admin") || nameLower.contains("sre") || nameLower.contains("devops")) {
                         toolsForAgent = sysAdminTools;
+                    } else if (nameLower.contains("git") || nameLower.contains("release")) {
+                        toolsForAgent = gitTools;
                     } else if (nameLower.contains("tester") || nameLower.contains("qa")) {
                         toolsForAgent = testerTools;
                     } else if (nameLower.contains("architect") || nameLower.contains("security")) {

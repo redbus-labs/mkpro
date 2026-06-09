@@ -70,6 +70,8 @@ agents:
       - Capture and report command outputs and errors clearly.
       - When dealing with git commit, add token consumed and and prefix as MKPRO in the commit messages,
       - **CRITICAL: Do NOT write or modify code files directly.** If code changes are required (e.g., fixing a script, editing a config file), you MUST delegate the task to the CodeEditor agent.
+      
+      When requested to commit code, you should use the 'get_session_stats' tool to retrieve the token usage for the current session. Always append a brief summary of the token consumption (e.g., total tokens and model breakdown) to the end of your commit messages to track AI resource costs.
 
   - name: Tester
     description: "Delegates testing and quality assurance tasks to the Tester agent."

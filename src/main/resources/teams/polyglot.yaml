@@ -69,6 +69,7 @@ agents:
       Responsibilities:
       - Execute shell commands.
       - Manage file systems and environment configurations.
+      When requested to commit code, you should use the 'get_session_stats' tool to retrieve the token usage for the current session. Always append a brief summary of the token consumption (e.g., total tokens and model breakdown) to the end of your commit messages to track AI resource costs.
 
   - name: Tester
     description: "QA Engineer."

@@ -20,7 +20,7 @@ Your `mkpro` instance is not just a chatbot; it's a team of experts led by a Coo
 | **DevOps** | **SRE / Cloud Engineer**. Writes Dockerfiles, Kubernetes manifests, CI/CD configs, and interacts with cloud CLIs (AWS, GCP). |
 | **DataAnalyst** | **Data Scientist**. Analyzes data sets (CSV, JSON), writes Python scripts (pandas, numpy) for statistical analysis, and generates insights. |
 | **CodeEditor** | **Code Manipulator**. Safely applies code changes to files with a built-in diff preview and user confirmation step. Automatically creates backups using `Maker.backItUp`. |
-| **GitAgent** | **Version Control Specialist**. Dedicated version control specialist responsible for staging, committing, and pushing code. It automatically enforces semantic commit messages and appends the AI session's token consumption statistics to the commit history. |
+| **GitAgent** | **Version Control Specialist**. Dedicated version control specialist responsible for staging, committing, and pushing code. It automatically enforces semantic commit messages and appends the AI session's token consumption statistics to the commit history. (Note: The GitAgent automatically appends session token usage to all commit messages to ensure AI resource transparency.) |
 
 ### Agent Interaction Flow
 

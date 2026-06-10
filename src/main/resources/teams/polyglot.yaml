@@ -102,7 +102,7 @@ agents:
       
       Always format your commit messages using the following template:
       
-      [type]: [short summary of changes]
+      [type]: [short summary of changes] [mkpro]
       
       [Detailed description of what was changed and why]
       

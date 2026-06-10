@@ -11,6 +11,7 @@ import com.mkpro.models.AgentStat;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -34,12 +35,37 @@ public class StatsTools {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
-                    String sessionId = (String) args.get("sessionId");
-                    List<AgentStat> stats = CentralMemory.getInstance().getAgentStats().stream()
-                            .filter(s -> sessionId.equals(s.getSessionId()))
+                    final String reqSessionId = (String) args.get("sessionId");
+                    List<AgentStat> allStats = CentralMemory.getInstance().getAgentStats();
+                    
+                    // Filter stats
+                    List<AgentStat> stats = allStats.stream()
+                            .filter(s -> reqSessionId.equals(s.getSessionId()))
                             .collect(Collectors.toList());
 
+                    String finalSessionId = reqSessionId;
+
+                    // Fallback: If no stats match, and it's looking for "current" or "default", grab the latest active session.
+                    if (stats.isEmpty()) {
+                        String latestSessionId = allStats.stream()
+                                .map(AgentStat::getSessionId)
+                                .filter(Objects::nonNull)
+                                .reduce((first, second) -> second) // Get last item
+                                .orElse("unknown");
+                        
+                        stats = allStats.stream()
+                                .filter(s -> latestSessionId.equals(s.getSessionId()))
+                                .collect(Collectors.toList());
+                        finalSessionId = latestSessionId + " (auto-resolved)";
+                    }
+
+                    final String reportSessionId = finalSessionId;
+
                     long totalTokens = stats.stream().mapToLong(AgentStat::getTotalTokens).sum();
+
+                    if (stats.isEmpty() || totalTokens == 0) {
+                        return ImmutableMap.of("result", "Session '" + reportSessionId + "' has no recorded token consumption yet.");
+                    }
 
                     Map<String, Long> agentTokens = stats.stream()
                             .collect(Collectors.groupingBy(AgentStat::getAgentName, Collectors.summingLong(AgentStat::getTotalTokens)));
@@ -48,7 +74,7 @@ public class StatsTools {
                             .collect(Collectors.groupingBy(AgentStat::getModel, Collectors.summingLong(AgentStat::getTotalTokens)));
 
                     StringBuilder report = new StringBuilder();
-                    report.append(String.format("Session '%s' has consumed %,d tokens in total.\n", sessionId, totalTokens));
+                    report.append(String.format("Session '%s' has consumed %,d tokens in total.\n", reportSessionId, totalTokens));
                     
                     report.append("Breakdown by Agent:\n");
                     agentTokens.forEach((agent, tokens) -> report.append(String.format(" - %s: %,d tokens\n", agent, tokens)));

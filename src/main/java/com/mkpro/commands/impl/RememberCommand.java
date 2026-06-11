@@ -1,3 +1,7 @@
+/**
+ * @author Sandeep Belgavi
+ * @since 2026-06-11
+ */
 package com.mkpro.commands.impl;
 
 import com.google.genai.types.Content;
@@ -17,8 +21,8 @@ public class RememberCommand implements Command {
     @Override
     public void execute(String[] args, MkProContext context) throws Exception {
         if (context.getRunner() == null || context.getCurrentSession() == null) {
-            System.out.println(MkPro.ANSI_YELLOW + "No runner or session initialized." + MkPro.ANSI_RESET);
-            return;
+            System.out.println(MkPro.ANSI_YELLOW + "No runner or session initialized. Rebuilding runner..." + MkPro.ANSI_RESET);
+            context.rebuildRunner();
         }
 
         String prompt = "Please summarize our conversation so far and extract key facts, decisions, and context that should be remembered for the next session. Be concise.";

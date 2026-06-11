@@ -1,3 +1,7 @@
+/**
+ * @author Sandeep Belgavi
+ * @since 2026-06-11
+ */
 package com.mkpro.ui;
 
 import com.google.adk.events.Event;
@@ -138,7 +142,8 @@ public class TerminalUI {
                             System.out.flush();
                         }
                     } else {
-                        System.out.println(ANSI_YELLOW + "No runner or session initialized. Input ignored." + ANSI_RESET);
+                        System.out.println(ANSI_YELLOW + "No runner or session initialized. Rebuilding runner..." + ANSI_RESET);
+                        context.rebuildRunner();
                     }
                 }
 

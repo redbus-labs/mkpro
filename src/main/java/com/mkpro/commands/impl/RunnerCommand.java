@@ -25,7 +25,7 @@ public class RunnerCommand implements Command {
                 }
 
                 context.getCurrentRunnerType().set(type);
-                context.rebuildRunner(); // TRIGGER RUNNER REBUILD
+                context.rebuildRunner(true); // Full storage rebuild when switching runner type
                 System.out.println("\n\u001b[32mSwitched and rebuilt active runner with storage type: " + type + "\u001b[0m");
             } catch (IllegalArgumentException e) {
                 System.out.println("Invalid runner type. Available: IN_MEMORY, MAP_DB, POSTGRES");

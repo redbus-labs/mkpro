@@ -179,6 +179,32 @@ public class AgentManager {
         return agentDefinitions;
     }
 
+    private AgentConfig resolveAgentConfig(String agentName, Map<String, AgentConfig> agentConfigs, AgentDefinition def) {
+        AgentConfig config = agentConfigs.get(agentName);
+        if (config != null) {
+            return config;
+        }
+
+        config = agentConfigs.get("default");
+        if (config != null) {
+            return config;
+        }
+
+        if ("Coordinator".equalsIgnoreCase(agentName)) {
+            return new AgentConfig(Provider.OLLAMA, "devstral-small-2");
+        }
+
+        Provider provider = Provider.OLLAMA;
+        if (def != null && def.getProvider() != null) {
+            try {
+                provider = Provider.valueOf(def.getProvider().toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        String model = (def != null && def.getModel() != null && !def.getModel().isEmpty()) ? def.getModel() : "llama3";
+        return new AgentConfig(provider, model);
+    }
+
     private BaseLlm createLlm(AgentConfig config) {
         if (config == null || config.getProvider() == null) return null;
         
@@ -351,8 +377,13 @@ public class AgentManager {
             List<BaseAgent> agents = new ArrayList<>();
 
             // Coordinator LLM initialization
-            AgentConfig coordConfig = agentConfigs.getOrDefault("Coordinator", new AgentConfig(Provider.OLLAMA, "devstral-small-2"));
+            AgentConfig coordConfig = resolveAgentConfig("Coordinator", agentConfigs, agentDefinitions.get("Coordinator"));
             BaseLlm coordLlm = createLlm(coordConfig);
+            if (coordLlm == null) {
+                throw new IllegalStateException(
+                    "Could not create Coordinator LLM (" + coordConfig.getProvider() + "/" + coordConfig.getModelName() + ")."
+                );
+            }
             LlmAgent coordinator = LlmAgent.builder()
                     .name("Coordinator")
                     .description("The main orchestrator agent.")
@@ -367,16 +398,13 @@ public class AgentManager {
             for (AgentDefinition def : agentDefinitions.values()) {
                 if ("Coordinator".equalsIgnoreCase(def.getName())) continue;
 
-                Provider provider = Provider.OLLAMA;
-                if (def.getProvider() != null) {
-                    try {
-                        provider = Provider.valueOf(def.getProvider().toUpperCase());
-                    } catch (Exception e) {}
-                }
-
-                AgentConfig config = agentConfigs.getOrDefault(def.getName(),
-                        new AgentConfig(provider, def.getModel()));
+                AgentConfig config = resolveAgentConfig(def.getName(), agentConfigs, def);
                 BaseLlm llm = createLlm(config);
+                if (llm == null) {
+                    throw new IllegalStateException(
+                        "Could not create LLM for " + def.getName() + " (" + config.getProvider() + "/" + config.getModelName() + ")."
+                    );
+                }
 
                 LlmAgent.Builder agentBuilder = LlmAgent.builder()
                         .name(def.getName())
@@ -410,12 +438,16 @@ public class AgentManager {
                     .memoryService(memoryService);
 
             logger.log("INFO", "Creating runner for type: " + runnerType);
-            
-            return agentBuilder.build();
+
+            Runner runner = agentBuilder.build();
+            if (runner == null) {
+                throw new IllegalStateException("Runner builder returned null for type: " + runnerType);
+            }
+            return runner;
 
         } catch (Exception e) {
             logger.log("ERROR", "Error creating runner: " + e.getMessage());
-            return null;
+            throw new IllegalStateException("Failed to create runner: " + e.getMessage(), e);
         }
     }
 

@@ -29,6 +29,43 @@ public class PathUtils {
     }
 
     /**
+     * Resolves a writable directory for MapDB data files.
+     * Prefers {@code <project>/.mkpro}, then falls back to {@code ~/Documents/mkpro}.
+     */
+    public static Path resolveMkproDataDir(Path projectPath) throws IOException {
+        Path projectMkpro = projectPath.resolve(".mkpro");
+        if (isDirectoryWritable(projectMkpro)) {
+            return projectMkpro;
+        }
+
+        Path documentsMkpro = getBaseDocumentsPath();
+        if (isDirectoryWritable(documentsMkpro)) {
+            System.err.println(
+                "\u001b[33m[Warning] Project .mkpro directory is not writable (check file ownership/permissions). "
+                    + "Using " + documentsMkpro + " for storage instead.\u001b[0m"
+            );
+            return documentsMkpro;
+        }
+
+        throw new IOException(
+            "No writable mkpro data directory found. Fix permissions on "
+                + projectMkpro + " or " + documentsMkpro
+        );
+    }
+
+    public static boolean isDirectoryWritable(Path dir) {
+        try {
+            ensureDirectoriesExist(dir.resolve("dummy"));
+            Path probe = dir.resolve(".write_probe_" + System.nanoTime());
+            Files.writeString(probe, "ok");
+            Files.deleteIfExists(probe);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
      * Finds an available port starting from the given port.
      * @param startPort The port to start searching from.
      * @return An available port.

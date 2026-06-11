@@ -31,6 +31,7 @@ public class CentralMemory {
     private final List<MemoryListener> listeners = new ArrayList<>();
     private static CentralMemory instance;
     private static boolean centralMemoryLockWarned = false;
+    private static DB fallbackDb;
 
     /**
      * Singleton accessor for CentralMemory.
@@ -66,10 +67,15 @@ public class CentralMemory {
                 System.err.println("\u001b[33m[Warning] central_memory.db is locked by another running instance of mkpro. Central memory operations will use in-memory fallbacks.\u001b[0m");
                 centralMemoryLockWarned = true;
             }
-            return DBMaker.memoryDB()
-                    .closeOnJvmShutdown()
-                    .transactionEnable()
-                    .make();
+            synchronized (CentralMemory.class) {
+                if (fallbackDb == null || fallbackDb.isClosed()) {
+                    fallbackDb = DBMaker.memoryDB()
+                            .closeOnJvmShutdown()
+                            .transactionEnable()
+                            .make();
+                }
+                return fallbackDb;
+            }
         }
     }
 

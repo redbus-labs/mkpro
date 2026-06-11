@@ -46,6 +46,11 @@ public class TerminalUI {
                 line = line.trim();
                 if (line.isEmpty()) continue;
 
+                if ("exit".equalsIgnoreCase(line) || "quit".equalsIgnoreCase(line)) {
+                    System.out.println("Goodbye.");
+                    break;
+                }
+
                 if (registry.executeCommand(line, context)) {
                     // Command was handled
                 } else {
@@ -143,7 +148,14 @@ public class TerminalUI {
                                 }, error -> {
                                     isThinking.set(false);
                                     spinnerThread.interrupt();
-                                    System.err.println(ANSI_RESET + "\n[Error] " + error.getMessage());
+                                    String msg = error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
+                                    System.err.println(ANSI_RESET + "\n[Error] " + msg);
+                                    if (msg.contains("Connection refused") || error.getCause() instanceof java.net.ConnectException) {
+                                        System.err.println(ANSI_YELLOW
+                                            + "Hint: Coordinator is using Ollama but it is not running. "
+                                            + "Run /config to switch to GEMINI, or start Ollama at "
+                                            + context.getOllamaUrl() + ANSI_RESET);
+                                    }
                                 }, () -> {
                                     // ON COMPLETE - Calculate stats
                                     long duration = System.currentTimeMillis() - startTime;

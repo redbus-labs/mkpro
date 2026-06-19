@@ -1,3 +1,4 @@
 target/
-.mkpro/ 
+.mkpro/
 teams/
+src/main/resources/teams/

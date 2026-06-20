@@ -62,6 +62,8 @@ public class MkPro {
         registry.register(new VisualizeCommand());
         registry.register(new NetworkCommand());
         registry.register(new HelpCommand(registry));
+        registry.register(new ExitCommand());
+        registry.register(new QuitCommand());
         // Add others like ResetCommand, SummarizeCommand, etc.
     }
 }

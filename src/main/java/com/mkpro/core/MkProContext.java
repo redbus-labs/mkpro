@@ -17,6 +17,7 @@ import com.mkpro.models.RunnerType;
 import com.google.adk.memory.EmbeddingService;
 import com.google.adk.memory.VectorStore;
 import com.google.adk.memory.MapDBVectorStore;
+import com.mkpro.config.ConfigService;
 import com.mkpro.agents.AgentManager;
 import org.jline.terminal.Terminal;
 import org.jline.reader.LineReader;
@@ -63,113 +64,207 @@ public class MkProContext {
     }
 
     public void rebuildRunner() {
+        rebuildRunner(false);
+    }
+
+    /**
+     * Rebuilds the active runner. Config/MCP/team changes only need an agent refresh;
+     * runner-type switches must recreate storage services as well.
+     */
+    public void rebuildRunner(boolean rebuildStorage) {
+        RunnerType rType = this.currentRunnerType.get();
+        if (rType == null) {
+            System.err.println("Cannot rebuild runner: no runner type is configured.");
+            return;
+        }
+
+        Runner previousRunner = this.runner;
+        Session previousSession = this.currentSession;
+        AgentManager previousAgentManager = this.agentManager;
+
+        BaseSessionService newSessionService = this.sessionService;
+        BaseArtifactService newArtifactService = this.artifactService;
+        BaseMemoryService newMemoryService = this.memoryService;
+        VectorStore newVectorStore = this.vectorStore;
+        boolean openedNewStorage = false;
+
+        System.out.println("\n\u001b[33mRebuilding active runner for mode: " + rType + "...\u001b[0m");
+
         try {
-            RunnerType rType = this.currentRunnerType.get();
-            System.out.println("\n\u001b[33mRebuilding active runner for mode: " + rType + "...\u001b[0m");
+            if (rebuildStorage) {
+                Path mkproDir = com.mkpro.utils.PathUtils.resolveMkproDataDir(com.mkpro.utils.PathUtils.getProjectPath());
+                String dbBaseName = "mkpro_data";
 
-            // 1. Close active closeable services to prevent resource locks (MapDB lock files, etc.)
-            if (this.sessionService != null) {
-                try {
-                    java.lang.reflect.Method closeMethod = this.sessionService.getClass().getMethod("close");
-                    closeMethod.invoke(this.sessionService);
-                } catch (Exception e) {
-                    if (this.sessionService instanceof AutoCloseable) {
-                        try { ((AutoCloseable) this.sessionService).close(); } catch (Exception ex) {}
-                    }
+                if (rType == RunnerType.MAP_DB) {
+                    newSessionService = new com.google.adk.sessions.MapDbSessionService(
+                        mkproDir.resolve(dbBaseName + "_sessions.db").toString()
+                    );
+                    newArtifactService = new com.google.adk.artifacts.MapDbArtifactService(
+                        mkproDir.resolve(dbBaseName + "_artifacts.db").toString()
+                    );
+                    MapDBVectorStore mvStore = new MapDBVectorStore(
+                        mkproDir.resolve(dbBaseName + "_vectors.db").toString(), "default"
+                    );
+                    newVectorStore = mvStore;
+                    newMemoryService = new com.google.adk.memory.MapDBMemoryService(mvStore, this.embeddingService);
+                } else {
+                    newSessionService = new com.google.adk.sessions.InMemorySessionService();
+                    newArtifactService = new com.google.adk.artifacts.InMemoryArtifactService();
+                    MapDBVectorStore mvStore = new MapDBVectorStore(
+                        mkproDir.resolve(dbBaseName + "_vectors_temp.db").toString(), "default"
+                    );
+                    newVectorStore = mvStore;
+                    newMemoryService = new com.google.adk.memory.MapDBMemoryService(mvStore, this.embeddingService);
                 }
-            }
-            if (this.artifactService != null) {
-                try {
-                    java.lang.reflect.Method closeMethod = this.artifactService.getClass().getMethod("close");
-                    closeMethod.invoke(this.artifactService);
-                } catch (Exception e) {
-                    if (this.artifactService instanceof AutoCloseable) {
-                        try { ((AutoCloseable) this.artifactService).close(); } catch (Exception ex) {}
-                    }
-                }
-            }
-            if (this.vectorStore instanceof MapDBVectorStore) {
-                try { ((MapDBVectorStore) this.vectorStore).close(); } catch (Exception e) {}
+                openedNewStorage = true;
+            } else if (this.sessionService == null || this.artifactService == null || this.memoryService == null) {
+                throw new IllegalStateException("Storage services are not initialized.");
             }
 
-            // 2. Re-create base services matching current RunnerType
-            Path projectPath = com.mkpro.utils.PathUtils.getProjectPath();
-            Path mkproDir = projectPath.resolve(".mkpro");
-            try {
-                com.mkpro.utils.PathUtils.ensureDirectoriesExist(mkproDir.resolve("dummy"));
-            } catch (Exception e) {}
-            String dbBaseName = "mkpro_data";
-
-            if (rType == RunnerType.MAP_DB) {
-                this.sessionService = new com.google.adk.sessions.MapDbSessionService(mkproDir.resolve(dbBaseName + "_sessions.db").toString());
-                this.artifactService = new com.google.adk.artifacts.MapDbArtifactService(mkproDir.resolve(dbBaseName + "_artifacts.db").toString());
-                MapDBVectorStore mvStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors.db").toString(), "default");
-                this.vectorStore = mvStore;
-                this.memoryService = new com.google.adk.memory.MapDBMemoryService(mvStore, this.embeddingService);
-            } else {
-                this.sessionService = new com.google.adk.sessions.InMemorySessionService();
-                this.artifactService = new com.google.adk.artifacts.InMemoryArtifactService();
-                MapDBVectorStore mvStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors_temp.db").toString(), "default");
-                this.vectorStore = mvStore;
-                this.memoryService = new com.google.adk.memory.MapDBMemoryService(mvStore, this.embeddingService);
+            reloadRuntimeSettings();
+            Map<String, AgentConfig> mergedConfigs = new HashMap<>(this.centralMemory.getAllAgentConfigs());
+            if (this.agentConfigs != null) {
+                mergedConfigs.putAll(this.agentConfigs);
             }
+            this.agentConfigs = mergedConfigs;
+            Path teamFile = resolveActiveTeamFile();
 
-            // Update configurations
-            this.agentConfigs = this.centralMemory.getAllAgentConfigs();
-
-            // Resolve active team file path specifically to avoid cross-loading all team config files
-            Path teamFile = this.teamsDir;
-            if (this.teamsDir != null && Files.isDirectory(this.teamsDir)) {
-                String tName = this.currentTeam.get();
-                Path resolved = this.teamsDir.resolve(tName);
-                if (!Files.exists(resolved)) {
-                    if (Files.exists(this.teamsDir.resolve(tName + ".yaml"))) {
-                        resolved = this.teamsDir.resolve(tName + ".yaml");
-                    } else if (Files.exists(this.teamsDir.resolve(tName + ".yml"))) {
-                        resolved = this.teamsDir.resolve(tName + ".yml");
-                    }
-                }
-                if (Files.exists(resolved)) {
-                    teamFile = resolved;
-                }
-            }
-
-            // 3. Reconstruct AgentManager with specific active team file
-            this.agentManager = new AgentManager(
-                this.sessionService,
-                this.artifactService,
-                this.memoryService,
+            AgentManager newAgentManager = new AgentManager(
+                newSessionService,
+                newArtifactService,
+                newMemoryService,
                 this.apiKey,
                 this.ollamaUrl,
                 this.actionLogger,
                 this.centralMemory,
                 rType,
-                teamFile, // Pass specific team config file instead of directory
-                (MapDBVectorStore) this.vectorStore,
+                teamFile,
+                (MapDBVectorStore) newVectorStore,
                 this.embeddingService
             );
 
-            // 4. Instantiate a new active runner
-            this.runner = this.agentManager.createRunner(this.agentConfigs, "");
+            Runner newRunner = newAgentManager.createRunner(this.agentConfigs, "");
+            Session newSession = getOrCreateDefaultSession(newSessionService);
+            if (newSession == null) {
+                throw new IllegalStateException("Could not create or load the default session.");
+            }
 
-            // 5. Establish a clean default session in the new environment
-            String sessionId = "default-session";
-            com.google.adk.sessions.SessionKey sessionKey = new com.google.adk.sessions.SessionKey("mkpro", "Coordinator", sessionId);
-            Session session = null;
-            try {
-                session = this.sessionService.getSession(sessionKey, com.google.adk.sessions.GetSessionConfig.builder().build()).blockingGet();
-            } catch (Exception e) {
-                // Ignore and proceed to create
+            if (rebuildStorage) {
+                closeStorageServicesQuietly(this.sessionService, this.artifactService, this.vectorStore);
+                this.sessionService = newSessionService;
+                this.artifactService = newArtifactService;
+                this.memoryService = newMemoryService;
+                this.vectorStore = newVectorStore;
             }
-            if (session == null) {
-                session = this.sessionService.createSession(sessionKey, new java.util.HashMap<>()).blockingGet();
-            }
-            this.currentSession = session;
+
+            this.agentManager = newAgentManager;
+            this.runner = newRunner;
+            this.currentSession = newSession;
 
             System.out.println("\u001b[32mSuccessfully rebuilt active runner & session context.\u001b[0m");
         } catch (Exception e) {
-            System.err.println("Fatal: Rebuild sequence failed - " + e.getMessage());
-            e.printStackTrace();
+            if (openedNewStorage) {
+                closeStorageServicesQuietly(newSessionService, newArtifactService, newVectorStore);
+            }
+
+            this.runner = previousRunner;
+            this.currentSession = previousSession;
+            this.agentManager = previousAgentManager;
+
+            System.err.println("Rebuild failed: " + e.getMessage());
+            if (previousRunner != null && previousSession != null) {
+                System.err.println("Previous runner and session were restored.");
+            } else {
+                System.err.println("No active runner is available. Check Gemini API key, team config, and .mkpro permissions.");
+            }
+            if (this.verbose) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void reloadRuntimeSettings() {
+        ConfigService configService = new ConfigService();
+        String geminiKey = configService.getSetting(ConfigService.PROP_GEMINI_KEY, null);
+        if (geminiKey != null && !geminiKey.isBlank()) {
+            this.apiKey = geminiKey;
+        }
+        this.ollamaUrl = configService.getSetting(ConfigService.PROP_OLLAMA_URL, this.ollamaUrl);
+    }
+
+    private Path resolveActiveTeamFile() {
+        Path teamFile = this.teamsDir;
+        if (this.teamsDir != null && Files.isDirectory(this.teamsDir)) {
+            String tName = this.currentTeam.get();
+            Path resolved = this.teamsDir.resolve(tName);
+            if (!Files.exists(resolved)) {
+                if (Files.exists(this.teamsDir.resolve(tName + ".yaml"))) {
+                    resolved = this.teamsDir.resolve(tName + ".yaml");
+                } else if (Files.exists(this.teamsDir.resolve(tName + ".yml"))) {
+                    resolved = this.teamsDir.resolve(tName + ".yml");
+                }
+            }
+            if (Files.exists(resolved)) {
+                teamFile = resolved;
+            }
+        }
+        return teamFile;
+    }
+
+    private Session getOrCreateDefaultSession(BaseSessionService sessionService) {
+        String sessionId = "default-session";
+        com.google.adk.sessions.SessionKey sessionKey =
+            new com.google.adk.sessions.SessionKey("mkpro", "Coordinator", sessionId);
+        Session session = null;
+        try {
+            session = sessionService
+                .getSession(sessionKey, com.google.adk.sessions.GetSessionConfig.builder().build())
+                .blockingGet();
+        } catch (Exception ignored) {
+            // Fall through to create
+        }
+        if (session == null) {
+            session = sessionService.createSession(sessionKey, new java.util.HashMap<>()).blockingGet();
+        }
+        return session;
+    }
+
+    private void closeStorageServicesQuietly(
+        BaseSessionService sessionService,
+        BaseArtifactService artifactService,
+        VectorStore vectorStore
+    ) {
+        if (sessionService != null) {
+            try {
+                java.lang.reflect.Method closeMethod = sessionService.getClass().getMethod("close");
+                closeMethod.invoke(sessionService);
+            } catch (Exception e) {
+                if (sessionService instanceof AutoCloseable) {
+                    try {
+                        ((AutoCloseable) sessionService).close();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
+        if (artifactService != null) {
+            try {
+                java.lang.reflect.Method closeMethod = artifactService.getClass().getMethod("close");
+                closeMethod.invoke(artifactService);
+            } catch (Exception e) {
+                if (artifactService instanceof AutoCloseable) {
+                    try {
+                        ((AutoCloseable) artifactService).close();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
+        if (vectorStore instanceof MapDBVectorStore) {
+            try {
+                ((MapDBVectorStore) vectorStore).close();
+            } catch (Exception ignored) {
+            }
         }
     }
 

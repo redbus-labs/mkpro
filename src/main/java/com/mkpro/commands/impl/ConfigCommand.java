@@ -5,6 +5,7 @@ import com.mkpro.core.MkProContext;
 import com.mkpro.models.AgentConfig;
 import com.mkpro.models.Provider;
 import com.mkpro.utils.ConsoleUtils;
+import com.mkpro.config.ConfigService;
 import com.mkpro.config.ModelRegistry;
 
 import java.util.Arrays;
@@ -126,6 +127,19 @@ public class ConfigCommand implements Command {
     private void applyConfig(String agent, String providerStr, String model, MkProContext context) {
         try {
             Provider provider = Provider.valueOf(providerStr.toUpperCase());
+            if (provider == Provider.GEMINI && (context.getApiKey() == null || context.getApiKey().isBlank())) {
+                String key = context.getLineReader()
+                    .readLine("Gemini API key required. Enter key (saved to ~/Documents/mkpro/config.properties): ")
+                    .trim();
+                if (key.isEmpty()) {
+                    System.out.println("Cancelled: GEMINI requires an API key.");
+                    return;
+                }
+                ConfigService configService = new ConfigService();
+                configService.saveSetting(ConfigService.PROP_GEMINI_KEY, key);
+                context.setApiKey(key);
+            }
+
             AgentConfig config = new AgentConfig(provider, model);
             
             if ("All Agents".equalsIgnoreCase(agent)) {

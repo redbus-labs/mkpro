@@ -147,9 +147,7 @@ public class BootstrapService {
             RunnerType runnerType = context.getCurrentRunnerType().get();
             
             Path projectPath = PathUtils.getProjectPath();
-            Path mkproDir = projectPath.resolve(".mkpro");
-            PathUtils.ensureDirectoriesExist(mkproDir.resolve("dummy"));
-
+            Path mkproDir = PathUtils.resolveMkproDataDir(projectPath);
             String dbBaseName = "mkpro_data";
 
             // Initialize Embedding Service
@@ -248,16 +246,14 @@ public class BootstrapService {
             context.setAgentConfigs(context.getCentralMemory().getAllAgentConfigs());
 
             Runner runner = am.createRunner(context.getAgentConfigs(), "");
+            if (runner == null) {
+                throw new IllegalStateException("Runner creation returned null.");
+            }
             context.setRunner(runner);
-            
-            String sessionId = "default-session";
-            SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sessionId);
-            Session session = null;
-            try {
-                session = context.getSessionService().getSession(sessionKey, com.google.adk.sessions.GetSessionConfig.builder().build()).blockingGet();
-            } catch (Exception e) {}
+
+            Session session = getOrCreateDefaultSession(context);
             if (session == null) {
-                session = context.getSessionService().createSession(sessionKey, new java.util.HashMap<>()).blockingGet();
+                throw new IllegalStateException("Could not create or load the default session.");
             }
             context.setCurrentSession(session);
 
@@ -283,6 +279,22 @@ public class BootstrapService {
         } catch (IOException e) {
             System.err.println("Could not initialize JLine terminal.");
         }
+    }
+
+    private Session getOrCreateDefaultSession(MkProContext context) {
+        String sessionId = "default-session";
+        SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sessionId);
+        Session session = null;
+        try {
+            session = context.getSessionService()
+                .getSession(sessionKey, com.google.adk.sessions.GetSessionConfig.builder().build())
+                .blockingGet();
+        } catch (Exception ignored) {
+        }
+        if (session == null) {
+            session = context.getSessionService().createSession(sessionKey, new java.util.HashMap<>()).blockingGet();
+        }
+        return session;
     }
 
     private void printBanner() {

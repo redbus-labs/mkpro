@@ -42,158 +42,28 @@ public class McpServerConnectTools {
             .connectTimeout(Duration.ofSeconds(30))
             .build();
 
+    // Session management delegated to McpProtocolClient
     private static final Map<String, String> SESSION_CACHE = new HashMap<>();
     private static final Object SESSION_LOCK = new Object();
 
-    /**
-     * Quick reachability check — tries to connect within a short timeout.
-     * Returns true if the server responded (even with an error), false if unreachable.
-     */
     private static void checkServerReachable(String serverUrl) throws Exception {
-        try {
-            HttpRequest pingReq = HttpRequest.newBuilder()
-                    .uri(URI.create(serverUrl))
-                    .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(8))
-                    .POST(HttpRequest.BodyPublishers.ofString("{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"ping\"}"))
-                    .build();
-            HTTP_CLIENT.send(pingReq, HttpResponse.BodyHandlers.discarding());
-        } catch (java.net.http.HttpConnectTimeoutException e) {
-            throw new RuntimeException("MCP server is not reachable at " + serverUrl + " (connection timed out). " +
-                    "Please check if the server is running.");
-        } catch (java.net.ConnectException e) {
-            throw new RuntimeException("MCP server is not reachable at " + serverUrl + " (connection refused). " +
-                    "Please start the server or check the URL.");
-        } catch (java.net.http.HttpTimeoutException e) {
-            throw new RuntimeException("MCP server at " + serverUrl + " did not respond in time. " +
-                    "The server may be down or overloaded.");
-        } catch (Exception e) {
-            throw new RuntimeException("MCP server is not reachable: " + e.getMessage());
-        }
+        McpProtocolClient.checkServerReachable(serverUrl);
     }
 
     private static String initializeMcpSession(String serverUrl) throws Exception {
-        String initPayload = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{" +
-                "\"protocolVersion\":\"2024-11-05\"," +
-                "\"capabilities\":{}," +
-                "\"clientInfo\":{\"name\":\"mkpro\",\"version\":\"1.5\"}" +
-                "}}";
-
-        HttpRequest initReq = HttpRequest.newBuilder()
-                .uri(URI.create(serverUrl))
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json, text/event-stream")
-                .timeout(Duration.ofSeconds(15))
-                .POST(HttpRequest.BodyPublishers.ofString(initPayload))
-                .build();
-
-        HttpResponse<String> initResp = HTTP_CLIENT.send(initReq, HttpResponse.BodyHandlers.ofString());
-        if (initResp.statusCode() >= 400) {
-            throw new RuntimeException("MCP initialize failed (HTTP " + initResp.statusCode() + "): " + initResp.body());
-        }
-
-        // Extract session ID from response header
-        String sessionId = initResp.headers().firstValue("mcp-session-id")
-                .or(() -> initResp.headers().firstValue("Mcp-Session-Id"))
-                .orElse(null);
-
-        System.out.println(ANSI_BLUE + "[MCP] Session initialized" +
-                (sessionId != null ? " (session=" + sessionId.substring(0, Math.min(8, sessionId.length())) + "...)" : "") +
-                ANSI_RESET);
-
-        // Send initialized notification
-        String notifPayload = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
-        HttpRequest.Builder notifBuilder = HttpRequest.newBuilder()
-                .uri(URI.create(serverUrl))
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json, text/event-stream")
-                .timeout(Duration.ofSeconds(10))
-                .POST(HttpRequest.BodyPublishers.ofString(notifPayload));
-        if (sessionId != null) notifBuilder.header("Mcp-Session-Id", sessionId);
-
-        HTTP_CLIENT.send(notifBuilder.build(), HttpResponse.BodyHandlers.ofString());
-
-        return sessionId;
+        return McpProtocolClient.initializeMcpSession(serverUrl);
     }
 
     private static String getOrCreateSession(String serverUrl) throws Exception {
-        synchronized (SESSION_LOCK) {
-            String cached = SESSION_CACHE.get(serverUrl);
-            if (cached != null) return cached;
-
-            String sessionId = initializeMcpSession(serverUrl);
-            if (sessionId != null) SESSION_CACHE.put(serverUrl, sessionId);
-            return sessionId;
-        }
+        return McpProtocolClient.getOrCreateSession(serverUrl);
     }
 
     private static String sendMcpRequest(String serverUrl, String jsonRpcPayload) throws Exception {
-        return sendMcpRequest(serverUrl, jsonRpcPayload, 120);
+        return McpProtocolClient.sendMcpRequest(serverUrl, jsonRpcPayload);
     }
 
     private static String sendMcpRequest(String serverUrl, String jsonRpcPayload, int timeoutSeconds) throws Exception {
-        String sessionId;
-        try {
-            sessionId = getOrCreateSession(serverUrl);
-        } catch (Exception e) {
-            System.out.println(ANSI_YELLOW + "[MCP] Session init failed, trying direct request: " + e.getMessage() + ANSI_RESET);
-            sessionId = null;
-        }
-
-        HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
-                .uri(URI.create(serverUrl))
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json, text/event-stream")
-                .timeout(Duration.ofSeconds(timeoutSeconds))
-                .POST(HttpRequest.BodyPublishers.ofString(jsonRpcPayload));
-
-        if (sessionId != null) {
-            reqBuilder.header("Mcp-Session-Id", sessionId);
-        }
-
-        HttpResponse<String> response = HTTP_CLIENT.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
-
-        // If session expired (400/404), re-initialize and retry once
-        if (response.statusCode() >= 400) {
-            String body = response.body();
-            if (body.contains("initialize") || body.contains("session") || body.contains("expired")) {
-                System.out.println(ANSI_BLUE + "[MCP] Session expired, re-initializing..." + ANSI_RESET);
-                synchronized (SESSION_LOCK) {
-                    SESSION_CACHE.remove(serverUrl);
-                }
-                sessionId = getOrCreateSession(serverUrl);
-
-                HttpRequest.Builder retryBuilder = HttpRequest.newBuilder()
-                        .uri(URI.create(serverUrl))
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json, text/event-stream")
-                        .timeout(Duration.ofSeconds(timeoutSeconds))
-                        .POST(HttpRequest.BodyPublishers.ofString(jsonRpcPayload));
-                if (sessionId != null) retryBuilder.header("Mcp-Session-Id", sessionId);
-
-                response = HTTP_CLIENT.send(retryBuilder.build(), HttpResponse.BodyHandlers.ofString());
-            }
-
-            if (response.statusCode() >= 400) {
-                throw new RuntimeException("MCP server HTTP " + response.statusCode() + ": " + response.body());
-            }
-        }
-
-        String respBody = response.body();
-
-        // Handle SSE response: extract JSON from "data: {...}" lines
-        if (respBody.contains("data: {")) {
-            StringBuilder jsonParts = new StringBuilder();
-            for (String line : respBody.split("\n")) {
-                line = line.trim();
-                if (line.startsWith("data: ")) {
-                    jsonParts.append(line.substring(6));
-                }
-            }
-            if (jsonParts.length() > 0) return jsonParts.toString();
-        }
-
-        return respBody;
+        return McpProtocolClient.sendMcpRequest(serverUrl, jsonRpcPayload, timeoutSeconds);
     }
 
     public static BaseTool createListMcpServersTool(CentralMemory centralMemory) {
@@ -569,7 +439,7 @@ public class McpServerConnectTools {
                 return Single.fromCallable(() -> {
                     try {
                         Path cwd = Paths.get("").toAbsolutePath();
-                        ProjectInfo project = detectProject(cwd);
+                        McpProjectScanner.ProjectInfo project = detectProject(cwd);
 
                         progress("Detected project: " + project.type + " at " + project.root);
 
@@ -675,7 +545,7 @@ public class McpServerConnectTools {
                 return Single.fromCallable(() -> {
                     try {
                         Path cwd = Paths.get("").toAbsolutePath();
-                        ProjectInfo project = detectProject(cwd);
+                        McpProjectScanner.ProjectInfo project = detectProject(cwd);
 
                         progress("Project scan: " + project.type);
 
@@ -722,7 +592,7 @@ public class McpServerConnectTools {
                 return Single.fromCallable(() -> {
                     try {
                         Path cwd = Paths.get("").toAbsolutePath();
-                        ProjectInfo project = detectProject(cwd);
+                        McpProjectScanner.ProjectInfo project = detectProject(cwd);
                         StringBuilder sb = new StringBuilder("Project: " + project.type + "\n");
 
                         // List files in each detected directory
@@ -759,341 +629,15 @@ public class McpServerConnectTools {
         };
     }
 
-    // ── Project Detection ─────────────────────────────────────────────
+    // ── Project Detection — delegated to McpProjectScanner ─────────────────────────────────────────────
 
-    public static class ProjectInfo {
-        public final String type;        // android, ios, react, flutter, web, nextjs, vue, angular, java_maven, java_gradle, unknown
-        public final Path root;          // project root directory
-        public final String packageName; // e.g. com.example.app (for Android/Java)
-        public final Map<String, Path> directories; // key paths like "sources", "resources", "layouts", "components"
-
-        ProjectInfo(String type, Path root, String packageName, Map<String, Path> directories) {
-            this.type = type;
-            this.root = root;
-            this.packageName = packageName;
-            this.directories = directories;
-        }
-
-        @Override
-        public String toString() {
-            StringBuilder sb = new StringBuilder();
-            sb.append("Project: ").append(type).append("\n");
-            sb.append("Root: ").append(root).append("\n");
-            if (packageName != null) sb.append("Package: ").append(packageName).append("\n");
-            sb.append("Directories:\n");
-            directories.forEach((k, v) -> sb.append("  ").append(k).append(" → ").append(root.relativize(v)).append("\n"));
-            return sb.toString();
-        }
+    public static McpProjectScanner.ProjectInfo detectProject(Path cwd) {
+        return McpProjectScanner.detectProject(cwd);
     }
 
-    public static ProjectInfo detectProject(Path cwd) {
-        Map<String, Path> dirs = new HashMap<>();
-
-        // ── Android (Gradle + app module) ──
-        if (Files.exists(cwd.resolve("app/build.gradle")) || Files.exists(cwd.resolve("app/build.gradle.kts"))) {
-            String pkg = findAndroidPackage(cwd);
-            Path kotlinSrc = findExistingDir(cwd, "app/src/main/kotlin", "app/src/main/java");
-            if (kotlinSrc == null) {
-                kotlinSrc = cwd.resolve("app/src/main/java");
-            }
-            Path resSrc = cwd.resolve("app/src/main/res");
-            dirs.put("sources", kotlinSrc);
-            if (pkg != null) {
-                Path pkgDir = kotlinSrc.resolve(pkg.replace('.', '/'));
-                dirs.put("package", pkgDir);
-                Path uiDir = findExistingDir(pkgDir, "ui", "presentation", "view", "compose", "screen", "screens");
-                if (uiDir != null) {
-                    dirs.put("ui", uiDir);
-                } else {
-                    dirs.put("ui", pkgDir.resolve("ui"));
-                }
-            }
-            dirs.put("resources", resSrc);
-            dirs.put("layouts", resSrc.resolve("layout"));
-            dirs.put("drawables", resSrc.resolve("drawable"));
-            dirs.put("values", resSrc.resolve("values"));
-            return new ProjectInfo("android", cwd, pkg, dirs);
-        }
-
-        // ── Flutter ──
-        if (Files.exists(cwd.resolve("pubspec.yaml"))) {
-            Path libDir = cwd.resolve("lib");
-            dirs.put("sources", libDir);
-            Path screensDir = findExistingDir(libDir, "screens", "pages", "views", "ui");
-            if (screensDir != null) dirs.put("screens", screensDir);
-            Path widgetsDir = findExistingDir(libDir, "widgets", "components");
-            if (widgetsDir != null) dirs.put("widgets", widgetsDir);
-            return new ProjectInfo("flutter", cwd, null, dirs);
-        }
-
-        // ── iOS (Xcode) ──
-        try (Stream<Path> s = Files.list(cwd)) {
-            boolean hasXcode = s.anyMatch(p -> p.toString().endsWith(".xcodeproj") || p.toString().endsWith(".xcworkspace"));
-            if (hasXcode || Files.exists(cwd.resolve("Package.swift"))) {
-                Path srcDir = findIosSourceDir(cwd);
-                if (srcDir == null) srcDir = cwd;
-                dirs.put("sources", srcDir);
-                Path viewsDir = findExistingDir(srcDir, "Views", "View", "Screens", "UI");
-                if (viewsDir != null) {
-                    dirs.put("views", viewsDir);
-                } else {
-                    dirs.put("views", srcDir.resolve("Views"));
-                }
-                return new ProjectInfo("ios", cwd, null, dirs);
-            }
-        } catch (Exception ignored) {}
-
-        // ── React / Next.js / Vue / Angular (package.json) ──
-        if (Files.exists(cwd.resolve("package.json"))) {
-            String pkgJson = readFileQuiet(cwd.resolve("package.json"));
-            String webType = "web";
-            if (pkgJson.contains("\"next\"")) webType = "nextjs";
-            else if (pkgJson.contains("\"react\"")) webType = "react";
-            else if (pkgJson.contains("\"vue\"")) webType = "vue";
-            else if (pkgJson.contains("\"@angular/core\"")) webType = "angular";
-
-            Path srcDir = findExistingDir(cwd, "src", "app");
-            if (srcDir == null) srcDir = cwd.resolve("src");
-            dirs.put("sources", srcDir);
-            Path compDir = findExistingDir(srcDir, "components", "views", "pages", "screens");
-            if (compDir != null) {
-                dirs.put("components", compDir);
-            } else {
-                dirs.put("components", srcDir.resolve("components"));
-            }
-            Path publicDir = findExistingDir(cwd, "public", "static");
-            if (publicDir == null) publicDir = cwd.resolve("public");
-            dirs.put("public", publicDir);
-            return new ProjectInfo(webType, cwd, null, dirs);
-        }
-
-        // ── Java/Maven ──
-        if (Files.exists(cwd.resolve("pom.xml"))) {
-            Path javaSrc = findExistingDir(cwd, "src/main/java", "src/main/kotlin");
-            if (javaSrc != null) dirs.put("sources", javaSrc);
-            Path resSrc = cwd.resolve("src/main/resources");
-            if (Files.exists(resSrc)) dirs.put("resources", resSrc);
-            Path webDir = findExistingDir(resSrc, "web", "static", "public", "templates");
-            if (webDir != null) dirs.put("web", webDir);
-            return new ProjectInfo("java_maven", cwd, null, dirs);
-        }
-
-        // ── Java/Gradle (non-Android) ──
-        if (Files.exists(cwd.resolve("build.gradle")) || Files.exists(cwd.resolve("build.gradle.kts"))) {
-            Path javaSrc = findExistingDir(cwd, "src/main/java", "src/main/kotlin");
-            if (javaSrc != null) dirs.put("sources", javaSrc);
-            return new ProjectInfo("java_gradle", cwd, null, dirs);
-        }
-
-        // ── Plain web (index.html exists) ──
-        if (Files.exists(cwd.resolve("index.html"))) {
-            dirs.put("sources", cwd);
-            return new ProjectInfo("web", cwd, null, dirs);
-        }
-
-        // ── Unknown ──
-        dirs.put("sources", cwd);
-        return new ProjectInfo("unknown", cwd, null, dirs);
+    public static Path resolveOutputPath(McpProjectScanner.ProjectInfo project, String filename) {
+        return McpProjectScanner.resolveOutputPath(project, filename);
     }
-
-    /**
-     * Given a detected project and a filename, compute the best save path.
-     */
-    public static Path resolveOutputPath(ProjectInfo project, String filename) {
-        String ext = "";
-        int dot = filename.lastIndexOf('.');
-        if (dot >= 0) ext = filename.substring(dot).toLowerCase();
-        String baseName = dot >= 0 ? filename.substring(0, dot) : filename;
-
-        switch (project.type) {
-            case "android": {
-                if (ext.equals(".kt") || ext.equals(".java")) {
-                    Path target = project.directories.get("ui");
-                    if (target == null) target = project.directories.get("package");
-                    if (target == null) {
-                        Path sources = project.directories.getOrDefault("sources", project.root.resolve("app/src/main/java"));
-                        target = findDeepestPackageDir(sources);
-                    }
-                    return target.resolve(filename);
-                }
-                if (ext.equals(".xml") && (baseName.startsWith("activity_") || baseName.startsWith("fragment_") ||
-                        baseName.startsWith("layout_") || baseName.startsWith("item_"))) {
-                    return project.directories.getOrDefault("layouts",
-                            project.root.resolve("app/src/main/res/layout")).resolve(filename);
-                }
-                if (ext.equals(".xml")) {
-                    return project.directories.getOrDefault("drawables",
-                            project.root.resolve("app/src/main/res/drawable")).resolve(filename);
-                }
-                return project.directories.getOrDefault("sources", project.root.resolve("app/src/main/java")).resolve(filename);
-            }
-            case "flutter": {
-                if (ext.equals(".dart")) {
-                    Path target = project.directories.getOrDefault("screens",
-                            project.directories.getOrDefault("sources", project.root.resolve("lib")));
-                    return target.resolve(filename);
-                }
-                return project.root.resolve("lib").resolve(filename);
-            }
-            case "ios": {
-                if (ext.equals(".swift")) {
-                    Path target = project.directories.getOrDefault("views",
-                            project.directories.getOrDefault("sources", project.root));
-                    return target.resolve(filename);
-                }
-                return project.directories.getOrDefault("sources", project.root).resolve(filename);
-            }
-            case "react":
-            case "nextjs":
-            case "vue":
-            case "angular": {
-                if (ext.equals(".tsx") || ext.equals(".jsx") || ext.equals(".vue") || ext.equals(".ts") || ext.equals(".js")) {
-                    Path target = project.directories.getOrDefault("components",
-                            project.directories.getOrDefault("sources", project.root.resolve("src")));
-                    return target.resolve(filename);
-                }
-                if (ext.equals(".css") || ext.equals(".scss")) {
-                    Path target = project.directories.getOrDefault("components",
-                            project.directories.getOrDefault("sources", project.root.resolve("src")));
-                    return target.resolve(filename);
-                }
-                if (ext.equals(".html")) {
-                    return project.directories.getOrDefault("public", project.root.resolve("public")).resolve(filename);
-                }
-                return project.directories.getOrDefault("sources", project.root.resolve("src")).resolve(filename);
-            }
-            case "java_maven":
-            case "java_gradle": {
-                if (ext.equals(".html") || ext.equals(".css") || ext.equals(".js")) {
-                    return project.directories.getOrDefault("web",
-                            project.directories.getOrDefault("resources", project.root.resolve("src/main/resources"))).resolve(filename);
-                }
-                if (ext.equals(".java") || ext.equals(".kt")) {
-                    return project.directories.getOrDefault("sources", project.root.resolve("src/main/java")).resolve(filename);
-                }
-                return project.directories.getOrDefault("resources", project.root.resolve("src/main/resources")).resolve(filename);
-            }
-            case "web": {
-                return project.directories.getOrDefault("sources", project.root).resolve(filename);
-            }
-            default:
-                return project.root.resolve(filename);
-        }
-    }
-
-    // ── Project detection helpers ──
-
-    private static String findAndroidPackage(Path root) {
-        // 1. Try AndroidManifest.xml (older projects)
-        Path manifest = root.resolve("app/src/main/AndroidManifest.xml");
-        if (Files.exists(manifest)) {
-            String content = readFileQuiet(manifest);
-            if (content != null) {
-                int idx = content.indexOf("package=\"");
-                if (idx >= 0) {
-                    int start = idx + 9;
-                    int end = content.indexOf("\"", start);
-                    if (end > start) return content.substring(start, end);
-                }
-            }
-        }
-
-        // 2. Try build.gradle / build.gradle.kts namespace (AGP 7+)
-        for (String gradleFile : new String[]{"app/build.gradle.kts", "app/build.gradle"}) {
-            Path gradle = root.resolve(gradleFile);
-            if (Files.exists(gradle)) {
-                String content = readFileQuiet(gradle);
-                if (content != null) {
-                    java.util.regex.Matcher m = java.util.regex.Pattern
-                            .compile("namespace\\s*[=(]\\s*\"([^\"]+)\"")
-                            .matcher(content);
-                    if (m.find()) return m.group(1);
-
-                    m = java.util.regex.Pattern
-                            .compile("applicationId\\s*[=(]\\s*\"([^\"]+)\"")
-                            .matcher(content);
-                    if (m.find()) return m.group(1);
-                }
-            }
-        }
-
-        // 3. Scan existing source files for package declaration
-        Path srcDir = findExistingDir(root, "app/src/main/kotlin", "app/src/main/java");
-        if (srcDir != null) {
-            try (Stream<Path> walk = Files.walk(srcDir, 6)) {
-                Optional<String> pkg = walk
-                        .filter(p -> p.toString().endsWith(".kt") || p.toString().endsWith(".java"))
-                        .limit(5)
-                        .map(p -> readFileQuiet(p))
-                        .filter(c -> c != null)
-                        .map(c -> {
-                            java.util.regex.Matcher m = java.util.regex.Pattern
-                                    .compile("^package\\s+([\\w.]+)")
-                                    .matcher(c);
-                            return m.find() ? m.group(1) : null;
-                        })
-                        .filter(p -> p != null)
-                        .findFirst();
-                if (pkg.isPresent()) return pkg.get();
-            } catch (Exception ignored) {}
-        }
-
-        return null;
-    }
-
-    /**
-     * Walks the source directory to find the deepest package folder containing .kt or .java files.
-     * This handles cases where the package name couldn't be determined from config files.
-     */
-    private static Path findDeepestPackageDir(Path sourcesRoot) {
-        if (!Files.isDirectory(sourcesRoot)) return sourcesRoot;
-        try (Stream<Path> walk = Files.walk(sourcesRoot, 8)) {
-            return walk
-                    .filter(Files::isDirectory)
-                    .filter(d -> {
-                        try (Stream<Path> files = Files.list(d)) {
-                            return files.anyMatch(f -> {
-                                String name = f.getFileName().toString();
-                                return name.endsWith(".kt") || name.endsWith(".java");
-                            });
-                        } catch (Exception e) { return false; }
-                    })
-                    .reduce((a, b) -> a.getNameCount() >= b.getNameCount() ? a : b)
-                    .orElse(sourcesRoot);
-        } catch (Exception e) {
-            return sourcesRoot;
-        }
-    }
-
-    private static Path findIosSourceDir(Path root) {
-        try (Stream<Path> s = Files.list(root)) {
-            return s.filter(Files::isDirectory)
-                    .filter(p -> {
-                        String name = p.getFileName().toString();
-                        return !name.startsWith(".") && !name.equals("Pods") && !name.equals("build") &&
-                               !name.endsWith(".xcodeproj") && !name.endsWith(".xcworkspace");
-                    })
-                    .filter(p -> {
-                        try (Stream<Path> inner = Files.walk(p, 2)) {
-                            return inner.anyMatch(f -> f.toString().endsWith(".swift"));
-                        } catch (Exception e) { return false; }
-                    })
-                    .findFirst().orElse(null);
-        } catch (Exception e) { return null; }
-    }
-
-    private static Path findExistingDir(Path base, String... candidates) {
-        for (String c : candidates) {
-            Path p = base.resolve(c);
-            if (Files.isDirectory(p)) return p;
-        }
-        return null;
-    }
-
-    private static String readFileQuiet(Path path) {
-        try { return Files.readString(path); } catch (Exception e) { return null; }
-    }
-
     // ── General Helpers ──────────────────────────────────────────────
 
     private static void progress(String msg) {

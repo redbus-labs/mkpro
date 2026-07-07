@@ -95,6 +95,8 @@ public class AgentManager {
     private final MapDBVectorStore vectorStore;
     private final EmbeddingService embeddingService;
     private final Properties configProperties;
+    private final ToolRegistry toolRegistry;
+    private final AgentFactory agentFactory;
 
     public AgentManager(BaseSessionService sessionService, 
                         BaseArtifactService artifactService, 
@@ -119,6 +121,8 @@ public class AgentManager {
         this.vectorStore = vectorStore;
         this.embeddingService = embeddingService;
         this.configProperties = new Properties();
+        this.toolRegistry = new ToolRegistry(vectorStore, embeddingService);
+        this.agentFactory = new AgentFactory();
 
         registerAgentDefinitions();
     }
@@ -205,8 +209,8 @@ public class AgentManager {
             String fullContext = augmentedContext != null ? augmentedContext : "";
             if (fullContext.isEmpty() || !fullContext.contains("DETECTED PROJECT:")) {
                 try {
-                    com.mkpro.tools.McpServerConnectTools.ProjectInfo projectInfo = 
-                        com.mkpro.tools.McpServerConnectTools.detectProject(java.nio.file.Paths.get("").toAbsolutePath());
+                    com.mkpro.tools.McpProjectScanner.ProjectInfo projectInfo = 
+                        com.mkpro.tools.McpProjectScanner.detectProject(java.nio.file.Paths.get("").toAbsolutePath());
                     if (projectInfo != null && !"unknown".equals(projectInfo.type)) {
                         if (!fullContext.isEmpty()) {
                             fullContext += "\n\n";
@@ -262,14 +266,25 @@ public class AgentManager {
             graphMemoryTools.add(GraphMemoryTools.recallMemory());
             graphMemoryTools.add(GraphMemoryTools.visualizeGraph());
 
+            // URL fetching tools
+            List<BaseTool> fetchUrlTools = new ArrayList<>();
+            fetchUrlTools.add(FetchUrlTools.create());
+
             // 2. Aggregate specialized arrays tailored to agent roles
             List<BaseTool> coderTools = new ArrayList<>();
-            coderTools.addAll(fileSystemTools);
+            coderTools.add(FileSystemTools.create()); // read-only file access
             coderTools.addAll(clipboardTools);
             coderTools.addAll(codebaseSearchTools);
             coderTools.addAll(mcpScanTools);
-            coderTools.addAll(seleniumTools);
             coderTools.addAll(graphMemoryTools);
+            coderTools.addAll(fetchUrlTools);
+            // Coder does NOT get write tools or selenium — it reads/analyzes only
+
+            List<BaseTool> codeEditorTools = new ArrayList<>();
+            codeEditorTools.add(FileSystemTools.create());
+            codeEditorTools.add(MkProTools.createWriteFileTool());
+            codeEditorTools.add(MkProTools.createSafeWriteFileTool());
+            codeEditorTools.addAll(clipboardTools);
 
             List<BaseTool> sysAdminTools = new ArrayList<>();
             sysAdminTools.addAll(shellTools);
@@ -293,11 +308,34 @@ public class AgentManager {
             architectTools.addAll(multiProjectSearchTools);
             architectTools.addAll(clipboardTools);
             architectTools.addAll(graphMemoryTools);
+            architectTools.addAll(fetchUrlTools);
+
+            List<BaseTool> securityAuditorTools = new ArrayList<>();
+            securityAuditorTools.addAll(fileSystemTools);
+            securityAuditorTools.addAll(shellTools);
+            securityAuditorTools.addAll(clipboardTools);
+            securityAuditorTools.addAll(codebaseSearchTools);
+
+            List<BaseTool> databaseAdminTools = new ArrayList<>();
+            databaseAdminTools.addAll(fileSystemTools);
+            databaseAdminTools.addAll(shellTools);
+            databaseAdminTools.addAll(clipboardTools);
+
+            List<BaseTool> dataAnalystTools = new ArrayList<>();
+            dataAnalystTools.addAll(fileSystemTools);
+            dataAnalystTools.addAll(shellTools);
+            dataAnalystTools.addAll(clipboardTools);
 
             List<BaseTool> docWriterTools = new ArrayList<>();
             docWriterTools.addAll(fileSystemTools);
             docWriterTools.addAll(clipboardTools);
-            docWriterTools.addAll(seleniumTools);
+            docWriterTools.addAll(fetchUrlTools);
+
+            List<BaseTool> devOpsTools = new ArrayList<>();
+            devOpsTools.addAll(shellTools);
+            devOpsTools.addAll(fileSystemTools);
+            devOpsTools.addAll(clipboardTools);
+            devOpsTools.addAll(codebaseSearchTools);
 
             List<BaseTool> goalTrackerTools = new ArrayList<>();
             goalTrackerTools.addAll(fileSystemTools);
@@ -309,40 +347,45 @@ public class AgentManager {
             for (AgentDefinition def : agentDefinitions.values()) {
                 if ("Coordinator".equalsIgnoreCase(def.getName())) continue;
 
-                List<BaseTool> toolsForAgent = new ArrayList<>();
-                if (def.getName() != null) {
-                    String nameLower = def.getName().toLowerCase();
-                    if (nameLower.contains("coder") || nameLower.contains("codeeditor") || nameLower.contains("dev") || nameLower.contains("developer")) {
-                        toolsForAgent = coderTools;
-                    } else if (nameLower.contains("sysadmin") || nameLower.contains("admin") || nameLower.contains("sre") || nameLower.contains("devops")) {
-                        toolsForAgent = sysAdminTools;
-                    } else if (nameLower.contains("git") || nameLower.contains("release")) {
-                        toolsForAgent = gitTools;
-                    } else if (nameLower.contains("tester") || nameLower.contains("qa")) {
-                        toolsForAgent = testerTools;
-                    } else if (nameLower.contains("architect") || nameLower.contains("security")) {
-                        toolsForAgent = architectTools;
-                    } else if (nameLower.contains("doc") || nameLower.contains("writer") || nameLower.contains("analyst") || nameLower.contains("data")) {
-                        toolsForAgent = docWriterTools;
-                    } else if (nameLower.contains("goal") || nameLower.contains("tracker")) {
-                        toolsForAgent = goalTrackerTools;
-                    } else {
-                        toolsForAgent = coderTools; // default fallback
-                    }
+                List<BaseTool> toolsForAgent;
+
+                // DECLARATIVE PATH: if the YAML defines tools explicitly, use ToolRegistry
+                if (def.getTools() != null && !def.getTools().isEmpty()) {
+                    toolsForAgent = toolRegistry.resolve(def.getTools());
+                } else {
+                    // LEGACY FALLBACK: name-based matching for YAMLs without tools field
+                    toolsForAgent = resolveToolsByAgentName(def.getName(),
+                        fileSystemTools, clipboardTools, shellTools, seleniumTools,
+                        imageTools, codebaseSearchTools, multiProjectSearchTools,
+                        mcpScanTools, graphMemoryTools, fetchUrlTools,
+                        coderTools, codeEditorTools, sysAdminTools, gitTools,
+                        testerTools, architectTools, securityAuditorTools,
+                        databaseAdminTools, dataAnalystTools, docWriterTools,
+                        devOpsTools, goalTrackerTools);
                 }
                 toolMap.put(def.getName(), toolsForAgent);
             }
 
             List<BaseTool> coordinatorTools = new ArrayList<>();
+            coordinatorTools.add(FetchUrlTools.create());
             //coordinatorTools.add(McpServerConnectTools.createListMcpServersTool(centralMemory));
 
             // Generate delegation tools for all sub-agents and add them to coordinatorTools
+            // Determine which agents need full project context injected
+            java.util.Set<String> needsProjectContext = java.util.Set.of(
+                "coder", "codeeditor", "architect", "securityauditor", "devops",
+                "tester", "androiddev", "iosdev", "sysadmin"
+            );
+            
             for (Map.Entry<String, List<BaseTool>> entry : toolMap.entrySet()) {
                 String agentName = entry.getKey();
                 List<BaseTool> toolsForAgent = entry.getValue();
                 
+                // Only inject project context for agents that need it
+                String agentContext = needsProjectContext.contains(agentName.toLowerCase()) ? fullContext : "";
+                
                 String toolName = "ask_" + agentName.replaceAll("([a-z])([A-Z]+)", "$1_$2").toLowerCase();
-                BaseTool delegationTool = createDelegationToolFromDef(agentName, toolName, agentConfigs, toolsForAgent, fullContext);
+                BaseTool delegationTool = createDelegationToolFromDef(agentName, toolName, agentConfigs, toolsForAgent, agentContext);
                 if (delegationTool != null) {
                     coordinatorTools.add(delegationTool);
                 }
@@ -353,12 +396,20 @@ public class AgentManager {
             // Coordinator LLM initialization
             AgentConfig coordConfig = agentConfigs.getOrDefault("Coordinator", new AgentConfig(Provider.OLLAMA, "devstral-small-2"));
             BaseLlm coordLlm = createLlm(coordConfig);
+            
+            // Build Coordinator instruction: YAML-defined instruction + project context
+            String coordInstruction = fullContext;
+            AgentDefinition coordDef = agentDefinitions.get("Coordinator");
+            if (coordDef != null && coordDef.getInstruction() != null) {
+                coordInstruction = coordDef.getInstruction() + "\n\n" + fullContext;
+            }
+            
             LlmAgent coordinator = LlmAgent.builder()
                     .name("Coordinator")
                     .description("The main orchestrator agent.")
-                    .instruction(fullContext)
+                    .instruction(coordInstruction)
                     .model(coordLlm)
-                    .tools(coordinatorTools) // Expose delegation tools and list mcp servers tool
+                    .tools(coordinatorTools) // Expose delegation tools
                     .planning(true) // ENABLE PLANNING LOOP
                     .build();
             agents.add(coordinator);
@@ -416,6 +467,60 @@ public class AgentManager {
         } catch (Exception e) {
             logger.log("ERROR", "Error creating runner: " + e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Legacy fallback: resolves tools for an agent based on its name.
+     * Used when the YAML definition does not include a declarative 'tools' field.
+     */
+    @SuppressWarnings("unchecked")
+    private List<BaseTool> resolveToolsByAgentName(String agentName,
+            List<BaseTool> fileSystemTools, List<BaseTool> clipboardTools,
+            List<BaseTool> shellTools, List<BaseTool> seleniumTools,
+            List<BaseTool> imageTools, List<BaseTool> codebaseSearchTools,
+            List<BaseTool> multiProjectSearchTools, List<BaseTool> mcpScanTools,
+            List<BaseTool> graphMemoryTools, List<BaseTool> fetchUrlTools,
+            List<BaseTool> coderTools, List<BaseTool> codeEditorTools,
+            List<BaseTool> sysAdminTools, List<BaseTool> gitTools,
+            List<BaseTool> testerTools, List<BaseTool> architectTools,
+            List<BaseTool> securityAuditorTools, List<BaseTool> databaseAdminTools,
+            List<BaseTool> dataAnalystTools, List<BaseTool> docWriterTools,
+            List<BaseTool> devOpsTools, List<BaseTool> goalTrackerTools) {
+
+        if (agentName == null) return coderTools;
+        String nameLower = agentName.toLowerCase();
+
+        if (nameLower.equals("codeeditor") || nameLower.equals("code_editor")) {
+            return codeEditorTools;
+        } else if (nameLower.equals("coder") || nameLower.equals("developer")) {
+            return coderTools;
+        } else if (nameLower.equals("securityauditor") || nameLower.equals("security_auditor") || nameLower.contains("security")) {
+            return securityAuditorTools;
+        } else if (nameLower.equals("databaseadmin") || nameLower.equals("database_admin") || nameLower.equals("dba")) {
+            return databaseAdminTools;
+        } else if (nameLower.equals("dataanalyst") || nameLower.equals("data_analyst")) {
+            return dataAnalystTools;
+        } else if (nameLower.equals("sysadmin") || nameLower.equals("sys_admin")) {
+            return sysAdminTools;
+        } else if (nameLower.equals("devops") || nameLower.contains("sre")) {
+            return devOpsTools;
+        } else if (nameLower.contains("git") || nameLower.contains("release")) {
+            return gitTools;
+        } else if (nameLower.contains("tester") || nameLower.contains("qa")) {
+            return testerTools;
+        } else if (nameLower.contains("architect")) {
+            return architectTools;
+        } else if (nameLower.contains("doc") || nameLower.contains("writer")) {
+            return docWriterTools;
+        } else if (nameLower.contains("goal") || nameLower.contains("tracker")) {
+            return goalTrackerTools;
+        } else if (nameLower.contains("android") || nameLower.contains("ios")) {
+            List<BaseTool> mobileTools = new ArrayList<>(coderTools);
+            mobileTools.addAll(shellTools);
+            return mobileTools;
+        } else {
+            return coderTools;
         }
     }
 

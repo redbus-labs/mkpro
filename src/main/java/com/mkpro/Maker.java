@@ -7,38 +7,20 @@ import java.security.MessageDigest;
 
 import com.mkpro.models.Goal;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 
 public class Maker {
 
-    private static final List<String> BLACKLIST = Arrays.asList(
-        "rm -rf /",
-        "rm -fr /",
-        ":(){:|:&};:",
-        "mkfs",
-        "> /dev/sd",
-        "shutdown",
-        "reboot",
-        "format c:",
-        "rd /s /q c:\\windows",
-        "del /f /s /q c:\\windows",
-        "nc -e",
-        "bash -i >&"
-    );
 
     public static final boolean isAllowed(String command) {
         if (command == null || command.isEmpty()) {
             return false;
         }
-        String normalized = command.toLowerCase();
-        for (String blacklisted : BLACKLIST) {
-            if (normalized.contains(blacklisted)) {
-                return false;
-            }
-        }
-        return true;
+        // Delegate to the new allowlist-based CommandPolicy
+        com.mkpro.security.CommandPolicy.PolicyResult result = 
+            com.mkpro.security.CommandPolicy.getInstance().evaluateChained(command);
+        return result.isAllowed();
     }
 
     public static void validateGoals(CentralMemory memory, String projectPath) {

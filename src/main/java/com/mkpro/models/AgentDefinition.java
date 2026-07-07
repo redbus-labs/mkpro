@@ -13,6 +13,7 @@ public class AgentDefinition implements Serializable {
     private String instruction;
     private String provider;
     private String model;
+    private java.util.List<String> tools;
 
     public AgentDefinition() {}
 
@@ -36,4 +37,7 @@ public class AgentDefinition implements Serializable {
 
     public String getModel() { return model; }
     public void setModel(String model) { this.model = model; }
+
+    public java.util.List<String> getTools() { return tools; }
+    public void setTools(java.util.List<String> tools) { this.tools = tools; }
 }

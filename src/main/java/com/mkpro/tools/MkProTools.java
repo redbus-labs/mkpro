@@ -173,7 +173,7 @@ public class MkProTools {
     }
 
     public static BaseTool createReadFileTool() {
-        return new BaseTool("read_file", "Reads the content of a file.") {
+        return new BaseTool("read_file", "Reads the content of a file. Path must be within the project directory.") {
             @Override public Optional<FunctionDeclaration> declaration() {
                 return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
                     .parameters(Schema.builder().type("OBJECT")
@@ -183,14 +183,19 @@ public class MkProTools {
             @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
                     String pathStr = (String) args.get("path");
-                    return Collections.singletonMap("content", Files.readString(Paths.get(pathStr)));
+                    try {
+                        Path validated = com.mkpro.security.PathValidator.getInstance().validateForRead(pathStr);
+                        return Collections.singletonMap("content", (Object) Files.readString(validated));
+                    } catch (SecurityException e) {
+                        return Collections.singletonMap("error", (Object) e.getMessage());
+                    }
                 });
             }
         };
     }
 
     public static BaseTool createListDirTool() {
-        return new BaseTool("list_dir", "Lists files in a directory.") {
+        return new BaseTool("list_dir", "Lists files in a directory. Path must be within the project directory.") {
             @Override public Optional<FunctionDeclaration> declaration() {
                 return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
                     .parameters(Schema.builder().type("OBJECT")
@@ -200,9 +205,14 @@ public class MkProTools {
             @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
                     String pathStr = (String) args.get("path");
-                    try (var stream = Files.list(Paths.get(pathStr))) {
-                        List<String> files = stream.map(p -> p.getFileName().toString()).collect(Collectors.toList());
-                        return Collections.singletonMap("files", files);
+                    try {
+                        Path validated = com.mkpro.security.PathValidator.getInstance().validateForRead(pathStr);
+                        try (var stream = Files.list(validated)) {
+                            List<String> files = stream.map(p -> p.getFileName().toString()).collect(Collectors.toList());
+                            return Collections.<String, Object>singletonMap("files", files);
+                        }
+                    } catch (SecurityException e) {
+                        return Collections.<String, Object>singletonMap("error", e.getMessage());
                     }
                 });
             }
@@ -210,21 +220,29 @@ public class MkProTools {
     }
 
     public static BaseTool createWriteFileTool() {
-        return new BaseTool("write_file", "Writes content to a file.") {
+        return new BaseTool("write_file", "Writes content to a file. Path must be within the project directory.") {
             @Override public Optional<FunctionDeclaration> declaration() {
                 return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
                     .parameters(Schema.builder().type("OBJECT")
                         .properties(ImmutableMap.of(
-                            "path", Schema.builder().type("STRING").build(),
-                            "content", Schema.builder().type("STRING").build()))
+                            "path", Schema.builder().type("STRING").description("Path to the file.").build(),
+                            "content", Schema.builder().type("STRING").description("Content to write.").build()))
                         .required(ImmutableList.of("path", "content")).build()).build());
             }
             @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
                     String pathStr = (String) args.get("path");
                     String content = (String) args.get("content");
-                    Files.writeString(Paths.get(pathStr), content);
-                    return Collections.singletonMap("status", "Success");
+                    try {
+                        Path validated = com.mkpro.security.PathValidator.getInstance().validate(pathStr);
+                        if (validated.getParent() != null) {
+                            Files.createDirectories(validated.getParent());
+                        }
+                        Files.writeString(validated, content);
+                        return Collections.<String, Object>singletonMap("status", "Success");
+                    } catch (SecurityException e) {
+                        return Collections.<String, Object>singletonMap("error", e.getMessage());
+                    }
                 });
             }
         };
@@ -268,7 +286,8 @@ public class MkProTools {
                 
                 return Single.fromCallable(() -> {
                     try {
-                        Path path = Paths.get(finalFilePath);
+                        // Validate path before any operation
+                        Path path = com.mkpro.security.PathValidator.getInstance().validate(finalFilePath);
                         String oldContent = "";
                         if (Files.exists(path)) {
                             oldContent = Files.readString(path);
@@ -377,8 +396,10 @@ public class MkProTools {
                         
                         return Collections.singletonMap("status", "No input received. Changes rejected.");
 
+                    } catch (SecurityException se) {
+                        return Collections.singletonMap("error", (Object) se.getMessage());
                     } catch (IOException e) {
-                        return Collections.singletonMap("error", "Error processing safe write: " + e.getMessage());
+                        return Collections.singletonMap("error", (Object) ("Error processing safe write: " + e.getMessage()));
                     }
                 });
             }
@@ -434,21 +455,45 @@ public class MkProTools {
     }
 
     public static BaseTool createRunShellTool() {
-        return new BaseTool("run_shell", "Executes a shell command.") {
+        return new BaseTool("run_shell", "Executes a shell command with timeout and output limits. Commands are checked against an allowlist policy.") {
             @Override public Optional<FunctionDeclaration> declaration() {
                 return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
                     .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of("command", Schema.builder().type("STRING").build()))
+                        .properties(ImmutableMap.of(
+                            "command", Schema.builder().type("STRING").description("The shell command to execute.").build(),
+                            "working_dir", Schema.builder().type("STRING").description("Optional working directory for command execution.").build(),
+                            "timeout_seconds", Schema.builder().type("INTEGER").description("Optional timeout in seconds (default 120).").build()
+                        ))
                         .required(ImmutableList.of("command")).build()).build());
             }
             @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
                     String command = (String) args.get("command");
-                    Process p = new ProcessBuilder("cmd.exe", "/c", command).start();
-                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-                        String output = reader.lines().collect(Collectors.joining("\n"));
-                        return Collections.singletonMap("output", output);
+                    String workingDir = (String) args.get("working_dir");
+                    Object timeoutObj = args.get("timeout_seconds");
+                    int timeout = 120;
+                    if (timeoutObj instanceof Number) {
+                        timeout = Math.min(((Number) timeoutObj).intValue(), 600); // Cap at 10 minutes
                     }
+
+                    System.out.println(ANSI_BLUE + "[Shell] $ " + command + ANSI_RESET);
+
+                    com.mkpro.security.ShellExecutor executor = new com.mkpro.security.ShellExecutor(timeout, 100 * 1024);
+                    com.mkpro.security.ShellExecutor.ExecutionResult result = executor.execute(command, workingDir);
+
+                    if (result.isTimedOut()) {
+                        System.out.println(ANSI_RED + "[Shell] Command timed out after " + timeout + "s" + ANSI_RESET);
+                    } else if (result.getExitCode() != 0 && result.getExitCode() != -1) {
+                        System.out.println(ANSI_YELLOW + "[Shell] Exit code: " + result.getExitCode() + ANSI_RESET);
+                    }
+
+                    Map<String, Object> response = new java.util.HashMap<>();
+                    response.put("output", result.toAgentResponse());
+                    response.put("exit_code", result.getExitCode());
+                    response.put("timed_out", result.isTimedOut());
+                    response.put("truncated", result.isOutputTruncated());
+                    response.put("duration_ms", result.getDurationMs());
+                    return response;
                 });
             }
         };

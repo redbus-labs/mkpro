@@ -98,7 +98,23 @@ public class MkProContext {
             try {
                 com.mkpro.utils.PathUtils.ensureDirectoriesExist(mkproDir.resolve("dummy"));
             } catch (Exception e) {}
-            String dbBaseName = "mkpro_data";
+
+            // Resolve instance-specific DB prefix (same logic as BootstrapService)
+            String dbBaseName = System.getProperty("mkpro.db.name", null);
+            if (dbBaseName == null || dbBaseName.isBlank()) {
+                // Strip the random UUID suffix that was appended during bootstrap
+                String rawName = this.instanceName;
+                if (rawName != null && rawName.contains("-")) {
+                    // instanceName format is "<name>-<4char-uuid>", extract the base
+                    String basePart = rawName.substring(0, rawName.lastIndexOf('-'));
+                    if (!basePart.isBlank()) {
+                        dbBaseName = "mkpro_" + basePart;
+                    }
+                }
+            }
+            if (dbBaseName == null || dbBaseName.isBlank()) {
+                dbBaseName = "mkpro_data";
+            }
 
             if (rType == RunnerType.MAP_DB) {
                 this.sessionService = new com.google.adk.sessions.MapDbSessionService(mkproDir.resolve(dbBaseName + "_sessions.db").toString());
@@ -109,7 +125,7 @@ public class MkProContext {
             } else {
                 this.sessionService = new com.google.adk.sessions.InMemorySessionService();
                 this.artifactService = new com.google.adk.artifacts.InMemoryArtifactService();
-                MapDBVectorStore mvStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors_temp.db").toString(), "default");
+                MapDBVectorStore mvStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors.db").toString(), "default");
                 this.vectorStore = mvStore;
                 this.memoryService = new com.google.adk.memory.MapDBMemoryService(mvStore, this.embeddingService);
             }

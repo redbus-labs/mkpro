@@ -62,6 +62,13 @@ public class MkPro {
         registry.register(new VisualizeCommand());
         registry.register(new NetworkCommand());
         registry.register(new HelpCommand(registry));
+        registry.register(new ExitCommand());
+        // /quit is an alias for /exit
+        registry.register(new com.mkpro.commands.Command() {
+            public void execute(String[] args, com.mkpro.core.MkProContext context) throws Exception { System.out.println("\u001b[33mGoodbye!\u001b[0m"); System.exit(0); }
+            public String getName() { return "quit"; }
+            public String getDescription() { return "Exit the application."; }
+        });
         // Add others like ResetCommand, SummarizeCommand, etc.
     }
 }

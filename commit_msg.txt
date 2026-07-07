@@ -1,0 +1,9 @@
+docs: update GitAgent prompt instructions [mkpro]
+
+Updated the GitAgent instructions in default.yaml and polyglot.yaml to require the '[mkpro]' suffix in the commit summary.
+
+---
+AI Resource Usage (Session current):
+Session 'current' has consumed 0 tokens in total.
+Breakdown by Agent:
+Breakdown by Model:

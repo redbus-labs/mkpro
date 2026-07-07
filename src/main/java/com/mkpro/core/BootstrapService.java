@@ -100,6 +100,14 @@ public class BootstrapService {
                     // Ignore
                 }
             }
+
+            if (context.getCentralMemory() != null) {
+                try {
+                    context.getCentralMemory().close();
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
         }));
     }
 
@@ -150,35 +158,28 @@ public class BootstrapService {
             Path mkproDir = projectPath.resolve(".mkpro");
             PathUtils.ensureDirectoriesExist(mkproDir.resolve("dummy"));
 
-            String dbBaseName = "mkpro_data";
+            // Initialize security: PathValidator with project root as primary safe directory
+            com.mkpro.security.PathValidator.initialize(projectPath, java.util.List.of(mkproDir));
+
+            // Resolve instance-specific DB prefix: --name arg > -Dmkpro.db.name > default "mkpro_data"
+            String dbBaseName = resolveDbBaseName(context);
 
             // Initialize Embedding Service
             EmbeddingService embeddingService = new ZeroEmbeddingService(1536);
             context.setEmbeddingService(embeddingService);
 
             // Initialize Storage Services based on RunnerType
+            // Each instance gets its own session/artifact/vector/log DBs — no sharing.
             if (runnerType == RunnerType.MAP_DB) {
-                try {
-                    context.setSessionService(new MapDbSessionService(mkproDir.resolve(dbBaseName + "_sessions.db").toString()));
-                    context.setArtifactService(new MapDbArtifactService(mkproDir.resolve(dbBaseName + "_artifacts.db").toString()));
-                    MapDBVectorStore vectorStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors.db").toString(), "default");
-                    context.setVectorStore(vectorStore);
-                    context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
-                } catch (Exception lockEx) {
-                    System.err.println("\u001b[33m[Warning] Storage databases (_sessions.db, _artifacts.db, or _vectors.db) are locked by another running instance of mkpro.\u001b[0m");
-                    System.err.println("\u001b[33m[Warning] Falling back to in-memory sessions/artifacts and temporary vector databases for this instance.\u001b[0m");
-                    
-                    context.getCurrentRunnerType().set(RunnerType.IN_MEMORY);
-                    context.setSessionService(new InMemorySessionService());
-                    context.setArtifactService(new InMemoryArtifactService());
-                    MapDBVectorStore vectorStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors_temp_" + System.currentTimeMillis() + ".db").toString(), "default");
-                    context.setVectorStore(vectorStore);
-                    context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
-                }
+                context.setSessionService(new MapDbSessionService(mkproDir.resolve(dbBaseName + "_sessions.db").toString()));
+                context.setArtifactService(new MapDbArtifactService(mkproDir.resolve(dbBaseName + "_artifacts.db").toString()));
+                MapDBVectorStore vectorStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors.db").toString(), "default");
+                context.setVectorStore(vectorStore);
+                context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
             } else {
                 context.setSessionService(new InMemorySessionService());
                 context.setArtifactService(new InMemoryArtifactService());
-                MapDBVectorStore vectorStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors_temp.db").toString(), "default");
+                MapDBVectorStore vectorStore = new MapDBVectorStore(mkproDir.resolve(dbBaseName + "_vectors.db").toString(), "default");
                 context.setVectorStore(vectorStore);
                 context.setMemoryService(new MapDBMemoryService(vectorStore, embeddingService));
             }
@@ -283,6 +284,26 @@ public class BootstrapService {
         } catch (IOException e) {
             System.err.println("Could not initialize JLine terminal.");
         }
+    }
+
+    /**
+     * Resolves the database file prefix for this instance.
+     * Priority: -Dmkpro.db.name > --name CLI arg > default "mkpro_data".
+     * This ensures each instance gets its own isolated storage files.
+     */
+    private String resolveDbBaseName(MkProContext context) {
+        // 1. System property (set by shell scripts from script filename)
+        String sysProp = System.getProperty("mkpro.db.name");
+        if (sysProp != null && !sysProp.isBlank()) {
+            return sysProp;
+        }
+        // 2. --name CLI argument (set during parseArgs)
+        String instanceName = context.getInstanceName();
+        if (instanceName != null && !instanceName.isBlank()) {
+            return "mkpro_" + instanceName;
+        }
+        // 3. Default
+        return "mkpro_data";
     }
 
     private void printBanner() {

@@ -10,7 +10,7 @@ done
 SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" &> /dev/null && pwd )"
 
 # Define the path to the shaded JAR
-JAR_PATH="$SCRIPT_DIR/target/mkpro-2.0.jar"
+JAR_PATH="$SCRIPT_DIR/target/mkpro-3.2.0.jar"
 
 # Check if the JAR exists
 if [ ! -f "$JAR_PATH" ]; then

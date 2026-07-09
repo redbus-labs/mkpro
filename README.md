@@ -129,6 +129,11 @@ The `Maker.getGoalStimulus()` method generates a dynamic **Goal Stimulus** repor
 - **Goal Tracking**: Never lose track of original user requests during complex, multi-step sessions.
 - **Granular Configuration**: Assign different models to different agents via `/config`.
 - **Per-Team Configurations**: Save different model setups for different teams using YAML files.
+- **Multi-Ollama Endpoints**: Route different agents to different Ollama servers. Heavy models on GPU boxes, light models locally.
+- **Multimodal Support**: Agents can analyze images (vision) and transcribe/summarize audio files natively via Gemini.
+- **Autonomous Memory**: Agents can commit insights to CentralMemory (`commit_to_memory`) and recall them later — persists across sessions.
+- **Session State Injection**: Coordinator starts each session aware of pending goals, project memory, and MCP context from prior sessions.
+- **Training Data Export**: `/export` extracts real chat sessions as JSONL for fine-tuning your own SLM.
 - **Clipboard Integration**: Paste text or images directly into the terminal using `Ctrl+V`.
 - **Persistent Memory**:
     - **Shared Store**: Configs and goals saved to `~/Documents/mkpro/central_memory.db`.
@@ -146,6 +151,11 @@ The `Maker.getGoalStimulus()` method generates a dynamic **Goal Stimulus** repor
 | `/config` | View and modify agent model/provider assignments |
 | `/config list` | Show all agent configurations |
 | `/config [agent] [model]` | Reassign an agent to a different model |
+| `/ollama` | Manage multiple Ollama server endpoints |
+| `/ollama add <name> <url>` | Add a new Ollama endpoint |
+| `/ollama list` | Show all active Ollama endpoints |
+| `/ollama models [name]` | Fetch models from a specific server |
+| `/ollama status` | Check connectivity of all servers |
 | `/team` | Swap entire team structures |
 | `/stats` | View token usage statistics |
 | `/visualize` | Visualize the graph memory |
@@ -155,7 +165,8 @@ The `Maker.getGoalStimulus()` method generates a dynamic **Goal Stimulus** repor
 | `/runner` | Switch execution runner type |
 | `/network` | Manage mesh networking peers |
 | `/remember` | Save a project summary to persistent memory |
-| `/export` | Export runner session data |
+| `/export` | Export chat sessions as JSONL training data |
+| `/status` | Show system status, endpoints, and agent assignments |
 | `/help` | Show available commands |
 | `/exit`, `/quit` | Exit the application |
 
@@ -165,6 +176,8 @@ The `Maker.getGoalStimulus()` method generates a dynamic **Goal Stimulus** repor
 - **Weekly Git Syncing**: Background sync pulls latest model definitions from a remote Git repository.
 - **Customizable Remote**: Set `models.remote.url` in `config.properties` to use your own manifest.
 - **Real-time Ollama Detection**: Ollama models are fetched dynamically from your local server's `/api/tags` endpoint — always reflects your current local library.
+- **Multi-Endpoint Aggregation**: Models are fetched from ALL registered Ollama endpoints. Models from remote servers appear prefixed (e.g., `gpu-box/codestral`).
+- **Per-Agent Routing**: Assign specific agents to specific Ollama servers using `model@server-name` syntax in `/config`.
 
 ## 💎 Supported Gemini Models
 

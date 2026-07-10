@@ -207,7 +207,6 @@ public class BootstrapService {
             String memoryDbPath = PathUtils.getBaseDocumentsPath().resolve("memory_graph.db").toString();
             MapDbGraphRepository graphRepository = new MapDbGraphRepository(memoryDbPath);
             SyncEngine syncEngine = new SyncEngine(p2pBus, context.getCentralMemory(), (MapDbGraphRepository) graphRepository);
-            p2pBus.setMessageHandler(syncEngine::processIncomingMessage);
             context.setSyncEngine(syncEngine);
 
             context.setActionLogger(new ActionLogger(mkproDir.resolve(dbBaseName + "_logs.db").toString()));
@@ -251,6 +250,40 @@ public class BootstrapService {
             );
             context.setAgentManager(am);
             context.setAgentConfigs(context.getCentralMemory().getAllAgentConfigs());
+
+            // Register ask_peer_agent tool (requires P2PMessageBus + instanceId)
+            am.getToolRegistry().registerPeerAgentTool(p2pBus, instanceId);
+
+            // Wire PeerAgentRequestHandler to process incoming AGENT_REQUEST messages
+            com.mkpro.infra.network.peer.PeerAgentRequestHandler peerHandler = 
+                new com.mkpro.infra.network.peer.PeerAgentRequestHandler(p2pBus, am, context.getAgentConfigs(), instanceId);
+            
+            // Build PeerHandshake for exchanging project info on connection
+            java.util.List<String> agentNames = new java.util.ArrayList<>(am.getAgentDefinitions().keySet());
+            com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
+            String primaryModel = coordConfig != null ? coordConfig.getModelName() : "unknown";
+            com.mkpro.infra.network.peer.PeerHandshake peerHandshake = 
+                new com.mkpro.infra.network.peer.PeerHandshake(p2pBus, instanceId, agentNames, primaryModel, context.getCentralMemory());
+
+            // Route messages by type: AGENT_REQUEST → peerHandler, PEER_HELLO → handshake, else → syncEngine
+            java.util.function.Consumer<com.fasterxml.jackson.databind.node.ObjectNode> existingHandler = syncEngine::processIncomingMessage;
+            p2pBus.setMessageHandler(msg -> {
+                String type = msg.has("type") ? msg.get("type").asText() : "";
+                switch (type) {
+                    case "AGENT_REQUEST":
+                        peerHandler.handleRequest(msg);
+                        break;
+                    case "PEER_HELLO":
+                        com.mkpro.infra.network.peer.PeerHandshake.handleHello(msg);
+                        break;
+                    default:
+                        existingHandler.accept(msg);
+                        break;
+                }
+            });
+
+            // Send PEER_HELLO on every new connection (inbound or outbound)
+            p2pBus.setOnConnectHook(peerHandshake::sendHello);
 
             Runner runner = am.createRunner(context.getAgentConfigs(), "");
             context.setRunner(runner);

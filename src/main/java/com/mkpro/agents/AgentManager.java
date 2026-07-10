@@ -184,6 +184,17 @@ public class AgentManager {
         return agentDefinitions;
     }
 
+    public ToolRegistry getToolRegistry() {
+        return toolRegistry;
+    }
+
+    /**
+     * Public LLM creation for use by PeerAgentRequestHandler.
+     */
+    public BaseLlm createLlmPublic(AgentConfig config) {
+        return createLlm(config);
+    }
+
     private BaseLlm createLlm(AgentConfig config) {
         if (config == null || config.getProvider() == null) return null;
         
@@ -395,6 +406,9 @@ public class AgentManager {
             coordinatorTools.add(FetchUrlTools.create());
             coordinatorTools.add(CentralMemoryTools.commitToMemory());
             coordinatorTools.add(CentralMemoryTools.recallProjectMemory());
+            // Peer agent communication — Coordinator can directly ask other instances
+            coordinatorTools.addAll(toolRegistry.get("ask_peer_agent"));
+            coordinatorTools.addAll(toolRegistry.get("list_peers"));
             //coordinatorTools.add(McpServerConnectTools.createListMcpServersTool(centralMemory));
 
             // Generate delegation tools for all sub-agents and add them to coordinatorTools
@@ -448,6 +462,36 @@ public class AgentManager {
             String mcpContext = com.mkpro.tools.McpServerConnectTools.buildMcpContextForAgent(centralMemory);
             if (mcpContext != null && !mcpContext.isEmpty()) {
                 coordInstruction += mcpContext;
+            }
+
+            // Inject Connected Peers info (for cross-instance agent communication)
+            java.util.List<com.mkpro.infra.network.discovery.NetworkPeerRegistry.PeerInfo> connectedPeers = 
+                com.mkpro.infra.network.discovery.NetworkPeerRegistry.getInstance().listPeers();
+            if (!connectedPeers.isEmpty()) {
+                StringBuilder peersContext = new StringBuilder("\n\n── CONNECTED PEERS ──\n");
+                peersContext.append("You can use `ask_peer_agent` to ask agents on these connected instances:\n");
+                for (var peer : connectedPeers) {
+                    peersContext.append("  • ").append(peer.getPeerId());
+                    if (peer.getProjectName() != null) {
+                        peersContext.append(" [").append(peer.getProjectName()).append("/").append(peer.getProjectType()).append("]");
+                    }
+                    if (peer.getModel() != null) {
+                        peersContext.append(" model:").append(peer.getModel());
+                    }
+                    if (peer.getAvailableAgents() != null && !peer.getAvailableAgents().isEmpty()) {
+                        peersContext.append(" agents:").append(peer.getAvailableAgents().size());
+                    }
+                    if (peer.getProjectDescription() != null && !peer.getProjectDescription().isEmpty() 
+                        && !"No description available. Use /remember to add one.".equals(peer.getProjectDescription())) {
+                        peersContext.append("\n    Description: ").append(
+                            peer.getProjectDescription().length() > 100 ? 
+                            peer.getProjectDescription().substring(0, 100) + "..." : 
+                            peer.getProjectDescription());
+                    }
+                    peersContext.append("\n");
+                }
+                peersContext.append("Usage: ask_peer_agent(agent=\"Architect\", peer=\"project-name\", question=\"...\")\n");
+                coordInstruction += peersContext.toString();
             }
             
             LlmAgent coordinator = LlmAgent.builder()

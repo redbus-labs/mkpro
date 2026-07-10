@@ -89,9 +89,22 @@ public class NetworkCommand implements Command {
             System.out.println("  No peers discovered yet.");
         } else {
             for (NetworkPeerRegistry.PeerInfo peer : peers) {
-                System.out.println(String.format("  %s%s%s → %s:%d",
+                String projectInfo = "";
+                if (peer.getProjectName() != null && !"unknown".equals(peer.getProjectName())) {
+                    projectInfo = " [" + peer.getProjectName() + "/" + peer.getProjectType() + "]";
+                }
+                String modelInfo = "";
+                if (peer.getModel() != null && !"unknown".equals(peer.getModel())) {
+                    modelInfo = " model:" + peer.getModel();
+                }
+                String agentCount = "";
+                if (peer.getAvailableAgents() != null && !peer.getAvailableAgents().isEmpty()) {
+                    agentCount = " (" + peer.getAvailableAgents().size() + " agents)";
+                }
+                System.out.println(String.format("  %s%s%s → %s:%d%s%s%s",
                     ANSI_GREEN, peer.getPeerId(), ANSI_RESET,
-                    peer.getIp(), peer.getPort()));
+                    peer.getIp(), peer.getPort(),
+                    projectInfo, agentCount, modelInfo));
             }
         }
     }

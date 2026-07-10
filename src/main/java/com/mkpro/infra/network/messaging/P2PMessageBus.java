@@ -44,6 +44,8 @@ public class P2PMessageBus extends WebSocketServer {
 
     private Consumer<ObjectNode> messageHandler;
     private final MessageAuthenticator authenticator;
+    private final Map<String, CompletableFuture<ObjectNode>> pendingRequests = new ConcurrentHashMap<>();
+    private Runnable onConnectHook; // Called when any new connection opens (for sending PEER_HELLO)
 
     public P2PMessageBus(int port) {
         super(new InetSocketAddress(port));
@@ -52,6 +54,14 @@ public class P2PMessageBus extends WebSocketServer {
 
     public void setMessageHandler(Consumer<ObjectNode> handler) {
         this.messageHandler = handler;
+    }
+
+    /**
+     * Sets a hook that fires whenever a new connection opens (inbound or outbound).
+     * Used by PeerHandshake to send PEER_HELLO on each new connection.
+     */
+    public void setOnConnectHook(Runnable hook) {
+        this.onConnectHook = hook;
     }
 
     @Override
@@ -63,6 +73,9 @@ public class P2PMessageBus extends WebSocketServer {
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         System.out.println("P2P: New inbound connection from " + conn.getRemoteSocketAddress());
+        if (onConnectHook != null) {
+            onConnectHook.run();
+        }
     }
 
     @Override
@@ -107,6 +120,9 @@ public class P2PMessageBus extends WebSocketServer {
                 @Override
                 public void onOpen(ServerHandshake handshakedata) {
                     System.out.println("P2P: Connected to peer: " + peerUri);
+                    if (onConnectHook != null) {
+                        onConnectHook.run();
+                    }
                 }
 
                 @Override
@@ -233,8 +249,51 @@ public class P2PMessageBus extends WebSocketServer {
     }
 
     protected void onMessageReceived(ObjectNode message) {
+        // Check if this is a response to a pending request
+        if (message.has("type") && "AGENT_RESPONSE".equals(message.get("type").asText())) {
+            String requestId = message.has("request_id") ? message.get("request_id").asText() : null;
+            if (requestId != null) {
+                CompletableFuture<ObjectNode> future = pendingRequests.remove(requestId);
+                if (future != null) {
+                    future.complete(message);
+                    return; // Don't pass to general handler
+                }
+            }
+        }
+
         if (messageHandler != null) {
             messageHandler.accept(message);
+        }
+    }
+
+    /**
+     * Sends a request to all peers and waits for a response (first responder wins).
+     * 
+     * @param request The request message (must contain request_id)
+     * @param timeoutSeconds How long to wait for a response
+     * @return The response ObjectNode, or null if timeout
+     */
+    public ObjectNode sendRequestAndWait(ObjectNode request, int timeoutSeconds) {
+        String requestId = request.has("request_id") ? request.get("request_id").asText() : null;
+        if (requestId == null) {
+            throw new IllegalArgumentException("Request must contain request_id");
+        }
+
+        CompletableFuture<ObjectNode> future = new CompletableFuture<>();
+        pendingRequests.put(requestId, future);
+
+        // Broadcast the request to all peers
+        broadcast(request);
+
+        try {
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            pendingRequests.remove(requestId);
+            return null; // Timeout — no peer responded
+        } catch (Exception e) {
+            pendingRequests.remove(requestId);
+            System.err.println("P2P: Request failed: " + e.getMessage());
+            return null;
         }
     }
 

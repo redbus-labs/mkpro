@@ -128,6 +128,14 @@ public class ToolRegistry {
     }
 
     /**
+     * Late-register the ask_peer_agent tool (requires P2PMessageBus which isn't available at construction).
+     */
+    public void registerPeerAgentTool(com.mkpro.infra.network.messaging.P2PMessageBus messageBus, String instanceId) {
+        toolCache.put("ask_peer_agent", List.of(AskPeerAgentTool.create(messageBus, instanceId)));
+        toolCache.put("list_peers", List.of(AskPeerAgentTool.createListPeersTool()));
+    }
+
+    /**
      * Get tools by a single name.
      */
     public List<BaseTool> get(String toolName) {

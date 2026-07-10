@@ -30,7 +30,7 @@ public class ToolRegistry {
 
     private void initializeTools() {
         // File operations
-        toolCache.put("file_read", List.of(FileSystemTools.create()));
+        toolCache.put("file_read", List.of(FileSystemTools.create(), MkProTools.createListDirTool()));
         toolCache.put("file_write", List.of(MkProTools.createWriteFileTool()));
         toolCache.put("safe_write", List.of(MkProTools.createSafeWriteFileTool()));
 

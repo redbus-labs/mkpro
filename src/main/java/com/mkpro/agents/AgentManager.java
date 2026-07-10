@@ -685,15 +685,29 @@ public class AgentManager {
                 }
             }
             
-            // Option B: YAML-defined fallback model
-            if (def != null && def.getFallbackModel() != null && !def.getFallbackModel().isEmpty() && maxRetries > 0) {
-                String fallback = def.getFallbackModel();
+            // Option B: YAML-defined fallback model (or global fallback)
+            String fallbackModelStr = null;
+            if (def != null && def.getFallbackModel() != null && !def.getFallbackModel().isEmpty()) {
+                fallbackModelStr = def.getFallbackModel();
+            } else {
+                // Check global fallback
+                String globalFallback = centralMemory.getMemory("__global_fallback_model");
+                if (globalFallback != null && !globalFallback.isEmpty()) {
+                    fallbackModelStr = globalFallback;
+                }
+            }
+            
+            if (fallbackModelStr != null && maxRetries > 0) {
+                String fallback = fallbackModelStr;
                 logger.log("SYSTEM", String.format("[FALLBACK] %s: Primary model failed, trying fallback: %s",
                     request.getAgentName(), fallback));
                 System.out.println("\u001b[33m[Fallback] " + request.getAgentName() + ": switching to " + fallback + "\u001b[0m");
                 
                 try {
-                    // Parse fallback — may be "model@server"
+                    // Parse fallback — supports:
+                    //   "model@PROVIDER"  e.g., gemini-2.0-flash@GEMINI, gpt-4o@AZURE
+                    //   "model@server"    e.g., codestral@gpu4090 (Ollama endpoint)
+                    //   "model"           plain model name (inherits primary provider)
                     String fallbackModel = fallback;
                     String fallbackServerUrl = null;
                     Provider fallbackProvider = request.getProvider();
@@ -701,14 +715,17 @@ public class AgentManager {
                     if (fallback.contains("@")) {
                         int atIdx = fallback.indexOf('@');
                         fallbackModel = fallback.substring(0, atIdx);
-                        String serverName = fallback.substring(atIdx + 1);
-                        fallbackServerUrl = com.mkpro.commands.impl.OllamaCommand.resolveServerUrl(serverName, centralMemory);
-                    }
-                    
-                    // Check if fallback specifies a different provider (e.g., "gemini-2.0-flash" implies GEMINI)
-                    if (fallbackModel.startsWith("gemini")) {
-                        fallbackProvider = Provider.GEMINI;
-                        fallbackServerUrl = null;
+                        String target = fallback.substring(atIdx + 1);
+                        
+                        // Check if target is a provider name
+                        try {
+                            fallbackProvider = Provider.valueOf(target.toUpperCase());
+                            fallbackServerUrl = null; // Provider-based, no server URL
+                        } catch (IllegalArgumentException e2) {
+                            // Not a provider — treat as Ollama server name
+                            fallbackProvider = Provider.OLLAMA;
+                            fallbackServerUrl = com.mkpro.commands.impl.OllamaCommand.resolveServerUrl(target, centralMemory);
+                        }
                     }
                     
                     AgentRequest fallbackRequest = new AgentRequest(
@@ -729,7 +746,7 @@ public class AgentManager {
                     ConfigRecommender.recommendAfterFallback(
                         request.getAgentName(),
                         request.getModelName(),
-                        def.getFallbackModel(),
+                        fallback,
                         activeAgentConfigs,
                         centralMemory
                     );

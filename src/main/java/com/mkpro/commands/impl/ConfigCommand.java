@@ -24,7 +24,8 @@ public class ConfigCommand implements Command {
         String subCommand = args[0];
 
         // Support legacy main/master syntax: /config <agent> <provider> [model]
-        if (!subCommand.equalsIgnoreCase("list") && !subCommand.equalsIgnoreCase("set") && !subCommand.equalsIgnoreCase("reset")) {
+        if (!subCommand.equalsIgnoreCase("list") && !subCommand.equalsIgnoreCase("set") 
+                && !subCommand.equalsIgnoreCase("reset") && !subCommand.equalsIgnoreCase("fallback")) {
             if (args.length >= 2) {
                 String agent = args[0];
                 String providerStr = args[1];
@@ -248,6 +249,19 @@ public class ConfigCommand implements Command {
     }
 
     private void setFallbackModel(String agentName, String fallbackModel, MkProContext context) {
+        // Global fallback — applies to all agents without a specific fallback
+        if ("default".equalsIgnoreCase(agentName) || "all".equalsIgnoreCase(agentName) || "global".equalsIgnoreCase(agentName)) {
+            if ("none".equalsIgnoreCase(fallbackModel) || "clear".equalsIgnoreCase(fallbackModel)) {
+                context.getCentralMemory().saveMemory("__global_fallback_model", "");
+                System.out.println("Cleared global fallback model.");
+            } else {
+                context.getCentralMemory().saveMemory("__global_fallback_model", fallbackModel);
+                System.out.println("Set global fallback → " + fallbackModel);
+                System.out.println("  Any agent without a specific fallback will use this if primary fails.");
+            }
+            return;
+        }
+
         if (context.getAgentManager() == null || context.getAgentManager().getAgentDefinitions() == null) {
             System.out.println("Agent manager not initialized.");
             return;

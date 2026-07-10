@@ -61,12 +61,19 @@ public class StatusCommand implements Command {
             if (config != null) {
                 String serverInfo = "";
                 if (config.hasServerUrl()) {
-                    // Resolve server name from URL
                     String serverName = resolveServerName(config.getServerUrl(), ollamaServers);
                     serverInfo = " @" + serverName;
                 }
-                System.out.println(ANSI_GREEN + String.format(" - %s: %s (%s%s)", 
-                    agent, config.getModelName(), config.getProvider(), serverInfo) + ANSI_RESET);
+                // Get fallback info
+                String fallbackInfo = "";
+                if (context.getAgentManager() != null && context.getAgentManager().getAgentDefinitions() != null) {
+                    var def = context.getAgentManager().getAgentDefinitions().get(agent);
+                    if (def != null && def.getFallbackModel() != null && !def.getFallbackModel().isEmpty()) {
+                        fallbackInfo = " → fallback: " + def.getFallbackModel();
+                    }
+                }
+                System.out.println(ANSI_GREEN + String.format(" - %s: %s (%s%s)%s", 
+                    agent, config.getModelName(), config.getProvider(), serverInfo, fallbackInfo) + ANSI_RESET);
             } else {
                 String model = "llama3";
                 String provider = "OLLAMA";
@@ -84,6 +91,14 @@ public class StatusCommand implements Command {
                 }
                 System.out.println(ANSI_YELLOW + String.format(" - %s: %s (%s) [default]", agent, model, provider) + ANSI_RESET);
             }
+        }
+        
+        // Show global fallback
+        String globalFallback = context.getCentralMemory().getMemory("__global_fallback_model");
+        if (globalFallback != null && !globalFallback.isEmpty()) {
+            System.out.println(ANSI_CYAN + "\nGlobal Fallback: " + globalFallback + ANSI_RESET);
+        } else {
+            System.out.println(ANSI_YELLOW + "\nGlobal Fallback: not set (use '/config fallback default <model>')" + ANSI_RESET);
         }
     }
 

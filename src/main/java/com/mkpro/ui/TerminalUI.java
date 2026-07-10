@@ -39,7 +39,15 @@ public class TerminalUI {
                 }
 
                 String timestamp = LocalTime.now().format(PROMPT_TIME_FORMATTER);
-                String prompt = "\n[" + timestamp + "] mkpro> ";
+                java.nio.file.Path cwdPath = java.nio.file.Paths.get("").toAbsolutePath();
+                String cwd;
+                if (cwdPath.getNameCount() <= 3) {
+                    cwd = cwdPath.toString();
+                } else {
+                    // Show last 2 segments: .../parent/current
+                    cwd = ".../" + cwdPath.getName(cwdPath.getNameCount() - 2) + "/" + cwdPath.getFileName();
+                }
+                String prompt = "\n[" + timestamp + "] " + cwd + "> ";
                 line = context.getLineReader().readLine(prompt);
 
                 if (line == null) break;
@@ -61,35 +69,65 @@ public class TerminalUI {
                         AtomicBoolean isThinking = new AtomicBoolean(true);
                         AtomicBoolean firstChunkReceived = new AtomicBoolean(false);
 
-                        // Start spinner daemon thread
+                        // Resolve model info for display
+                        com.mkpro.models.AgentConfig displayConfig = context.getAgentConfigs().get("Coordinator");
+                        String displayModel = displayConfig != null ? displayConfig.getModelName() : "llama3";
+                        String displayProvider = displayConfig != null ? displayConfig.getProvider().name() : "OLLAMA";
+                        String thinkingLabel = "Thinking[" + displayModel + "@" + displayProvider + "] ";
+
+                        // Start spinner daemon thread with color transitions
                         Thread spinnerThread = new Thread(() -> {
-                            String[] syms = {"|", "/", "-", "\\"};
+                            String[] syms = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+                            // Smooth color transition: blue → orange → white → blue...
+                            // Using 256-color ANSI: blue(33), orange shades(214,208,202), white(255)
+                            String[] colors = {
+                                "\u001b[38;5;33m",  // blue
+                                "\u001b[38;5;39m",  // light blue
+                                "\u001b[38;5;45m",  // cyan-blue
+                                "\u001b[38;5;81m",  // sky
+                                "\u001b[38;5;117m", // pale blue
+                                "\u001b[38;5;255m", // white
+                                "\u001b[38;5;223m", // pale orange
+                                "\u001b[38;5;216m", // light orange
+                                "\u001b[38;5;214m", // orange
+                                "\u001b[38;5;208m", // deep orange
+                                "\u001b[38;5;202m", // red-orange
+                                "\u001b[38;5;214m", // orange
+                                "\u001b[38;5;223m", // pale orange
+                                "\u001b[38;5;255m", // white
+                                "\u001b[38;5;153m", // ice blue
+                                "\u001b[38;5;111m", // medium blue
+                            };
                             int spinnerIdx = 0;
+                            int colorIdx = 0;
                             try {
                                 org.jline.terminal.Terminal terminal = context.getLineReader().getTerminal();
                                 while (isThinking.get() && !firstChunkReceived.get()) {
-                                    terminal.writer().print("\r" + ANSI_BLUE + "Thinking " + syms[spinnerIdx++ % syms.length] + " " + ANSI_RESET);
+                                    String color = colors[colorIdx % colors.length];
+                                    String sym = syms[spinnerIdx % syms.length];
+                                    terminal.writer().print("\r" + color + sym + " " + thinkingLabel + ANSI_RESET);
                                     terminal.writer().flush();
-                                    Thread.sleep(100);
+                                    spinnerIdx++;
+                                    colorIdx++;
+                                    Thread.sleep(80);
                                 }
                                 // Clear the spinner line
-                                terminal.writer().print("\r" + " ".repeat(20) + "\r");
+                                terminal.writer().print("\r" + " ".repeat(thinkingLabel.length() + 4) + "\r");
                                 terminal.writer().flush();
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
                             } catch (Exception ignored) {
-                                // Fallback to System.out if JLine terminal writer is not available
+                                // Fallback to System.out
                                 while (isThinking.get() && !firstChunkReceived.get()) {
-                                    System.out.print("\r" + ANSI_BLUE + "Thinking " + syms[spinnerIdx++ % syms.length] + " " + ANSI_RESET);
+                                    String color = colors[colorIdx % colors.length];
+                                    String sym = syms[spinnerIdx % syms.length];
+                                    System.out.print("\r" + color + sym + " " + thinkingLabel + ANSI_RESET);
                                     System.out.flush();
-                                    try {
-                                        Thread.sleep(100);
-                                    } catch (InterruptedException ie) {
-                                        Thread.currentThread().interrupt();
-                                        break;
-                                    }
+                                    spinnerIdx++;
+                                    colorIdx++;
+                                    try { Thread.sleep(80); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
                                 }
-                                System.out.print("\r" + " ".repeat(20) + "\r");
+                                System.out.print("\r" + " ".repeat(thinkingLabel.length() + 4) + "\r");
                                 System.out.flush();
                             }
                         });

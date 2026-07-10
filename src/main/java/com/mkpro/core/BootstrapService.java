@@ -200,6 +200,7 @@ public class BootstrapService {
             context.setInstanceName(instanceId);
 
             DiscoveryService discoveryService = new DiscoveryService();
+            discoveryService.setMessageBus(p2pBus); // Auto-connect discovered peers
             discoveryService.start(p2pPort, instanceId);
             context.setDiscoveryService(discoveryService);
 

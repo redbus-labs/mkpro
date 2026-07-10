@@ -12,25 +12,36 @@ import org.java_websocket.server.WebSocketServer;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 
 /**
  * P2PMessageBus manages peer-to-peer WebSocket communication.
- * It extends WebSocketServer to accept incoming connections and uses 
- * WebSocketClient to initiate outgoing connections.
- * 
- * All messages are signed with HMAC-SHA256 using a shared cluster secret.
- * Unsigned or incorrectly signed messages are rejected.
+ * Features:
+ * - Server: accepts inbound connections from peers
+ * - Client: connects to discovered peers
+ * - HMAC-SHA256 message signing/verification
+ * - Automatic reconnection with exponential backoff
+ * - Deduplication of connections (won't connect to same peer twice)
  */
 public class P2PMessageBus extends WebSocketServer {
 
     private static final String SIGNATURE_FIELD = "_sig";
     private static final String PAYLOAD_FIELD = "_payload";
     private static final ObjectMapper mapper = new ObjectMapper();
+    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+    private static final long INITIAL_BACKOFF_MS = 2000;
 
     private final Set<WebSocketClient> outboundPeers = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Set<String> connectedPeerUris = ConcurrentHashMap.newKeySet();
+    private final ScheduledExecutorService reconnectExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "P2P-Reconnect");
+        t.setDaemon(true);
+        return t;
+    });
+
     private Consumer<ObjectNode> messageHandler;
     private final MessageAuthenticator authenticator;
 
@@ -72,15 +83,30 @@ public class P2PMessageBus extends WebSocketServer {
     }
 
     /**
-     * Connects to a remote peer.
-     * @param peerUri The URI of the peer.
+     * Connects to a remote peer with automatic reconnection on failure.
+     * Skips if already connected to this URI.
+     * @param peerUri The WebSocket URI of the peer (e.g., ws://10.0.0.1:9000).
      */
     public void connectToPeer(String peerUri) {
+        if (connectedPeerUris.contains(peerUri)) {
+            return; // Already connected or connecting
+        }
+        connectedPeerUris.add(peerUri);
+        connectWithBackoff(peerUri, 0);
+    }
+
+    private void connectWithBackoff(String peerUri, int attempt) {
+        if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+            System.err.println("P2P: Giving up on " + peerUri + " after " + attempt + " attempts.");
+            connectedPeerUris.remove(peerUri);
+            return;
+        }
+
         try {
             WebSocketClient client = new WebSocketClient(new URI(peerUri)) {
                 @Override
                 public void onOpen(ServerHandshake handshakedata) {
-                    System.out.println("P2P: Connected to outbound peer: " + peerUri);
+                    System.out.println("P2P: Connected to peer: " + peerUri);
                 }
 
                 @Override
@@ -92,38 +118,68 @@ public class P2PMessageBus extends WebSocketServer {
 
                 @Override
                 public void onClose(int code, String reason, boolean remote) {
-                    System.out.println("P2P: Connection to outbound peer closed: " + peerUri);
+                    System.out.println("P2P: Disconnected from peer: " + peerUri + " (remote=" + remote + ")");
                     outboundPeers.remove(this);
+
+                    // Schedule reconnection with backoff
+                    if (remote) {
+                        long delay = INITIAL_BACKOFF_MS * (long) Math.pow(2, attempt);
+                        System.out.println("P2P: Will retry " + peerUri + " in " + (delay / 1000) + "s...");
+                        reconnectExecutor.schedule(() -> connectWithBackoff(peerUri, attempt + 1), delay, TimeUnit.MILLISECONDS);
+                    } else {
+                        connectedPeerUris.remove(peerUri);
+                    }
                 }
 
                 @Override
                 public void onError(Exception ex) {
-                    System.err.println("P2P Client-side Error (" + peerUri + "): " + ex.getMessage());
+                    System.err.println("P2P Client Error (" + peerUri + "): " + ex.getMessage());
                 }
             };
             client.connect();
             outboundPeers.add(client);
         } catch (Exception e) {
             System.err.println("P2P: Failed to connect to " + peerUri + ": " + e.getMessage());
+            connectedPeerUris.remove(peerUri);
         }
+    }
+
+    /**
+     * Disconnects from a specific peer.
+     */
+    public void disconnectPeer(String peerUri) {
+        connectedPeerUris.remove(peerUri);
+        outboundPeers.removeIf(client -> {
+            if (client.getURI().toString().equals(peerUri)) {
+                client.close();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    /**
+     * Returns the set of currently connected (or connecting) peer URIs.
+     */
+    public Set<String> getConnectedPeerUris() {
+        return Collections.unmodifiableSet(connectedPeerUris);
     }
 
     /**
      * Broadcasts an ObjectNode to all connected peers.
      * The message is signed before transmission.
-     * @param message The message to broadcast.
      */
     public void broadcast(ObjectNode message) {
         String signedPayload = signMessage(message);
-        
-        // Send to all inbound connections (clients connected to this server)
+
+        // Send to all inbound connections
         for (WebSocket conn : getConnections()) {
             if (conn.isOpen()) {
                 conn.send(signedPayload);
             }
         }
-        
-        // Send to all outbound connections (peers this instance connected to)
+
+        // Send to all outbound connections
         for (WebSocketClient peer : outboundPeers) {
             if (peer.isOpen()) {
                 peer.send(signedPayload);
@@ -131,9 +187,6 @@ public class P2PMessageBus extends WebSocketServer {
         }
     }
 
-    /**
-     * Signs a message JSON and wraps it in an envelope with a signature.
-     */
     private String signMessage(ObjectNode message) {
         String payload = message.toString();
         String signature = authenticator.sign(payload);
@@ -144,41 +197,32 @@ public class P2PMessageBus extends WebSocketServer {
             envelope.put(SIGNATURE_FIELD, signature);
             return envelope.toString();
         }
-        
-        // Auth disabled — send raw message for backward compatibility
+
         return payload;
     }
 
-    /**
-     * Verifies an incoming message and dispatches it if valid.
-     * @return true if message was accepted, false if rejected
-     */
     private boolean verifyAndHandle(String rawMessage) {
         try {
             ObjectNode parsed = (ObjectNode) mapper.readTree(rawMessage);
-            
-            // Check if this is a signed envelope
+
             if (parsed.has(PAYLOAD_FIELD) && parsed.has(SIGNATURE_FIELD)) {
                 String payload = parsed.get(PAYLOAD_FIELD).asText();
                 String signature = parsed.get(SIGNATURE_FIELD).asText();
 
                 if (!authenticator.verify(payload, signature)) {
-                    return false; // Signature verification failed
+                    return false;
                 }
 
-                // Extract the actual message from the envelope
                 ObjectNode actualMessage = (ObjectNode) mapper.readTree(payload);
                 onMessageReceived(actualMessage);
                 return true;
             }
 
-            // Unsigned message — only accept if auth is disabled
             if (!authenticator.isEnabled()) {
                 onMessageReceived(parsed);
                 return true;
             }
 
-            // Auth is enabled but message is unsigned — reject
             System.err.println("P2P: Rejected unsigned message (authentication is enabled)");
             return false;
 
@@ -188,13 +232,22 @@ public class P2PMessageBus extends WebSocketServer {
         }
     }
 
-    /**
-     * Called when a verified message is received.
-     * @param message The received ObjectNode (verified).
-     */
     protected void onMessageReceived(ObjectNode message) {
         if (messageHandler != null) {
             messageHandler.accept(message);
         }
+    }
+
+    /**
+     * Stops the message bus and cleans up resources.
+     */
+    public void stop() throws InterruptedException {
+        reconnectExecutor.shutdown();
+        for (WebSocketClient peer : outboundPeers) {
+            peer.close();
+        }
+        outboundPeers.clear();
+        connectedPeerUris.clear();
+        super.stop();
     }
 }

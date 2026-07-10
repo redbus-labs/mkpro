@@ -1,5 +1,6 @@
 package com.mkpro.infra.network.sync;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mkpro.CentralMemory;
@@ -7,9 +8,16 @@ import com.mkpro.graph.ExtractionResult;
 import com.mkpro.graph.MapDbGraphRepository;
 import com.mkpro.infra.network.messaging.P2PMessageBus;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * SyncEngine coordinates state synchronization across the network by bridging
  * CentralMemory and MapDbGraphRepository changes with the P2PMessageBus.
+ *
+ * Key design decisions:
+ * - Uses a syncing guard to prevent feedback loops (local update → broadcast → receive → local update → ...)
+ * - Timestamps are included for future conflict resolution
+ * - Complex values are serialized/deserialized via Jackson valueToTree/treeToValue
  */
 public class SyncEngine {
 
@@ -17,6 +25,9 @@ public class SyncEngine {
     private final CentralMemory centralMemory;
     private final MapDbGraphRepository repository;
     private final ObjectMapper mapper = new ObjectMapper();
+
+    /** Guard flag: when true, CentralMemory listener notifications are suppressed (receiving remote update) */
+    private final AtomicBoolean syncing = new AtomicBoolean(false);
 
     public SyncEngine(P2PMessageBus messageBus, CentralMemory centralMemory, MapDbGraphRepository repository) {
         this.messageBus = messageBus;
@@ -34,9 +45,12 @@ public class SyncEngine {
 
     /**
      * Called when CentralMemory is updated locally.
-     * Broadcasts the change to the network.
+     * Only broadcasts if we're NOT currently applying a remote sync (prevents feedback loop).
      */
     private void onLocalMemoryChanged(String key, Object value) {
+        if (syncing.get()) {
+            return; // Suppress: this change came from a remote peer, don't re-broadcast
+        }
         broadcastSync(key, value);
     }
 
@@ -44,16 +58,21 @@ public class SyncEngine {
      * Constructs and broadcasts a MEMORY_SYNC message.
      */
     private void broadcastSync(String key, Object value) {
-        ObjectNode syncMessage = mapper.createObjectNode();
-        syncMessage.put("type", "MEMORY_SYNC");
-        syncMessage.put("key", key);
-        syncMessage.putPOJO("value", value);
-        syncMessage.put("timestamp", System.currentTimeMillis());
+        try {
+            ObjectNode syncMessage = mapper.createObjectNode();
+            syncMessage.put("type", "MEMORY_SYNC");
+            syncMessage.put("key", key);
+            syncMessage.set("value", mapper.valueToTree(value));
+            syncMessage.put("timestamp", System.currentTimeMillis());
 
-        messageBus.broadcast(syncMessage);
+            messageBus.broadcast(syncMessage);
+        } catch (Exception e) {
+            System.err.println("[SyncEngine] Error broadcasting: " + e.getMessage());
+        }
     }
 
     private void broadcastGraphSync(String key, ExtractionResult result) {
+        if (syncing.get()) return;
         try {
             ObjectNode syncMessage = mapper.createObjectNode();
             syncMessage.put("type", "GRAPH_SYNC");
@@ -63,38 +82,67 @@ public class SyncEngine {
 
             messageBus.broadcast(syncMessage);
         } catch (Exception e) {
-            System.err.println("Error broadcasting graph sync: " + e.getMessage());
+            System.err.println("[SyncEngine] Error broadcasting graph sync: " + e.getMessage());
         }
     }
 
     /**
      * Processes incoming synchronization messages from the network.
-     * Updates CentralMemory while ensuring no feedback loops occur.
-     * 
+     * Sets the syncing guard to prevent feedback loops.
+     *
      * @param message The received ObjectNode message.
      */
     public void processIncomingMessage(ObjectNode message) {
         String type = message.has("type") ? message.get("type").asText() : "";
-        if ("MEMORY_SYNC".equals(type)) {
-            String key = message.get("key").asText();
-            // For simple values, extract as text; for complex objects the consumer handles it
-            Object value = message.has("value") ? message.get("value").asText() : null;
 
-            // Update CentralMemory.
-            // Note: CentralMemory.updateFromRemote should be used to prevent
-            // re-broadcasting the same change back to the network.
+        // Set guard to prevent re-broadcasting this change
+        syncing.set(true);
+        try {
+            if ("MEMORY_SYNC".equals(type)) {
+                processMemorySync(message);
+            } else if ("GRAPH_SYNC".equals(type)) {
+                processGraphSync(message);
+            }
+        } finally {
+            syncing.set(false);
+        }
+    }
+
+    private void processMemorySync(ObjectNode message) {
+        try {
+            String key = message.get("key").asText();
+            JsonNode valueNode = message.get("value");
+
+            // Deserialize value based on what CentralMemory.updateFromRemote expects
+            Object value;
+            if (valueNode == null || valueNode.isNull()) {
+                value = null;
+            } else if (valueNode.isTextual()) {
+                value = valueNode.asText();
+            } else {
+                // Complex object — pass the raw JSON string for CentralMemory to handle
+                // CentralMemory.updateFromRemote handles typed deserialization by key prefix
+                value = valueNode.toString();
+            }
+
             centralMemory.updateFromRemote(key, value);
-        } else if ("GRAPH_SYNC".equals(type)) {
-            try {
-                String key = message.get("key").asText();
-                String resultJson = message.get("result").toString();
-                ExtractionResult result = mapper.readValue(resultJson, ExtractionResult.class);
+        } catch (Exception e) {
+            System.err.println("[SyncEngine] Error processing memory sync: " + e.getMessage());
+        }
+    }
+
+    private void processGraphSync(ObjectNode message) {
+        try {
+            String key = message.get("key").asText();
+            JsonNode resultNode = message.get("result");
+            if (resultNode != null) {
+                ExtractionResult result = mapper.treeToValue(resultNode, ExtractionResult.class);
                 if (repository != null) {
                     repository.mergeExtraction(key, result);
                 }
-            } catch (Exception e) {
-                System.err.println("Error processing incoming graph sync: " + e.getMessage());
             }
+        } catch (Exception e) {
+            System.err.println("[SyncEngine] Error processing graph sync: " + e.getMessage());
         }
     }
 }

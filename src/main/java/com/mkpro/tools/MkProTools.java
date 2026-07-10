@@ -173,21 +173,59 @@ public class MkProTools {
     }
 
     public static BaseTool createReadFileTool() {
-        return new BaseTool("read_file", "Reads the content of a file. Path must be within the project directory.") {
+        return new BaseTool("read_file", "Reads the content of a file. Supports reading specific line ranges for large files.") {
             @Override public Optional<FunctionDeclaration> declaration() {
                 return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
                     .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of("path", Schema.builder().type("STRING").description("Path to the file").build()))
+                        .properties(ImmutableMap.of(
+                            "path", Schema.builder().type("STRING").description("Path to the file").build(),
+                            "start_line", Schema.builder().type("INTEGER").description("Optional: start reading from this line (1-indexed). Default: 1.").build(),
+                            "end_line", Schema.builder().type("INTEGER").description("Optional: stop reading at this line. Default: reads all or up to 500 lines.").build()
+                        ))
                         .required(ImmutableList.of("path")).build()).build());
             }
             @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
                     String pathStr = (String) args.get("path");
+                    int startLine = args.get("start_line") != null ? ((Number) args.get("start_line")).intValue() : 1;
+                    int endLine = args.get("end_line") != null ? ((Number) args.get("end_line")).intValue() : -1;
+
                     try {
                         Path validated = com.mkpro.security.PathValidator.getInstance().validateForRead(pathStr);
-                        return Collections.singletonMap("content", (Object) Files.readString(validated));
+                        List<String> allLines = Files.readAllLines(validated);
+                        int totalLines = allLines.size();
+
+                        // Clamp start
+                        startLine = Math.max(1, startLine);
+                        // Default end: start + 500 or total
+                        if (endLine < 0) {
+                            endLine = Math.min(startLine + 499, totalLines);
+                        }
+                        endLine = Math.min(endLine, totalLines);
+
+                        // Extract range
+                        List<String> lines = allLines.subList(startLine - 1, endLine);
+                        String content = String.join("\n", lines);
+
+                        Map<String, Object> result = new java.util.HashMap<>();
+                        result.put("content", content);
+                        result.put("total_lines", totalLines);
+                        result.put("showing_lines", startLine + "-" + endLine);
+                        if (endLine < totalLines) {
+                            result.put("has_more", true);
+                            result.put("next_start_line", endLine + 1);
+                        }
+                        return result;
                     } catch (SecurityException e) {
                         return Collections.singletonMap("error", (Object) e.getMessage());
+                    } catch (java.nio.charset.MalformedInputException e) {
+                        // Binary file — return size info instead
+                        try {
+                            long size = Files.size(Path.of(pathStr));
+                            return Map.of("error", "Binary file (not readable as text)", "size_bytes", size);
+                        } catch (Exception ex) {
+                            return Collections.singletonMap("error", (Object) "Binary file, cannot read as text");
+                        }
                     }
                 });
             }
@@ -195,22 +233,84 @@ public class MkProTools {
     }
 
     public static BaseTool createListDirTool() {
-        return new BaseTool("list_dir", "Lists files in a directory. Path must be within the project directory.") {
+        return new BaseTool("list_dir", "Lists files and directories. Supports recursive listing with depth control and pagination for large directories.") {
             @Override public Optional<FunctionDeclaration> declaration() {
                 return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
                     .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of("path", Schema.builder().type("STRING").description("Path to the directory").build()))
+                        .properties(ImmutableMap.of(
+                            "path", Schema.builder().type("STRING").description("Path to the directory (default: project root)").build(),
+                            "recursive", Schema.builder().type("BOOLEAN").description("If true, list recursively. Default: false.").build(),
+                            "depth", Schema.builder().type("INTEGER").description("Max depth for recursive listing (1-10). Default: 3.").build(),
+                            "limit", Schema.builder().type("INTEGER").description("Max number of entries to return (for pagination). Default: 100.").build(),
+                            "offset", Schema.builder().type("INTEGER").description("Skip this many entries (for pagination). Default: 0.").build()
+                        ))
                         .required(ImmutableList.of("path")).build()).build());
             }
             @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
-                    String pathStr = (String) args.get("path");
+                    String pathStr = args.get("path") != null ? (String) args.get("path") : ".";
+                    boolean recursive = args.get("recursive") != null && Boolean.TRUE.equals(args.get("recursive"));
+                    int depth = args.get("depth") != null ? ((Number) args.get("depth")).intValue() : 3;
+                    int limit = args.get("limit") != null ? ((Number) args.get("limit")).intValue() : 100;
+                    int offset = args.get("offset") != null ? ((Number) args.get("offset")).intValue() : 0;
+
+                    depth = Math.max(1, Math.min(depth, 10)); // Clamp 1-10
+                    limit = Math.max(1, Math.min(limit, 500)); // Clamp 1-500
+
                     try {
                         Path validated = com.mkpro.security.PathValidator.getInstance().validateForRead(pathStr);
-                        try (var stream = Files.list(validated)) {
-                            List<String> files = stream.map(p -> p.getFileName().toString()).collect(Collectors.toList());
-                            return Collections.<String, Object>singletonMap("files", files);
+                        if (!Files.isDirectory(validated)) {
+                            return Collections.<String, Object>singletonMap("error", "Not a directory: " + pathStr);
                         }
+
+                        List<String> entries = new java.util.ArrayList<>();
+                        int maxDepth = recursive ? depth : 1;
+                        Path root = validated;
+
+                        try (var stream = Files.walk(validated, maxDepth)) {
+                            stream.filter(p -> !p.equals(validated))
+                                .filter(p -> {
+                                    // Exclude common noise directories and their contents
+                                    String rel = root.relativize(p).toString().replace('\\', '/');
+                                    String first = rel.contains("/") ? rel.substring(0, rel.indexOf('/')) : rel;
+                                    return !first.equals("node_modules") && !first.equals(".git") &&
+                                           !first.equals("target") && !first.equals("build") &&
+                                           !first.equals(".mkpro") && !first.equals("dist");
+                                })
+                                .sorted()
+                                .skip(offset)
+                                .limit(limit)
+                                .forEach(p -> {
+                                    String rel = root.relativize(p).toString().replace('\\', '/');
+                                    String marker = Files.isDirectory(p) ? "/" : "";
+                                    entries.add(rel + marker);
+                                });
+                        }
+
+                        // Count total for pagination info
+                        long total;
+                        try (var countStream = Files.walk(validated, maxDepth)) {
+                            total = countStream.filter(p -> !p.equals(validated))
+                                .filter(p -> {
+                                    String rel = root.relativize(p).toString().replace('\\', '/');
+                                    String first = rel.contains("/") ? rel.substring(0, rel.indexOf('/')) : rel;
+                                    return !first.equals("node_modules") && !first.equals(".git") &&
+                                           !first.equals("target") && !first.equals("build") &&
+                                           !first.equals(".mkpro") && !first.equals("dist");
+                                })
+                                .count();
+                        }
+
+                        Map<String, Object> result = new java.util.HashMap<>();
+                        result.put("files", entries);
+                        result.put("total", total);
+                        result.put("showing", entries.size());
+                        result.put("offset", offset);
+                        if (offset + entries.size() < total) {
+                            result.put("has_more", true);
+                            result.put("next_offset", offset + limit);
+                        }
+                        return result;
                     } catch (SecurityException e) {
                         return Collections.<String, Object>singletonMap("error", e.getMessage());
                     }

@@ -99,11 +99,29 @@ public class TerminalUI {
                         AtomicBoolean isThinking = new AtomicBoolean(true);
                         AtomicBoolean firstChunkReceived = new AtomicBoolean(false);
 
-                        // Resolve model info for display
+                        // Resolve display info — show which agent is processing
                         com.mkpro.models.AgentConfig displayConfig = context.getAgentConfigs().get("Coordinator");
+                        String displayAgent = "Coordinator";
                         String displayModel = displayConfig != null ? displayConfig.getModelName() : "llama3";
                         String displayProvider = displayConfig != null ? displayConfig.getProvider().name() : "OLLAMA";
-                        String thinkingLabel = "Thinking[" + displayModel + "@" + displayProvider + "] ";
+                        
+                        if (markovRouted) {
+                            // Extract agent name from the rewritten line "Delegate to AgentName: ..."
+                            String routedLine = line;
+                            if (routedLine.startsWith("Delegate to ")) {
+                                int colonIdx = routedLine.indexOf(':');
+                                if (colonIdx > 12) {
+                                    displayAgent = routedLine.substring(12, colonIdx);
+                                    // Try to get the routed agent's model
+                                    com.mkpro.models.AgentConfig routedConfig = context.getAgentConfigs().get(displayAgent);
+                                    if (routedConfig != null) {
+                                        displayModel = routedConfig.getModelName();
+                                        displayProvider = routedConfig.getProvider().name();
+                                    }
+                                }
+                            }
+                        }
+                        String thinkingLabel = displayAgent + "[" + displayModel + "@" + displayProvider + "] ";
 
                         // Start spinner daemon thread with color transitions
                         Thread spinnerThread = new Thread(() -> {

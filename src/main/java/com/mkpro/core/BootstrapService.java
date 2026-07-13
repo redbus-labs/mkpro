@@ -329,7 +329,16 @@ public class BootstrapService {
             java.nio.file.Path markovModelPath = mkproDir.resolve("markov_model.dat");
             try {
                 markovRouter.load(markovModelPath);
-            } catch (Exception e) { /* No saved model yet */ }
+            } catch (Exception e) {
+                // No saved model — try bundled default from resources
+                try (java.io.InputStream is = getClass().getResourceAsStream("/markov_model_default.dat")) {
+                    if (is != null) {
+                        java.nio.file.Files.copy(is, markovModelPath);
+                        markovRouter.load(markovModelPath);
+                        System.out.println(ANSI_GREEN + "Markov Router: loaded bundled default model." + ANSI_RESET);
+                    }
+                } catch (Exception ex) { /* Silent — will train from JSONL */ }
+            }
             
             java.nio.file.Path dataDir = projectPath.resolve("datajsonl");
             if (java.nio.file.Files.isDirectory(dataDir)) {

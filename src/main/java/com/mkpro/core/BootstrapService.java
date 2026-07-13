@@ -327,17 +327,26 @@ public class BootstrapService {
             // Initialize Markov Router — auto-trains from datajsonl/ if available
             com.mkpro.routing.MarkovRouter markovRouter = new com.mkpro.routing.MarkovRouter();
             java.nio.file.Path markovModelPath = mkproDir.resolve("markov_model.dat");
-            try {
-                markovRouter.load(markovModelPath);
-            } catch (Exception e) {
-                // No saved model — try bundled default from resources
+            
+            if (java.nio.file.Files.exists(markovModelPath)) {
+                // Load user's existing model
+                try {
+                    markovRouter.load(markovModelPath);
+                } catch (Exception e) {
+                    System.out.println(ANSI_YELLOW + "Markov Router: model file corrupted, will retrain." + ANSI_RESET);
+                }
+            } else {
+                // No local model — copy bundled default from resources
                 try (java.io.InputStream is = getClass().getResourceAsStream("/markov_model_default.dat")) {
                     if (is != null) {
+                        java.nio.file.Files.createDirectories(markovModelPath.getParent());
                         java.nio.file.Files.copy(is, markovModelPath);
                         markovRouter.load(markovModelPath);
-                        System.out.println(ANSI_GREEN + "Markov Router: loaded bundled default model." + ANSI_RESET);
+                        System.out.println(ANSI_GREEN + "Markov Router: loaded bundled default model (" + markovRouter.getTotalObservations() + " observations)." + ANSI_RESET);
                     }
-                } catch (Exception ex) { /* Silent — will train from JSONL */ }
+                } catch (Exception e) {
+                    System.out.println(ANSI_YELLOW + "Markov Router: could not load bundled model: " + e.getMessage() + ANSI_RESET);
+                }
             }
             
             java.nio.file.Path dataDir = projectPath.resolve("datajsonl");

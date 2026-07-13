@@ -158,7 +158,9 @@ public class IntentClassifier {
     private static List<Pattern> compilePatterns(String... keywords) {
         List<Pattern> patterns = new ArrayList<>();
         for (String keyword : keywords) {
-            patterns.add(Pattern.compile("\\b" + keyword.replace(" ", "\\s+") + "\\b", 
+            // Use substring matching (no word boundaries) for typo tolerance
+            // "deploy" matches "deploye", "deploying", "missdeploy" etc.
+            patterns.add(Pattern.compile(keyword.replace(" ", "\\s*"), 
                 Pattern.CASE_INSENSITIVE));
         }
         return patterns;

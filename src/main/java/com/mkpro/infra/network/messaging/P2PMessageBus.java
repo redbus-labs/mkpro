@@ -36,6 +36,7 @@ public class P2PMessageBus extends WebSocketServer {
 
     private final Set<WebSocketClient> outboundPeers = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Set<String> connectedPeerUris = ConcurrentHashMap.newKeySet();
+    private final com.mkpro.infra.network.security.P2PAuditLog auditLog = com.mkpro.infra.network.security.P2PAuditLog.getInstance();
     private final ScheduledExecutorService reconnectExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "P2P-Reconnect");
         t.setDaemon(true);
@@ -72,7 +73,17 @@ public class P2PMessageBus extends WebSocketServer {
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
-        System.out.println("P2P: New inbound connection from " + conn.getRemoteSocketAddress());
+        String source = conn.getRemoteSocketAddress() != null ? conn.getRemoteSocketAddress().toString() : "unknown";
+        String sourceIp = source.contains("/") ? source.substring(source.indexOf('/') + 1).split(":")[0] : source;
+        
+        // Whitelist check
+        if (!auditLog.isAllowed(sourceIp)) {
+            auditLog.log(com.mkpro.infra.network.security.P2PAuditLog.EventType.WHITELIST_REJECTED, sourceIp, "Inbound connection rejected");
+            conn.close(1008, "Not in whitelist");
+            return;
+        }
+        
+        auditLog.log(com.mkpro.infra.network.security.P2PAuditLog.EventType.CONNECT_INBOUND, sourceIp, "Connection accepted");
         if (onConnectHook != null) {
             onConnectHook.run();
         }
@@ -80,19 +91,20 @@ public class P2PMessageBus extends WebSocketServer {
 
     @Override
     public void onClose(WebSocket conn, int code, String reason, boolean remote) {
-        System.out.println("P2P: Inbound connection closed: " + conn.getRemoteSocketAddress());
+        // Silent on normal close
     }
 
     @Override
     public void onMessage(WebSocket conn, String message) {
-        if (!verifyAndHandle(message)) {
-            System.err.println("P2P: Rejected message from " + conn.getRemoteSocketAddress() + " (auth failed)");
+        String source = conn.getRemoteSocketAddress() != null ? conn.getRemoteSocketAddress().toString() : "unknown";
+        if (!verifyAndHandle(message, source)) {
+            // Silent — audit log handles alerting
         }
     }
 
     @Override
     public void onError(WebSocket conn, Exception ex) {
-        System.err.println("P2P Server-side Error: " + ex.getMessage());
+        System.err.println("P2P Error: " + ex.getMessage());
     }
 
     /**
@@ -110,7 +122,6 @@ public class P2PMessageBus extends WebSocketServer {
 
     private void connectWithBackoff(String peerUri, int attempt) {
         if (attempt >= MAX_RECONNECT_ATTEMPTS) {
-            System.err.println("P2P: Giving up on " + peerUri + " after " + attempt + " attempts.");
             connectedPeerUris.remove(peerUri);
             return;
         }
@@ -119,7 +130,7 @@ public class P2PMessageBus extends WebSocketServer {
             WebSocketClient client = new WebSocketClient(new URI(peerUri)) {
                 @Override
                 public void onOpen(ServerHandshake handshakedata) {
-                    System.out.println("P2P: Connected to peer: " + peerUri);
+                    // Silent — peer hello will confirm connection
                     if (onConnectHook != null) {
                         onConnectHook.run();
                     }
@@ -128,19 +139,17 @@ public class P2PMessageBus extends WebSocketServer {
                 @Override
                 public void onMessage(String message) {
                     if (!verifyAndHandle(message)) {
-                        System.err.println("P2P: Rejected message from peer " + peerUri + " (auth failed)");
+                        // Silent on auth failure for noisy peers
                     }
                 }
 
                 @Override
                 public void onClose(int code, String reason, boolean remote) {
-                    System.out.println("P2P: Disconnected from peer: " + peerUri + " (remote=" + remote + ")");
                     outboundPeers.remove(this);
 
                     // Schedule reconnection with backoff
                     if (remote) {
                         long delay = INITIAL_BACKOFF_MS * (long) Math.pow(2, attempt);
-                        System.out.println("P2P: Will retry " + peerUri + " in " + (delay / 1000) + "s...");
                         reconnectExecutor.schedule(() -> connectWithBackoff(peerUri, attempt + 1), delay, TimeUnit.MILLISECONDS);
                     } else {
                         connectedPeerUris.remove(peerUri);
@@ -149,7 +158,7 @@ public class P2PMessageBus extends WebSocketServer {
 
                 @Override
                 public void onError(Exception ex) {
-                    System.err.println("P2P Client Error (" + peerUri + "): " + ex.getMessage());
+                    // Silent — reconnect will handle it
                 }
             };
             client.connect();
@@ -218,6 +227,10 @@ public class P2PMessageBus extends WebSocketServer {
     }
 
     private boolean verifyAndHandle(String rawMessage) {
+        return verifyAndHandle(rawMessage, "unknown");
+    }
+
+    private boolean verifyAndHandle(String rawMessage, String source) {
         try {
             ObjectNode parsed = (ObjectNode) mapper.readTree(rawMessage);
 
@@ -226,9 +239,12 @@ public class P2PMessageBus extends WebSocketServer {
                 String signature = parsed.get(SIGNATURE_FIELD).asText();
 
                 if (!authenticator.verify(payload, signature)) {
+                    auditLog.log(com.mkpro.infra.network.security.P2PAuditLog.EventType.AUTH_FAILURE, 
+                        source, "Invalid HMAC signature");
                     return false;
                 }
 
+                auditLog.log(com.mkpro.infra.network.security.P2PAuditLog.EventType.AUTH_SUCCESS, source, "Message verified");
                 ObjectNode actualMessage = (ObjectNode) mapper.readTree(payload);
                 onMessageReceived(actualMessage);
                 return true;
@@ -239,11 +255,9 @@ public class P2PMessageBus extends WebSocketServer {
                 return true;
             }
 
-            System.err.println("P2P: Rejected unsigned message (authentication is enabled)");
             return false;
 
         } catch (Exception e) {
-            System.err.println("P2P: Malformed message: " + e.getMessage());
             return false;
         }
     }

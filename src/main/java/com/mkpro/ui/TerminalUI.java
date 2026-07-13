@@ -62,6 +62,36 @@ public class TerminalUI {
                         // Log user input for training data export
                         context.getActionLogger().log("USER", line);
 
+                        // Check Markov Router — can we fast-route without LLM?
+                        boolean markovRouted = false;
+                        if (context.getMarkovRouter() != null && context.getMarkovRouter().getTotalObservations() > 20) {
+                            com.mkpro.routing.IntentClassifier intentClassifier = new com.mkpro.routing.IntentClassifier();
+                            com.mkpro.routing.IntentClassifier.TaskCategory category = intentClassifier.classify(line);
+                            double intentConfidence = intentClassifier.classifyWithConfidence(line);
+                            
+                            // Route if: specific category detected
+                            boolean shouldTryRoute = (intentConfidence > 0.3 && category != com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL);
+                            
+                            if (shouldTryRoute) {
+                                com.mkpro.routing.MarkovRouter.RoutingDecision decision = 
+                                    context.getMarkovRouter().route(category, null);
+                                
+                                if (decision.shouldRoute && !"Coordinator".equals(decision.agent)) {
+                                    System.out.println("\u001b[36m[Fast-route → " + decision.agent + 
+                                        " (" + (int)(decision.confidence * 100) + "% confidence, category: " + category + ")]\u001b[0m");
+                                    line = "Delegate to " + decision.agent + ": " + line;
+                                    markovRouted = true;
+                                    context.getMarkovRouter().recordTransition(category, null, decision.agent);
+                                } else {
+                                    System.out.println("\u001b[90m[Markov: " + decision.agent + 
+                                        " " + (int)(decision.confidence * 100) + "% — below threshold, using Coordinator]\u001b[0m");
+                                }
+                            } else {
+                                System.out.println("\u001b[90m[Markov: category=" + category + 
+                                    ", intent=" + (int)(intentConfidence * 100) + "% — not routable, using Coordinator]\u001b[0m");
+                            }
+                        }
+
                         com.google.genai.types.Content message = com.google.genai.types.Content.fromParts(
                             new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(line)}
                         );

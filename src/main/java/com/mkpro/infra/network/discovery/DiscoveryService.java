@@ -69,14 +69,12 @@ public class DiscoveryService implements ServiceListener {
 
     @Override
     public void serviceAdded(ServiceEvent event) {
-        // When a service is added, request resolution to get host/port details
-        System.out.println("P2P Discovery: Found peer: " + event.getName());
+        // Silent — request resolution to get details
         jmdns.requestServiceInfo(event.getType(), event.getName());
     }
 
     @Override
     public void serviceRemoved(ServiceEvent event) {
-        System.out.println("P2P Discovery: Peer left: " + event.getName());
         registry.removePeer(event.getName());
     }
 
@@ -99,8 +97,6 @@ public class DiscoveryService implements ServiceListener {
             peerPort
         );
         registry.addPeer(peer);
-        
-        System.out.println("P2P Discovery: Resolved peer: " + info.getName() + " at " + peerIp + ":" + peerPort);
 
         // Auto-connect via P2PMessageBus
         if (messageBus != null) {

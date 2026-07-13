@@ -62,7 +62,31 @@ public class BootstrapService {
     private void registerShutdownHook(MkProContext context) {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             System.out.println("\n" + ANSI_YELLOW + "Shutting down MkPro..." + ANSI_RESET);
-            
+
+            // Auto-save Markov model with live learning from this session
+            if (context.getMarkovRouter() != null) {
+                try {
+                    java.nio.file.Path mkproDir = com.mkpro.utils.PathUtils.getProjectPath().resolve(".mkpro");
+                    java.nio.file.Path modelPath = mkproDir.resolve("markov_model.dat");
+                    context.getMarkovRouter().save(modelPath);
+                } catch (Exception e) { /* Silent */ }
+            }
+
+            // Auto-export session logs as training data for next startup
+            try {
+                java.util.List<String> logs = ActionLogger.getLogs();
+                if (logs.size() > 5) { // Only export if meaningful interaction happened
+                    java.nio.file.Path dataDir = com.mkpro.utils.PathUtils.getProjectPath().resolve("datajsonl");
+                    java.nio.file.Files.createDirectories(dataDir);
+                    String timestamp = java.time.LocalDateTime.now().format(
+                        java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+                    java.nio.file.Path exportFile = dataDir.resolve("session_auto_" + timestamp + ".jsonl");
+                    
+                    // Quick export: extract USER→Coordinator pairs from logs
+                    exportSessionLogs(logs, exportFile);
+                }
+            } catch (Exception e) { /* Silent */ }
+
             if (context.getDiscoveryService() != null) {
                 context.getDiscoveryService().stop();
             }
@@ -130,6 +154,10 @@ public class BootstrapService {
                     context.setInstanceName(args[i+1]);
                     i++;
                 }
+            } else if ("--no-network".equalsIgnoreCase(arg)) {
+                context.setNetworkEnabled(false);
+            } else if ("--network".equalsIgnoreCase(arg)) {
+                context.setNetworkEnabled(true);
             }
         }
     }
@@ -190,24 +218,30 @@ public class BootstrapService {
             seedDefaultMcpServers(context.getCentralMemory());
 
             // Networking Initialization
-            int p2pPort = PathUtils.findAvailablePort(9000);
-            P2PMessageBus p2pBus = new P2PMessageBus(p2pPort);
-            p2pBus.start();
-            context.setP2pMessageBus(p2pBus);
-
+            P2PMessageBus p2pBus = null;
+            String instanceId;
             String userName = System.getProperty("user.name", "user");
-            String instanceId = (context.getInstanceName() != null ? context.getInstanceName() : userName) + "-" + UUID.randomUUID().toString().substring(0, 4);
+            instanceId = (context.getInstanceName() != null ? context.getInstanceName() : userName) + "-" + UUID.randomUUID().toString().substring(0, 4);
             context.setInstanceName(instanceId);
 
-            DiscoveryService discoveryService = new DiscoveryService();
-            discoveryService.setMessageBus(p2pBus); // Auto-connect discovered peers
-            discoveryService.start(p2pPort, instanceId);
-            context.setDiscoveryService(discoveryService);
+            if (context.isNetworkEnabled()) {
+                int p2pPort = PathUtils.findAvailablePort(9000);
+                p2pBus = new P2PMessageBus(p2pPort);
+                p2pBus.start();
+                context.setP2pMessageBus(p2pBus);
 
-            String memoryDbPath = PathUtils.getBaseDocumentsPath().resolve("memory_graph.db").toString();
-            MapDbGraphRepository graphRepository = new MapDbGraphRepository(memoryDbPath);
-            SyncEngine syncEngine = new SyncEngine(p2pBus, context.getCentralMemory(), (MapDbGraphRepository) graphRepository);
-            context.setSyncEngine(syncEngine);
+                DiscoveryService discoveryService = new DiscoveryService();
+                discoveryService.setMessageBus(p2pBus);
+                discoveryService.start(p2pPort, instanceId);
+                context.setDiscoveryService(discoveryService);
+
+                String memoryDbPath = PathUtils.getBaseDocumentsPath().resolve("memory_graph.db").toString();
+                MapDbGraphRepository graphRepository = new MapDbGraphRepository(memoryDbPath);
+                SyncEngine syncEngine = new SyncEngine(p2pBus, context.getCentralMemory(), (MapDbGraphRepository) graphRepository);
+                context.setSyncEngine(syncEngine);
+            } else {
+                System.out.println("\u001b[33m[Network] Disabled (--no-network). Running in standalone mode.\u001b[0m");
+            }
 
             context.setActionLogger(new ActionLogger(mkproDir.resolve(dbBaseName + "_logs.db").toString()));
             
@@ -251,43 +285,66 @@ public class BootstrapService {
             context.setAgentManager(am);
             context.setAgentConfigs(context.getCentralMemory().getAllAgentConfigs());
 
-            // Register ask_peer_agent tool (requires P2PMessageBus + instanceId)
-            am.getToolRegistry().registerPeerAgentTool(p2pBus, instanceId);
+            // Register peer communication tools only if networking is enabled
+            if (context.isNetworkEnabled() && p2pBus != null) {
+                am.getToolRegistry().registerPeerAgentTool(p2pBus, instanceId);
 
-            // Wire PeerAgentRequestHandler to process incoming AGENT_REQUEST messages
-            com.mkpro.infra.network.peer.PeerAgentRequestHandler peerHandler = 
-                new com.mkpro.infra.network.peer.PeerAgentRequestHandler(p2pBus, am, context.getAgentConfigs(), instanceId);
-            
-            // Build PeerHandshake for exchanging project info on connection
-            java.util.List<String> agentNames = new java.util.ArrayList<>(am.getAgentDefinitions().keySet());
-            com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
-            String primaryModel = coordConfig != null ? coordConfig.getModelName() : "unknown";
-            com.mkpro.infra.network.peer.PeerHandshake peerHandshake = 
-                new com.mkpro.infra.network.peer.PeerHandshake(p2pBus, instanceId, agentNames, primaryModel, context.getCentralMemory());
+                // Wire PeerAgentRequestHandler to process incoming AGENT_REQUEST messages
+                com.mkpro.infra.network.peer.PeerAgentRequestHandler peerHandler = 
+                    new com.mkpro.infra.network.peer.PeerAgentRequestHandler(p2pBus, am, context.getAgentConfigs(), instanceId);
+                
+                // Build PeerHandshake for exchanging project info on connection
+                java.util.List<String> agentNames = new java.util.ArrayList<>(am.getAgentDefinitions().keySet());
+                com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
+                String primaryModel = coordConfig != null ? coordConfig.getModelName() : "unknown";
+                com.mkpro.infra.network.peer.PeerHandshake peerHandshake = 
+                    new com.mkpro.infra.network.peer.PeerHandshake(p2pBus, instanceId, agentNames, primaryModel, context.getCentralMemory());
 
-            // Route messages by type: AGENT_REQUEST → peerHandler, PEER_HELLO → handshake, else → syncEngine
-            java.util.function.Consumer<com.fasterxml.jackson.databind.node.ObjectNode> existingHandler = syncEngine::processIncomingMessage;
-            p2pBus.setMessageHandler(msg -> {
-                String type = msg.has("type") ? msg.get("type").asText() : "";
-                switch (type) {
-                    case "AGENT_REQUEST":
-                        peerHandler.handleRequest(msg);
-                        break;
-                    case "PEER_HELLO":
-                        com.mkpro.infra.network.peer.PeerHandshake.handleHello(msg);
-                        break;
-                    default:
-                        existingHandler.accept(msg);
-                        break;
-                }
-            });
+                // Route messages by type
+                com.mkpro.infra.network.sync.SyncEngine finalSyncEngine = context.getSyncEngine();
+                p2pBus.setMessageHandler(msg -> {
+                    String type = msg.has("type") ? msg.get("type").asText() : "";
+                    switch (type) {
+                        case "AGENT_REQUEST":
+                            peerHandler.handleRequest(msg);
+                            break;
+                        case "PEER_HELLO":
+                            com.mkpro.infra.network.peer.PeerHandshake.handleHello(msg);
+                            break;
+                        default:
+                            if (finalSyncEngine != null) finalSyncEngine.processIncomingMessage(msg);
+                            break;
+                    }
+                });
 
-            // Send PEER_HELLO on every new connection (inbound or outbound)
-            p2pBus.setOnConnectHook(peerHandshake::sendHello);
+                // Send PEER_HELLO on every new connection
+                p2pBus.setOnConnectHook(peerHandshake::sendHello);
+            }
 
             Runner runner = am.createRunner(context.getAgentConfigs(), "");
             context.setRunner(runner);
+
+            // Initialize Markov Router — auto-trains from datajsonl/ if available
+            com.mkpro.routing.MarkovRouter markovRouter = new com.mkpro.routing.MarkovRouter();
+            java.nio.file.Path markovModelPath = mkproDir.resolve("markov_model.dat");
+            try {
+                markovRouter.load(markovModelPath);
+            } catch (Exception e) { /* No saved model yet */ }
             
+            java.nio.file.Path dataDir = projectPath.resolve("datajsonl");
+            if (java.nio.file.Files.isDirectory(dataDir)) {
+                int trained = com.mkpro.routing.MarkovTrainer.trainFromDirectory(markovRouter, dataDir);
+                if (trained > 0) {
+                    System.out.println(ANSI_GREEN + "Markov Router: trained on " + trained + " examples (" + markovRouter.getTotalObservations() + " total observations)" + ANSI_RESET);
+                    try { markovRouter.save(markovModelPath); } catch (Exception e) { /* Silent */ }
+                } else {
+                    System.out.println(ANSI_YELLOW + "Markov Router: no training data found in datajsonl/" + ANSI_RESET);
+                }
+            } else {
+                System.out.println(ANSI_YELLOW + "Markov Router: datajsonl/ not found. Fast-routing disabled until data is available." + ANSI_RESET);
+            }
+            context.setMarkovRouter(markovRouter);
+
             String sessionId = "default-session";
             SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sessionId);
             Session session = null;
@@ -341,6 +398,55 @@ public class BootstrapService {
         }
         // 3. Default
         return "mkpro_data";
+    }
+
+    /**
+     * Quick export of session logs to JSONL for Markov training.
+     * Extracts USER→agent response pairs from ActionLogger entries.
+     */
+    private static void exportSessionLogs(java.util.List<String> logs, java.nio.file.Path outputFile) {
+        try (java.io.BufferedWriter writer = java.nio.file.Files.newBufferedWriter(outputFile)) {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String lastUserMsg = null;
+
+            for (String log : logs) {
+                // Parse: [timestamp] ROLE: content
+                int bracketEnd = log.indexOf(']');
+                if (bracketEnd < 0) continue;
+                String rest = log.substring(bracketEnd + 2); // Skip "] "
+                int colonIdx = rest.indexOf(':');
+                if (colonIdx < 0) continue;
+
+                String role = rest.substring(0, colonIdx).trim();
+                String content = rest.substring(colonIdx + 1).trim();
+
+                if ("USER".equals(role)) {
+                    lastUserMsg = content;
+                } else if (lastUserMsg != null && !"INFO".equals(role) && !"SYSTEM".equals(role)) {
+                    // This is an agent response to the last user message
+                    com.fasterxml.jackson.databind.node.ObjectNode line = mapper.createObjectNode();
+                    com.fasterxml.jackson.databind.node.ArrayNode messages = mapper.createArrayNode();
+                    
+                    com.fasterxml.jackson.databind.node.ObjectNode user = mapper.createObjectNode();
+                    user.put("role", "user");
+                    user.put("content", lastUserMsg);
+                    messages.add(user);
+                    
+                    com.fasterxml.jackson.databind.node.ObjectNode assistant = mapper.createObjectNode();
+                    assistant.put("role", "assistant");
+                    assistant.put("content", content);
+                    messages.add(assistant);
+                    
+                    line.set("messages", messages);
+                    writer.write(mapper.writeValueAsString(line));
+                    writer.newLine();
+                    
+                    lastUserMsg = null; // Consumed
+                }
+            }
+        } catch (Exception e) {
+            // Silent — don't let export failure block shutdown
+        }
     }
 
     private void printBanner() {

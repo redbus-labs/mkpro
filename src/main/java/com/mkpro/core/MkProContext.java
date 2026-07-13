@@ -52,12 +52,14 @@ public class MkProContext {
     private String ollamaUrl = "http://localhost:11434"; // Added default
     private String instanceName;
     private boolean verbose;
+    private boolean networkEnabled = false; // Default: disabled. Use --network to enable.
     private Terminal terminal;
     private LineReader lineReader;
     private EmbeddingService embeddingService;
     private VectorStore vectorStore;
     private AtomicBoolean makerEnabled = new AtomicBoolean(false);
     private AgentManager agentManager;
+    private com.mkpro.routing.MarkovRouter markovRouter;
 
     public MkProContext() {
     }
@@ -347,6 +349,22 @@ public class MkProContext {
 
     public void setVerbose(boolean verbose) {
         this.verbose = verbose;
+    }
+
+    public boolean isNetworkEnabled() {
+        return networkEnabled;
+    }
+
+    public void setNetworkEnabled(boolean networkEnabled) {
+        this.networkEnabled = networkEnabled;
+    }
+
+    public com.mkpro.routing.MarkovRouter getMarkovRouter() {
+        return markovRouter;
+    }
+
+    public void setMarkovRouter(com.mkpro.routing.MarkovRouter markovRouter) {
+        this.markovRouter = markovRouter;
     }
 
     public Terminal getTerminal() {

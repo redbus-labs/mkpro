@@ -92,7 +92,11 @@ public class MarkovTrainer {
                         // Extract which agent was selected
                         String selectedAgent = extractAgent(assistantMessage);
 
-                        if (selectedAgent != null && category != IntentClassifier.TaskCategory.GENERAL) {
+                        if (selectedAgent != null) {
+                            // Use category from classification, or infer from agent if GENERAL
+                            if (category == IntentClassifier.TaskCategory.GENERAL) {
+                                category = inferCategoryFromAgent(selectedAgent);
+                            }
                             router.recordTransition(category, lastAgent, selectedAgent);
                             lastAgent = selectedAgent;
                             count++;
@@ -182,6 +186,30 @@ public class MarkovTrainer {
             System.err.println("[MarkovTrainer] Error reading maker sequences: " + e.getMessage());
         }
         return count;
+    }
+
+    /**
+     * Infer a likely category from the agent that was delegated to.
+     * Used when the user's message classifies as GENERAL but delegation still happened.
+     */
+    private static IntentClassifier.TaskCategory inferCategoryFromAgent(String agent) {
+        if (agent == null) return IntentClassifier.TaskCategory.GENERAL;
+        switch (agent) {
+            case "Coder": case "CodeEditor": return IntentClassifier.TaskCategory.CODING;
+            case "Tester": return IntentClassifier.TaskCategory.TESTING;
+            case "SysAdmin": return IntentClassifier.TaskCategory.SYSADMIN;
+            case "GitAgent": return IntentClassifier.TaskCategory.GIT;
+            case "DocWriter": return IntentClassifier.TaskCategory.DOCS;
+            case "SecurityAuditor": return IntentClassifier.TaskCategory.SECURITY;
+            case "Architect": return IntentClassifier.TaskCategory.ARCHITECTURE;
+            case "DatabaseAdmin": return IntentClassifier.TaskCategory.DATABASE;
+            case "DevOps": return IntentClassifier.TaskCategory.DEVOPS;
+            case "DataAnalyst": return IntentClassifier.TaskCategory.DATA;
+            case "AndroidDev": return IntentClassifier.TaskCategory.ANDROID;
+            case "IosDev": return IntentClassifier.TaskCategory.IOS;
+            case "GoalTracker": return IntentClassifier.TaskCategory.GOALS;
+            default: return IntentClassifier.TaskCategory.GENERAL;
+        }
     }
 
     /**

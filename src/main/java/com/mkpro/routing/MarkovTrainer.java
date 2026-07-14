@@ -33,6 +33,10 @@ public class MarkovTrainer {
     // Match "delegate to the Architect", "I'll route this to the Coder"
     private static final Pattern AGENT_NAME_PATTERN = Pattern.compile(
         "(?:delegate|route|Delegating) (?:this )?(?:to the |to )([A-Z][a-zA-Z]+)", Pattern.CASE_INSENSITIVE);
+    
+    // Match ">> Delegating to SysAdmin..." (real session output from ActionLogger)
+    private static final Pattern DIRECT_DELEGATION_PATTERN = Pattern.compile(
+        ">> Delegating to ([A-Za-z]+)", Pattern.CASE_INSENSITIVE);
 
     /**
      * Train the router from all JSONL files in a directory.
@@ -117,6 +121,12 @@ public class MarkovTrainer {
             return normalizeAgentName(m.group(1));
         }
 
+        // Try direct delegation pattern: ">> Delegating to SysAdmin..."
+        m = DIRECT_DELEGATION_PATTERN.matcher(response);
+        if (m.find()) {
+            return normalizeAgentName(m.group(1));
+        }
+
         // Try natural language pattern: "delegate to the Architect"
         m = AGENT_NAME_PATTERN.matcher(response);
         if (m.find()) {
@@ -127,8 +137,55 @@ public class MarkovTrainer {
     }
 
     /**
+     * Train the Maker completion patterns from maker_sequences.jsonl.
+     * Format: {"category": "CODING", "agents": [...], "tools": [...], "turns": 4, "success": true}
+     */
+    public static int trainMakerSequences(MarkovRouter router, java.nio.file.Path file) {
+        if (!java.nio.file.Files.exists(file)) return 0;
+        int count = 0;
+
+        try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(file)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                try {
+                    com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(line);
+                    String categoryStr = root.has("category") ? root.get("category").asText() : null;
+                    boolean success = root.has("success") && root.get("success").asBoolean();
+                    int turns = root.has("turns") ? root.get("turns").asInt() : 1;
+
+                    if (categoryStr == null) continue;
+
+                    IntentClassifier.TaskCategory category;
+                    try {
+                        category = IntentClassifier.TaskCategory.valueOf(categoryStr);
+                    } catch (IllegalArgumentException e) {
+                        continue;
+                    }
+
+                    // Extract tools list
+                    java.util.List<String> tools = new java.util.ArrayList<>();
+                    if (root.has("tools") && root.get("tools").isArray()) {
+                        for (var node : root.get("tools")) {
+                            tools.add(node.asText());
+                        }
+                    }
+
+                    router.recordCompletion(category, tools, success, turns);
+                    count++;
+                } catch (Exception e) {
+                    // Skip malformed lines
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[MarkovTrainer] Error reading maker sequences: " + e.getMessage());
+        }
+        return count;
+    }
+
+    /**
      * Normalize tool-name format to agent display name.
-     * "coder" → "Coder", "sys_admin" → "SysAdmin", "git_agent" → "GitAgent"
      */
     static String normalizeAgentName(String raw) {
         if (raw == null) return null;

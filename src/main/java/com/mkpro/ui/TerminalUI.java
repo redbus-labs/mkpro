@@ -33,11 +33,6 @@ public class TerminalUI {
         while (true) {
             String line = null;
             try {
-                if (context.getMakerEnabled().get()) {
-                    handleMakerLoop();
-                    continue;
-                }
-
                 String timestamp = LocalTime.now().format(PROMPT_TIME_FORMATTER);
                 java.nio.file.Path cwdPath = java.nio.file.Paths.get("").toAbsolutePath();
                 String cwd;
@@ -89,6 +84,22 @@ public class TerminalUI {
                             } else {
                                 System.out.println("\u001b[90m[Markov: category=" + category + 
                                     ", intent=" + (int)(intentConfidence * 100) + "% — not routable, using Coordinator]\u001b[0m");
+                            }
+                        } else if (context.getMarkovRouter() != null) {
+                            System.out.println("\u001b[90m[Markov: inactive (" + context.getMarkovRouter().getTotalObservations() + " obs, need 20+). Run /train]\u001b[0m");
+                        }
+
+                        // Maker: track goal and inject stimulus
+                        if (context.getMakerEnabled().get() && context.getMakerLoop() != null) {
+                            context.getMakerLoop().onUserInput(line);
+                            String stimulus = context.getMakerLoop().generatePreTurnStimulus();
+                            if (stimulus != null) {
+                                line = line + "\n\n" + stimulus;
+                            }
+                            // If retrying, inject retry guidance
+                            String retryStimulus = context.getMakerLoop().generateRetryStimulus();
+                            if (retryStimulus != null) {
+                                line = line + "\n\n" + retryStimulus;
                             }
                         }
 
@@ -251,7 +262,36 @@ public class TerminalUI {
 
                                     // Log Coordinator response for training data export
                                     if (responseBuilder.length() > 0) {
-                                        context.getActionLogger().log("Coordinator", responseBuilder.toString());
+                                        String loggedResponse = responseBuilder.toString();
+                                        // Prepend delegation info for training data extraction
+                                        String delegatedTo = com.mkpro.agents.AgentManager.lastDelegatedAgent;
+                                        if (delegatedTo != null) {
+                                            loggedResponse = ">> Delegating to " + delegatedTo + "...\n" + loggedResponse;
+                                        }
+                                        context.getActionLogger().log("Coordinator", loggedResponse);
+                                    }
+
+                                    // Maker: observe turn result
+                                    if (context.getMakerEnabled().get() && context.getMakerLoop() != null) {
+                                        // Use tracked delegation info from AgentManager
+                                        String agentUsed = com.mkpro.agents.AgentManager.lastDelegatedAgent;
+                                        if (agentUsed == null) agentUsed = "Coordinator";
+                                        
+                                        // Detect tools from response markers
+                                        String response = responseBuilder.toString();
+                                        java.util.List<String> toolsDetected = new java.util.ArrayList<>();
+                                        if (response.contains("[Shell]") || response.contains("run_shell")) toolsDetected.add("shell");
+                                        if (response.contains("file_write") || response.contains("Saved") || response.contains("saved")) toolsDetected.add("file_write");
+                                        if (response.contains("file_read") || response.contains("[VectorSearch]")) toolsDetected.add("file_read");
+                                        if (response.contains("[FetchURL]")) toolsDetected.add("fetch_url");
+                                        if (response.contains("[Memory]")) toolsDetected.add("central_memory");
+                                        if (response.contains("[Index]")) toolsDetected.add("index_codebase");
+
+                                        boolean success = !response.contains("Error executing") && !response.contains("FAILED");
+                                        context.getMakerLoop().onTurnComplete(agentUsed, toolsDetected, success);
+                                        
+                                        // Reset for next turn
+                                        com.mkpro.agents.AgentManager.lastDelegatedAgent = null;
                                     }
                                 });
                         } finally {

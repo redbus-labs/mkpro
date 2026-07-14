@@ -24,6 +24,26 @@ public class MkPro {
 
     public static void main(String[] args) {
         try {
+            // Suppress noisy JUL loggers FIRST — before any library class loading
+            java.util.logging.LogManager.getLogManager().reset();
+            java.util.logging.Logger rootLogger = java.util.logging.Logger.getLogger("");
+            rootLogger.setLevel(java.util.logging.Level.WARNING);
+            for (java.util.logging.Handler h : rootLogger.getHandlers()) {
+                h.setLevel(java.util.logging.Level.WARNING);
+            }
+            
+            // Filter MapDB's direct stderr writes
+            java.io.PrintStream originalErr = System.err;
+            System.setErr(new java.io.PrintStream(originalErr) {
+                @Override
+                public void println(String x) {
+                    if (x != null && (x.contains("Registry lock error") || x.contains("ClosedChannelException"))) {
+                        return; // Suppress
+                    }
+                    super.println(x);
+                }
+            });
+
             // 1. Bootstrap the application context
             BootstrapService bootstrapService = new BootstrapService();
             MkProContext context = bootstrapService.bootstrap(args);

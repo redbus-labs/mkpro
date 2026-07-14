@@ -57,9 +57,10 @@ public class MkProContext {
     private LineReader lineReader;
     private EmbeddingService embeddingService;
     private VectorStore vectorStore;
-    private AtomicBoolean makerEnabled = new AtomicBoolean(false);
+    private AtomicBoolean makerEnabled = new AtomicBoolean(true);
     private AgentManager agentManager;
     private com.mkpro.routing.MarkovRouter markovRouter;
+    private com.mkpro.routing.MakerLoop makerLoop;
 
     public MkProContext() {
     }
@@ -365,6 +366,14 @@ public class MkProContext {
 
     public void setMarkovRouter(com.mkpro.routing.MarkovRouter markovRouter) {
         this.markovRouter = markovRouter;
+    }
+
+    public com.mkpro.routing.MakerLoop getMakerLoop() {
+        return makerLoop;
+    }
+
+    public void setMakerLoop(com.mkpro.routing.MakerLoop makerLoop) {
+        this.makerLoop = makerLoop;
     }
 
     public Terminal getTerminal() {

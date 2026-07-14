@@ -42,6 +42,14 @@ import static com.mkpro.MkPro.*;
 public class BootstrapService {
 
     public MkProContext bootstrap(String[] args) {
+        // Suppress noisy JUL loggers
+        java.util.logging.Logger.getLogger("io.opentelemetry").setLevel(java.util.logging.Level.OFF);
+        java.util.logging.Logger.getLogger("org.mapdb").setLevel(java.util.logging.Level.OFF);
+        java.util.logging.Logger.getLogger("org.mapdb.volume").setLevel(java.util.logging.Level.OFF);
+        java.util.logging.Logger.getLogger("io.grpc").setLevel(java.util.logging.Level.OFF);
+        java.util.logging.Logger.getLogger("com.google.genai").setLevel(java.util.logging.Level.OFF);
+        java.util.logging.Logger.getLogger("com.google.adk").setLevel(java.util.logging.Level.WARNING);
+
         printBanner();
 
         MkProContext context = new MkProContext();
@@ -332,6 +340,16 @@ public class BootstrapService {
                 // Load user's existing model
                 try {
                     markovRouter.load(markovModelPath);
+                    // If model is empty, replace with bundled default
+                    if (markovRouter.getTotalObservations() == 0) {
+                        try (java.io.InputStream is = getClass().getResourceAsStream("/markov_model_default.dat")) {
+                            if (is != null) {
+                                java.nio.file.Files.copy(is, markovModelPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                markovRouter.load(markovModelPath);
+                                System.out.println(ANSI_GREEN + "Markov Router: replaced empty model with bundled default (" + markovRouter.getTotalObservations() + " observations)." + ANSI_RESET);
+                            }
+                        } catch (Exception ex) { /* Silent */ }
+                    }
                 } catch (Exception e) {
                     System.out.println(ANSI_YELLOW + "Markov Router: model file corrupted, will retrain." + ANSI_RESET);
                 }
@@ -352,8 +370,13 @@ public class BootstrapService {
             java.nio.file.Path dataDir = projectPath.resolve("datajsonl");
             if (java.nio.file.Files.isDirectory(dataDir)) {
                 int trained = com.mkpro.routing.MarkovTrainer.trainFromDirectory(markovRouter, dataDir);
-                if (trained > 0) {
-                    System.out.println(ANSI_GREEN + "Markov Router: trained on " + trained + " examples (" + markovRouter.getTotalObservations() + " total observations)" + ANSI_RESET);
+                
+                // Also train Maker completion patterns
+                java.nio.file.Path makerSeqFile = dataDir.resolve("maker_sequences.jsonl");
+                int makerTrained = com.mkpro.routing.MarkovTrainer.trainMakerSequences(markovRouter, makerSeqFile);
+
+                if (trained > 0 || makerTrained > 0) {
+                    System.out.println(ANSI_GREEN + "Markov Router: " + trained + " routing + " + makerTrained + " completion patterns (" + markovRouter.getTotalObservations() + " total)" + ANSI_RESET);
                     try { markovRouter.save(markovModelPath); } catch (Exception e) { /* Silent */ }
                 } else {
                     System.out.println(ANSI_YELLOW + "Markov Router: no training data found in datajsonl/" + ANSI_RESET);
@@ -362,6 +385,10 @@ public class BootstrapService {
                 System.out.println(ANSI_YELLOW + "Markov Router: datajsonl/ not found. Fast-routing disabled until data is available." + ANSI_RESET);
             }
             context.setMarkovRouter(markovRouter);
+
+            // Initialize Maker Loop (goal-driven supervisor)
+            com.mkpro.routing.MakerLoop makerLoop = new com.mkpro.routing.MakerLoop(markovRouter);
+            context.setMakerLoop(makerLoop);
 
             String sessionId = "default-session";
             SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sessionId);

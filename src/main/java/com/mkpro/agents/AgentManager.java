@@ -60,6 +60,10 @@ public class AgentManager {
     private static final String ANSI_BLUE = "\u001B[34m";
     private static final String ANSI_RESET = "\u001B[0m";
 
+    /** Last agent delegated to — visible to TerminalUI for Maker tracking */
+    public static volatile String lastDelegatedAgent = null;
+    public static volatile java.util.List<String> lastToolsUsed = new java.util.ArrayList<>();
+
     private static final String BASE_AGENT_POLICY =
     "Authority:\n" +
     "- You are an autonomous specialist operating under the Coordinator agent.\n" +
@@ -648,6 +652,7 @@ public class AgentManager {
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String instruction = (String) args.get("instruction");
                 System.out.println(ANSI_BLUE + ">> Delegating to " + agentName + "..." + ANSI_RESET);
+                AgentManager.lastDelegatedAgent = agentName;
                 AgentConfig config = agentConfigs.get(agentName);
                 if (config == null) {
                     config = new AgentConfig(Provider.OLLAMA, "llama3");

@@ -178,4 +178,157 @@ public class MarkovRouter {
     public Map<String, Map<String, Integer>> getCategoryToAgentMatrix() {
         return Collections.unmodifiableMap(categoryToAgent);
     }
+
+    // ==========================================================================
+    // MAKER SUPPORT — Sequence completion and stall detection
+    // ==========================================================================
+
+    // completionPatterns[category][toolSequenceHash] = {COMPLETE: n, INCOMPLETE: m}
+    private final Map<String, Map<String, Map<String, Integer>>> completionPatterns = new ConcurrentHashMap<>();
+    
+    // turnsToComplete[category] = [totalTurns, completedGoals] for running average
+    private final Map<String, long[]> turnsToComplete = new ConcurrentHashMap<>();
+    
+    private double stallMultiplier = 2.0;
+
+    public enum MakerAction {
+        CONTINUE,   // Keep going, inject stimulus for next step
+        RETRY,      // Last step failed, re-route
+        ESCALATE,   // Stalled or uncertain, ask user
+        COMPLETE    // Verified done, mark goal complete
+    }
+
+    /**
+     * Predict completion probability based on tools invoked so far.
+     * @return 0.0 (not done) to 1.0 (definitely complete)
+     */
+    public double predictCompletion(IntentClassifier.TaskCategory category, List<String> toolSequence) {
+        String catKey = category.name();
+        String seqHash = hashToolSequence(toolSequence);
+
+        Map<String, Map<String, Integer>> catPatterns = completionPatterns.get(catKey);
+        if (catPatterns == null || catPatterns.isEmpty()) {
+            return 0.0; // No data for this category
+        }
+
+        Map<String, Integer> counts = catPatterns.get(seqHash);
+        if (counts == null) {
+            // Try prefix matching — check if any known pattern is a superset
+            return estimateFromPartialMatch(catPatterns, toolSequence);
+        }
+
+        int complete = counts.getOrDefault("COMPLETE", 0);
+        int incomplete = counts.getOrDefault("INCOMPLETE", 0);
+        int total = complete + incomplete;
+        if (total == 0) return 0.0;
+
+        return (double) complete / total;
+    }
+
+    /**
+     * Record a completed/failed goal sequence for learning.
+     */
+    public void recordCompletion(IntentClassifier.TaskCategory category, List<String> toolSequence, 
+                                  boolean success, int turns) {
+        String catKey = category.name();
+        String seqHash = hashToolSequence(toolSequence);
+
+        completionPatterns
+            .computeIfAbsent(catKey, k -> new ConcurrentHashMap<>())
+            .computeIfAbsent(seqHash, k -> new ConcurrentHashMap<>())
+            .merge(success ? "COMPLETE" : "INCOMPLETE", 1, Integer::sum);
+
+        // Update turns average
+        if (success) {
+            turnsToComplete.compute(catKey, (k, v) -> {
+                if (v == null) v = new long[]{0, 0};
+                v[0] += turns;
+                v[1]++;
+                return v;
+            });
+        }
+    }
+
+    /**
+     * Check if current turn count indicates a stall.
+     */
+    public boolean isStalled(IntentClassifier.TaskCategory category, int currentTurns) {
+        String catKey = category.name();
+        long[] avg = turnsToComplete.get(catKey);
+        if (avg == null || avg[1] == 0) {
+            // No data — use default of 6 turns as stall threshold
+            return currentTurns > 6;
+        }
+        double avgTurns = (double) avg[0] / avg[1];
+        return currentTurns > (avgTurns * stallMultiplier);
+    }
+
+    /**
+     * Get average turns to complete for a category.
+     */
+    public int getAvgTurns(IntentClassifier.TaskCategory category) {
+        long[] avg = turnsToComplete.get(category.name());
+        if (avg == null || avg[1] == 0) return 5; // Default
+        return (int) (avg[0] / avg[1]);
+    }
+
+    /**
+     * Recommend the next action for the Maker based on current state.
+     */
+    public MakerAction recommendAction(IntentClassifier.TaskCategory category, int turns,
+                                         String lastAgent, boolean lastSuccess, List<String> toolsUsed) {
+        // Check completion first
+        double completionProb = predictCompletion(category, toolsUsed);
+        if (completionProb >= 0.75) {
+            return MakerAction.COMPLETE;
+        }
+
+        // Check stall
+        if (isStalled(category, turns)) {
+            return MakerAction.ESCALATE;
+        }
+
+        // Check failure
+        if (!lastSuccess) {
+            return MakerAction.RETRY;
+        }
+
+        // Keep going
+        return MakerAction.CONTINUE;
+    }
+
+    public void setStallMultiplier(double multiplier) {
+        this.stallMultiplier = multiplier;
+    }
+
+    private String hashToolSequence(List<String> tools) {
+        if (tools == null || tools.isEmpty()) return "EMPTY";
+        List<String> sorted = new ArrayList<>(tools);
+        Collections.sort(sorted);
+        return String.join("|", sorted);
+    }
+
+    private double estimateFromPartialMatch(Map<String, Map<String, Integer>> catPatterns, List<String> toolSequence) {
+        // Check if any known complete pattern is a subset of what we have
+        Set<String> currentTools = new java.util.HashSet<>(toolSequence);
+        double bestMatch = 0.0;
+
+        for (Map.Entry<String, Map<String, Integer>> entry : catPatterns.entrySet()) {
+            String knownHash = entry.getKey();
+            Set<String> knownTools = new java.util.HashSet<>(Arrays.asList(knownHash.split("\\|")));
+            
+            // What fraction of the known completion pattern have we covered?
+            long covered = knownTools.stream().filter(currentTools::contains).count();
+            double coverage = knownTools.isEmpty() ? 0 : (double) covered / knownTools.size();
+            
+            int complete = entry.getValue().getOrDefault("COMPLETE", 0);
+            int total = complete + entry.getValue().getOrDefault("INCOMPLETE", 0);
+            double patternConfidence = total > 0 ? (double) complete / total : 0;
+
+            double score = coverage * patternConfidence;
+            bestMatch = Math.max(bestMatch, score);
+        }
+
+        return bestMatch;
+    }
 }

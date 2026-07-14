@@ -119,6 +119,26 @@ Training pipeline:
 Session usage → auto-export JSONL on exit → /train on next startup → better routing
 ```
 
+### Maker Loop (Goal-Driven Supervisor)
+
+The Maker is a persistent loop supervisor that ensures tasks are **completed, not just attempted**:
+
+- **Goal tracking**: Every user request becomes a tracked goal with turn counting
+- **Per-turn stimulus**: Injects progress context into the Coordinator ("Turn 3/5, predicted next: Tester")
+- **Completion verification**: Markov model predicts P(COMPLETE | tool_sequence) from learned patterns
+- **Failure recovery**: Automatically retries failed steps (up to 3 attempts)
+- **Stall detection**: Escalates to user when turns exceed 2x average for the category
+- **Transparent reasoning**: Shows thought process for every decision (CONTINUE/RETRY/ESCALATE/COMPLETE)
+- **Self-improving**: Learns from every completed/failed goal sequence
+
+Decision flow:
+```
+Turn complete → predict completion → if P≥75%: COMPLETE
+                                   → if failed: RETRY (max 3)
+                                   → if stalled: ESCALATE to user
+                                   → else: CONTINUE (inject stimulus)
+```
+
 ## 🛡️ Safety & Security
 
 ### Defense-in-Depth

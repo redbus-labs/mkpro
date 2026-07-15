@@ -88,17 +88,18 @@ public class IntentClassifier {
             "statistics", "report", "visualization", "chart", "trend"
         ));
 
+        PATTERNS.put(TaskCategory.GOALS, compilePatterns(
+            "goal", "todo", "task.*track", "progress", "sprint", "backlog",
+            "priorit", "milestone", "what.*remain", "what.*pending",
+            "execute.*goal", "run.*goal", "do.*goal", "complete.*goal"
+        ));
+
         PATTERNS.put(TaskCategory.SYSADMIN, compilePatterns(
             "run ", "execute", "build.*project", "install.*dep", "start.*server",
             "process", "disk", "memory.*usage", "environment", "command",
             "count.*file", "count.*line", "list.*file", "find.*file", "search.*file",
             "how.*many", "size.*of", "open.*terminal", "shell", "script",
             "clean", "compile", "package", "maven", "npm.*run", "gradle"
-        ));
-
-        PATTERNS.put(TaskCategory.GOALS, compilePatterns(
-            "goal", "todo", "task.*track", "progress", "sprint", "backlog",
-            "priorit", "milestone", "what.*remain", "what.*pending"
         ));
 
         PATTERNS.put(TaskCategory.CODING, compilePatterns(

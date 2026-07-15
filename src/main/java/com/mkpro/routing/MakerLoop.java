@@ -47,10 +47,12 @@ public class MakerLoop {
     public MakerState onUserInput(String input) {
         IntentClassifier.TaskCategory category = classifier.classify(input);
         
-        // If there's an active goal in the SAME category, continue it
+        // If there's an active goal, check if this is a continuation
         if (currentGoal != null && currentGoal.getPhase() == MakerState.GoalPhase.ACTIVE) {
-            // Check if this is a continuation (same category or generic follow-up)
-            if (category == currentGoal.getCategory() || category == IntentClassifier.TaskCategory.GENERAL) {
+            // Continue if: same category, generic follow-up, or a continuation phrase
+            if (category == currentGoal.getCategory() 
+                || category == IntentClassifier.TaskCategory.GENERAL
+                || isContinuationPhrase(input)) {
                 return currentGoal;
             }
             // Different category — close old goal, start new one
@@ -64,6 +66,29 @@ public class MakerLoop {
             "\" (category: " + category + ")" + ANSI_RESET);
 
         return currentGoal;
+    }
+
+    /**
+     * Detect if a user message is a continuation/follow-up to the existing goal.
+     * Short imperative phrases like "execute goals", "continue", "next step" etc.
+     */
+    private boolean isContinuationPhrase(String input) {
+        if (input == null) return false;
+        String lower = input.toLowerCase().trim();
+        
+        // Very short inputs are typically follow-ups
+        if (lower.split("\\s+").length <= 4) {
+            String[] continuationWords = {
+                "continue", "proceed", "go ahead", "next", "do it", "execute",
+                "run it", "start", "begin", "carry on", "keep going", "resume",
+                "yes", "yep", "yeah", "sure", "ok", "okay", "do that", "go on",
+                "finish", "complete", "do them", "do this", "do all"
+            };
+            for (String phrase : continuationWords) {
+                if (lower.contains(phrase)) return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -81,6 +106,33 @@ public class MakerLoop {
         }
 
         return currentGoal.generateStimulus(router);
+    }
+
+    /**
+     * Generate a message for auto-continuation.
+     * This allows the Maker to drive the loop without user input.
+     */
+    public String generateAutoContMessage() {
+        if (currentGoal == null || currentGoal.getPhase() == MakerState.GoalPhase.DONE) {
+            return null;
+        }
+        
+        // Predict next likely agent
+        MarkovRouter.RoutingDecision next = router.route(currentGoal.getCategory(), 
+            currentGoal.getLastAgent());
+        
+        String stimulus = currentGoal.generateStimulus(router);
+        String base = "Continue with the current task. " + 
+            (stimulus != null ? stimulus : "Proceed to the next step.");
+        
+        return base;
+    }
+
+    /**
+     * Get the current active goal (for TerminalUI to check state).
+     */
+    public MakerState getCurrentGoal() {
+        return currentGoal;
     }
 
     /**
@@ -246,12 +298,6 @@ public class MakerLoop {
     }
 
     /**
-     * Get the current goal state.
-     */
-    public MakerState getCurrentGoal() {
-        return currentGoal;
-    }
-
     /**
      * Reset — clear current goal (user starts fresh topic).
      */

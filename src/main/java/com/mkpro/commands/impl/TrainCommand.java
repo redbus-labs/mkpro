@@ -15,9 +15,10 @@ import static com.mkpro.MkPro.*;
  * On-demand training command for the Markov Router.
  * 
  * Usage:
- *   /train           - Re-train from all JSONL files in datajsonl/
- *   /train status    - Show model stats (observations, categories, confidence)
- *   /train reset     - Clear the model and retrain from scratch
+ *   /train              - Re-train from all JSONL files in datajsonl/
+ *   /train status       - Show model stats (observations, categories, confidence)
+ *   /train reset        - Clear the model and retrain from scratch
+ *   /train threshold N  - Set confidence threshold (e.g., /train threshold 70)
  */
 public class TrainCommand implements Command {
 
@@ -37,6 +38,9 @@ public class TrainCommand implements Command {
                 break;
             case "reset":
                 resetAndRetrain(router, context);
+                break;
+            case "threshold":
+                setThreshold(args, router);
                 break;
             default:
                 trainNow(router, context);
@@ -124,6 +128,33 @@ public class TrainCommand implements Command {
         System.out.println();
     }
 
+    private void setThreshold(String[] args, MarkovRouter router) {
+        if (args.length < 2) {
+            System.out.println("Current threshold: " + (int)(router.getConfidenceThreshold() * 100) + "%");
+            System.out.println("Usage: /train threshold <percentage>  (e.g., /train threshold 70)");
+            return;
+        }
+
+        try {
+            int pct = Integer.parseInt(args[1]);
+            if (pct < 10 || pct > 99) {
+                System.out.println(ANSI_RED + "Threshold must be between 10 and 99." + ANSI_RESET);
+                return;
+            }
+            double threshold = pct / 100.0;
+            router.setConfidenceThreshold(threshold);
+            System.out.println(ANSI_GREEN + "Markov confidence threshold set to " + pct + "%." + ANSI_RESET);
+
+            // Save model with new threshold
+            try {
+                Path modelPath = PathUtils.getProjectPath().resolve(".mkpro").resolve("markov_model.dat");
+                router.save(modelPath);
+            } catch (Exception e) { /* Silent */ }
+        } catch (NumberFormatException e) {
+            System.out.println(ANSI_RED + "Invalid number. Usage: /train threshold 70" + ANSI_RESET);
+        }
+    }
+
     @Override
     public String getName() {
         return "train";
@@ -131,6 +162,6 @@ public class TrainCommand implements Command {
 
     @Override
     public String getDescription() {
-        return "Train Markov Router from JSONL data. Usage: /train [status|reset]";
+        return "Train Markov Router. Usage: /train [status|reset|threshold <N>]";
     }
 }

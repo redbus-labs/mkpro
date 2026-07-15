@@ -30,20 +30,30 @@ public class TerminalUI {
     public void start() {
         printBanner();
 
+        String[] autoContHolder = {null}; // Set by Maker to auto-continue without user input
+
         while (true) {
             String line = null;
             try {
-                String timestamp = LocalTime.now().format(PROMPT_TIME_FORMATTER);
-                java.nio.file.Path cwdPath = java.nio.file.Paths.get("").toAbsolutePath();
-                String cwd;
-                if (cwdPath.getNameCount() <= 3) {
-                    cwd = cwdPath.toString();
+                // Auto-continue: if Maker set a continuation message, use it instead of prompting
+                if (autoContHolder[0] != null) {
+                    line = autoContHolder[0];
+                    autoContHolder[0] = null;
+                    System.out.println(ANSI_PURPLE + "  [Maker] Auto-continuing: \"" + 
+                        (line.length() > 50 ? line.substring(0, 50) + "..." : line) + "\"" + ANSI_RESET);
                 } else {
-                    // Show last 2 segments: .../parent/current
-                    cwd = ".../" + cwdPath.getName(cwdPath.getNameCount() - 2) + "/" + cwdPath.getFileName();
+                    String timestamp = LocalTime.now().format(PROMPT_TIME_FORMATTER);
+                    java.nio.file.Path cwdPath = java.nio.file.Paths.get("").toAbsolutePath();
+                    String cwd;
+                    if (cwdPath.getNameCount() <= 3) {
+                        cwd = cwdPath.toString();
+                    } else {
+                        // Show last 2 segments: .../parent/current
+                        cwd = ".../" + cwdPath.getName(cwdPath.getNameCount() - 2) + "/" + cwdPath.getFileName();
+                    }
+                    String prompt = "\n[" + timestamp + "] " + cwd + "> ";
+                    line = context.getLineReader().readLine(prompt);
                 }
-                String prompt = "\n[" + timestamp + "] " + cwd + "> ";
-                line = context.getLineReader().readLine(prompt);
 
                 if (line == null) break;
                 line = line.trim();
@@ -288,10 +298,18 @@ public class TerminalUI {
                                         if (response.contains("[Index]")) toolsDetected.add("index_codebase");
 
                                         boolean success = !response.contains("Error executing") && !response.contains("FAILED");
-                                        context.getMakerLoop().onTurnComplete(agentUsed, toolsDetected, success);
+                                        var makerAction = context.getMakerLoop().onTurnComplete(agentUsed, toolsDetected, success);
                                         
                                         // Reset for next turn
                                         com.mkpro.agents.AgentManager.lastDelegatedAgent = null;
+                                        
+                                        // Auto-continue: if Maker says CONTINUE and we have active goal with turns > 0,
+                                        // inject a continuation message for the next iteration
+                                        if (makerAction == com.mkpro.routing.MarkovRouter.MakerAction.CONTINUE 
+                                            && context.getMakerLoop().getCurrentGoal() != null
+                                            && context.getMakerLoop().getCurrentGoal().getTurnCount() >= 1) {
+                                            autoContHolder[0] = context.getMakerLoop().generateAutoContMessage();
+                                        }
                                     }
                                 });
                         } finally {

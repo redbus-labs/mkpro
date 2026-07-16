@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>mkpro - AI Software Engineering Team</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg: #1a1b26;
+            --surface: #24283b;
+            --surface2: #2f3549;
+            --text: #c0caf5;
+            --text-dim: #565f89;
+            --accent: #7aa2f7;
+            --green: #9ece6a;
+            --yellow: #e0af68;
+            --red: #f7768e;
+            --purple: #bb9af7;
+            --cyan: #7dcfff;
+            --orange: #ff9e64;
+        }
+
+        body {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            padding: 12px 20px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--surface2);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header h1 { font-size: 16px; color: var(--accent); font-weight: 600; }
+        .header .status { font-size: 12px; color: var(--text-dim); }
+        .header .status.connected { color: var(--green); }
+        .header .status.disconnected { color: var(--red); }
+
+        /* Chat area */
+        .chat {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+        .message.user {
+            align-self: flex-end;
+            background: var(--accent);
+            color: #1a1b26;
+            border-bottom-right-radius: 4px;
+        }
+        .message.assistant {
+            align-self: flex-start;
+            background: var(--surface);
+            border-bottom-left-radius: 4px;
+            border: 1px solid var(--surface2);
+        }
+        .message.assistant .agent-badge {
+            display: inline-block;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: var(--surface2);
+            color: var(--cyan);
+            margin-bottom: 8px;
+        }
+        .message.system {
+            align-self: center;
+            font-size: 12px;
+            color: var(--text-dim);
+            background: transparent;
+            padding: 4px 12px;
+        }
+        .message.maker {
+            align-self: center;
+            font-size: 12px;
+            color: var(--purple);
+            background: rgba(187, 154, 247, 0.1);
+            border: 1px solid rgba(187, 154, 247, 0.2);
+            padding: 6px 14px;
+            border-radius: 8px;
+        }
+        .message.routing {
+            align-self: center;
+            font-size: 12px;
+            color: var(--cyan);
+            background: rgba(125, 207, 255, 0.1);
+            border: 1px solid rgba(125, 207, 255, 0.2);
+            padding: 4px 12px;
+            border-radius: 8px;
+        }
+
+        /* Markdown content */
+        .message.assistant p { margin-bottom: 8px; }
+        .message.assistant p:last-child { margin-bottom: 0; }
+        .message.assistant code {
+            background: var(--bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .message.assistant pre {
+            background: var(--bg);
+            padding: 12px;
+            border-radius: 8px;
+            margin: 8px 0;
+            overflow-x: auto;
+        }
+        .message.assistant pre code {
+            background: transparent;
+            padding: 0;
+        }
+        .message.assistant ul, .message.assistant ol {
+            padding-left: 20px;
+            margin: 8px 0;
+        }
+        .message.assistant h1, .message.assistant h2, .message.assistant h3 {
+            color: var(--accent);
+            margin: 12px 0 6px 0;
+        }
+        .message.assistant strong { color: var(--green); }
+        .message.assistant a { color: var(--cyan); }
+
+        /* Streaming indicator */
+        .streaming::after {
+            content: '▊';
+            animation: blink 0.8s infinite;
+            color: var(--accent);
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* Input area */
+        .input-area {
+            padding: 16px 20px;
+            background: var(--surface);
+            border-top: 1px solid var(--surface2);
+            display: flex;
+            gap: 12px;
+        }
+        .input-area input {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--surface2);
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-area input:focus {
+            border-color: var(--accent);
+        }
+        .input-area button {
+            background: var(--accent);
+            color: #1a1b26;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .input-area button:hover { opacity: 0.9; }
+        .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Scrollbar */
+        .chat::-webkit-scrollbar { width: 6px; }
+        .chat::-webkit-scrollbar-track { background: var(--bg); }
+        .chat::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>mkpro</h1>
+        <span class="status disconnected" id="status">● Disconnected</span>
+    </div>
+    <div class="chat" id="chat"></div>
+    <div class="input-area">
+        <input type="text" id="input" placeholder="Type a message..." autocomplete="off" />
+        <button id="send" onclick="sendMessage()">Send</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>
+        // Configure marked for markdown rendering
+        marked.setOptions({
+            highlight: (code, lang) => {
+                if (lang && hljs.getLanguage(lang)) {
+                    return hljs.highlight(code, { language: lang }).value;
+                }
+                return hljs.highlightAuto(code).value;
+            },
+            breaks: true
+        });
+
+        const chat = document.getElementById('chat');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send');
+        const statusEl = document.getElementById('status');
+
+        let ws = null;
+        let currentMessage = null; // Currently streaming message element
+        let streamBuffer = '';
+
+        function connect() {
+            const wsPort = {{WS_PORT}};
+            ws = new WebSocket(`ws://${location.hostname}:${wsPort}`);
+
+            ws.onopen = () => {
+                statusEl.textContent = '● Connected';
+                statusEl.className = 'status connected';
+                input.disabled = false;
+                sendBtn.disabled = false;
+            };
+
+            ws.onclose = () => {
+                statusEl.textContent = '● Disconnected';
+                statusEl.className = 'status disconnected';
+                input.disabled = true;
+                sendBtn.disabled = true;
+                // Reconnect after 3s
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = () => {
+                ws.close();
+            };
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                handleMessage(msg);
+            };
+        }
+
+        function handleMessage(msg) {
+            switch (msg.type) {
+                case 'system':
+                    addSystemMessage(msg.text);
+                    break;
+
+                case 'stream_start':
+                    startStreaming(msg.agent, msg.model);
+                    break;
+
+                case 'stream_chunk':
+                    appendChunk(msg.text);
+                    break;
+
+                case 'stream_end':
+                    endStreaming();
+                    break;
+
+                case 'maker':
+                    addMakerMessage(msg.message);
+                    break;
+
+                case 'routing':
+                    addRoutingMessage(msg.message);
+                    break;
+
+                case 'delegation':
+                    // Update current message badge if streaming
+                    if (currentMessage) {
+                        const badge = currentMessage.querySelector('.agent-badge');
+                        if (badge) badge.textContent = msg.agent;
+                    }
+                    break;
+            }
+        }
+
+        function sendMessage() {
+            const text = input.value.trim();
+            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+            // Show user message
+            addUserMessage(text);
+
+            // Send to server
+            ws.send(JSON.stringify({ type: 'user_input', text: text }));
+
+            input.value = '';
+            input.focus();
+        }
+
+        function addUserMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'message user';
+            div.textContent = text;
+            chat.appendChild(div);
+            scrollToBottom();
+        }
+
+        function addSystemMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'message system';
+            div.textContent = text;
+            chat.appendChild(div);
+            scrollToBottom();
+        }
+
+        function addMakerMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'message maker';
+            div.textContent = text;
+            chat.appendChild(div);
+            scrollToBottom();
+        }
+
+        function addRoutingMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'message routing';
+            div.textContent = text;
+            chat.appendChild(div);
+            scrollToBottom();
+        }
+
+        function startStreaming(agent, model) {
+            const div = document.createElement('div');
+            div.className = 'message assistant streaming';
+            div.innerHTML = `<span class="agent-badge">${agent}${model ? ' · ' + model : ''}</span><div class="content"></div>`;
+            chat.appendChild(div);
+            currentMessage = div;
+            streamBuffer = '';
+            scrollToBottom();
+        }
+
+        function appendChunk(text) {
+            if (!currentMessage) {
+                startStreaming('AI', '');
+            }
+            streamBuffer += text;
+            const contentDiv = currentMessage.querySelector('.content');
+            if (contentDiv) {
+                contentDiv.innerHTML = marked.parse(streamBuffer);
+            }
+            scrollToBottom();
+        }
+
+        function endStreaming() {
+            if (currentMessage) {
+                currentMessage.classList.remove('streaming');
+                // Final render with highlighting
+                const contentDiv = currentMessage.querySelector('.content');
+                if (contentDiv) {
+                    contentDiv.innerHTML = marked.parse(streamBuffer);
+                    contentDiv.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+                }
+            }
+            currentMessage = null;
+            streamBuffer = '';
+        }
+
+        function scrollToBottom() {
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        // Input handling
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Start connection
+        connect();
+    </script>
+</body>
+</html>

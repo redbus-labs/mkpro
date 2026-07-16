@@ -34,13 +34,14 @@ public class TerminalUI {
 
         while (true) {
             String line = null;
+            boolean isAutoContinue = false;
             try {
                 // Auto-continue: if Maker set a continuation message, use it instead of prompting
                 if (autoContHolder[0] != null) {
                     line = autoContHolder[0];
                     autoContHolder[0] = null;
-                    System.out.println(ANSI_PURPLE + "  [Maker] Auto-continuing: \"" + 
-                        (line.length() > 50 ? line.substring(0, 50) + "..." : line) + "\"" + ANSI_RESET);
+                    isAutoContinue = true;
+                    System.out.println(ANSI_PURPLE + "  [Maker] Auto-continuing..." + ANSI_RESET);
                 } else {
                     String timestamp = LocalTime.now().format(PROMPT_TIME_FORMATTER);
                     java.nio.file.Path cwdPath = java.nio.file.Paths.get("").toAbsolutePath();
@@ -69,10 +70,22 @@ public class TerminalUI {
 
                         // Check Markov Router — can we fast-route without LLM?
                         boolean markovRouted = false;
-                        if (context.getMarkovRouter() != null && context.getMarkovRouter().getTotalObservations() > 20) {
+                        if (!isAutoContinue && context.getMarkovRouter() != null && context.getMarkovRouter().getTotalObservations() > 20) {
                             com.mkpro.routing.IntentClassifier intentClassifier = new com.mkpro.routing.IntentClassifier();
+                            // Inject learned patterns from router
+                            intentClassifier.setLearnedPatterns(context.getMarkovRouter().getLearnedPatterns());
+                            
                             com.mkpro.routing.IntentClassifier.TaskCategory category = intentClassifier.classify(line);
                             double intentConfidence = intentClassifier.classifyWithConfidence(line);
+                            
+                            // If static returned GENERAL, try learned patterns
+                            if (category == com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL) {
+                                com.mkpro.routing.IntentClassifier.TaskCategory learned = intentClassifier.classifyWithLearnedPatterns(line);
+                                if (learned != com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL) {
+                                    category = learned;
+                                    intentConfidence = 0.5; // Moderate confidence for learned matches
+                                }
+                            }
                             
                             // Route if: specific category detected
                             boolean shouldTryRoute = (intentConfidence > 0.3 && category != com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL);
@@ -95,12 +108,12 @@ public class TerminalUI {
                                 System.out.println("\u001b[90m[Markov: category=" + category + 
                                     ", intent=" + (int)(intentConfidence * 100) + "% — not routable, using Coordinator]\u001b[0m");
                             }
-                        } else if (context.getMarkovRouter() != null) {
+                        } else if (!isAutoContinue && context.getMarkovRouter() != null) {
                             System.out.println("\u001b[90m[Markov: inactive (" + context.getMarkovRouter().getTotalObservations() + " obs, need 20+). Run /train]\u001b[0m");
                         }
 
                         // Maker: track goal and inject stimulus
-                        if (context.getMakerEnabled().get() && context.getMakerLoop() != null) {
+                        if (!isAutoContinue && context.getMakerEnabled().get() && context.getMakerLoop() != null) {
                             context.getMakerLoop().onUserInput(line);
                             String stimulus = context.getMakerLoop().generatePreTurnStimulus();
                             if (stimulus != null) {
@@ -143,6 +156,9 @@ public class TerminalUI {
                             }
                         }
                         String thinkingLabel = displayAgent + "[" + displayModel + "@" + displayProvider + "] ";
+                        // Capture for lambda access
+                        final String finalDisplayAgent = displayAgent;
+                        final String finalDisplayModel = displayModel;
 
                         // Start spinner daemon thread with color transitions
                         Thread spinnerThread = new Thread(() -> {
@@ -230,10 +246,18 @@ public class TerminalUI {
                                                             System.out.flush();
                                                         }
                                                         System.out.print(ANSI_LIGHT_ORANGE);
+                                                        // Web: stream start
+                                                        if (context.getWebChatServer() != null) {
+                                                            context.getWebChatServer().broadcastStreamStart(finalDisplayAgent, finalDisplayModel);
+                                                        }
                                                     }
                                                     responseBuilder.append(text);
                                                     System.out.print(text);
                                                     System.out.flush();
+                                                    // Web: stream chunk
+                                                    if (context.getWebChatServer() != null) {
+                                                        context.getWebChatServer().broadcastStreamChunk(text);
+                                                    }
                                                 });
                                             }
                                         });
@@ -257,6 +281,12 @@ public class TerminalUI {
                                 }, () -> {
                                     // ON COMPLETE - Calculate stats
                                     long duration = System.currentTimeMillis() - startTime;
+                                    
+                                    // Web: stream end
+                                    if (context.getWebChatServer() != null) {
+                                        context.getWebChatServer().broadcastStreamEnd();
+                                    }
+                                    
                                     String sessId = context.getCurrentSession() != null ? context.getCurrentSession().id() : "default-session";
                                     
                                     com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
@@ -298,14 +328,15 @@ public class TerminalUI {
                                         if (response.contains("[Index]")) toolsDetected.add("index_codebase");
 
                                         boolean success = !response.contains("Error executing") && !response.contains("FAILED");
-                                        var makerAction = context.getMakerLoop().onTurnComplete(agentUsed, toolsDetected, success);
+                                        var makerAction = context.getMakerLoop().onTurnComplete(agentUsed, toolsDetected, success, response);
                                         
                                         // Reset for next turn
                                         com.mkpro.agents.AgentManager.lastDelegatedAgent = null;
                                         
-                                        // Auto-continue: if Maker says CONTINUE and we have active goal with turns > 0,
+                                        // Auto-continue: if Maker says CONTINUE or ESCALATE (wrap-up),
                                         // inject a continuation message for the next iteration
-                                        if (makerAction == com.mkpro.routing.MarkovRouter.MakerAction.CONTINUE 
+                                        if ((makerAction == com.mkpro.routing.MarkovRouter.MakerAction.CONTINUE
+                                            || makerAction == com.mkpro.routing.MarkovRouter.MakerAction.ESCALATE)
                                             && context.getMakerLoop().getCurrentGoal() != null
                                             && context.getMakerLoop().getCurrentGoal().getTurnCount() >= 1) {
                                             autoContHolder[0] = context.getMakerLoop().generateAutoContMessage();

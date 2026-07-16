@@ -23,6 +23,16 @@ public class GraphMemoryTools {
         return PathUtils.getBaseDocumentsPath().resolve("memory_graph.db").toString();
     }
 
+    // Shared repository instance — avoids MapDB file locking conflicts
+    private static volatile com.mkpro.graph.MapDbGraphRepository sharedRepository;
+
+    private static synchronized com.mkpro.graph.MapDbGraphRepository getRepository() {
+        if (sharedRepository == null) {
+            sharedRepository = new com.mkpro.graph.MapDbGraphRepository(getDbPath());
+        }
+        return sharedRepository;
+    }
+
     public static BaseTool memorizeFact() {
         return new BaseTool("memorize_fact", "Stores a fact in the knowledge graph.") {
             @Override
@@ -44,18 +54,17 @@ public class GraphMemoryTools {
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
                     String fact = (String) args.get("fact");
-                    try (MapDbGraphRepository repository = new MapDbGraphRepository(getDbPath())) {
-                        ExtractionResult current = repository.loadExtraction(MEMORY_KEY).orElse(new ExtractionResult(new ArrayList<>(), new ArrayList<>()));
-                        
-                        List<Entity> entities = new ArrayList<>(current.entities());
-                        List<Relationship> relationships = new ArrayList<>(current.relationships());
-                        
-                        String entityId = UUID.randomUUID().toString();
-                        entities.add(new Entity(entityId, fact, EntityType.UNSPECIFIED, Map.of()));
-                        
-                        repository.saveExtraction(MEMORY_KEY, new ExtractionResult(entities, relationships));
-                        return Collections.singletonMap("result", "Fact memorized successfully.");
-                    }
+                    MapDbGraphRepository repository = getRepository();
+                    ExtractionResult current = repository.loadExtraction(MEMORY_KEY).orElse(new ExtractionResult(new ArrayList<>(), new ArrayList<>()));
+                    
+                    List<Entity> entities = new ArrayList<>(current.entities());
+                    List<Relationship> relationships = new ArrayList<>(current.relationships());
+                    
+                    String entityId = UUID.randomUUID().toString();
+                    entities.add(new Entity(entityId, fact, EntityType.UNSPECIFIED, Map.of()));
+                    
+                    repository.saveExtraction(MEMORY_KEY, new ExtractionResult(entities, relationships));
+                    return Collections.singletonMap("result", "Fact memorized successfully.");
                 });
             }
         };
@@ -82,23 +91,22 @@ public class GraphMemoryTools {
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
                     String query = ((String) args.get("query")).toLowerCase();
-                    try (MapDbGraphRepository repository = new MapDbGraphRepository(getDbPath())) {
-                        Optional<ExtractionResult> optResult = repository.loadExtraction(MEMORY_KEY);
-                        if (optResult.isEmpty()) {
-                            return Collections.singletonMap("result", "No memories found.");
-                        }
-                        
-                        List<String> matches = optResult.get().entities().stream()
-                                .map(Entity::name)
-                                .filter(name -> name.toLowerCase().contains(query))
-                                .collect(Collectors.toList());
-                        
-                        if (matches.isEmpty()) {
-                            return Collections.singletonMap("result", "No matching memories found.");
-                        }
-                        
-                        return Collections.singletonMap("result", "Recalled memories:\n- " + String.join("\n- ", matches));
+                    MapDbGraphRepository repository = getRepository();
+                    Optional<ExtractionResult> optResult = repository.loadExtraction(MEMORY_KEY);
+                    if (optResult.isEmpty()) {
+                        return Collections.singletonMap("result", "No memories found.");
                     }
+                    
+                    List<String> matches = optResult.get().entities().stream()
+                            .map(Entity::name)
+                            .filter(name -> name.toLowerCase().contains(query))
+                            .collect(Collectors.toList());
+                    
+                    if (matches.isEmpty()) {
+                        return Collections.singletonMap("result", "No matching memories found.");
+                    }
+                    
+                    return Collections.singletonMap("result", "Recalled memories:\n- " + String.join("\n- ", matches));
                 });
             }
         };

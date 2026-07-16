@@ -158,10 +158,15 @@ Turn complete → predict completion → if P≥75%: COMPLETE
 
 ## 🚀 Key Features
 
+- **Web UI**: Optional browser-based chat interface (`--web` flag). Markdown rendering, syntax highlighting, real-time streaming via WebSocket. Commands work from web too.
 - **Graph Memory & Visualization**: Agents store structured associative memories in a MapDB-backed graph, viewable via `/visualize`.
 - **Mesh Networking**: Multiple mkpro instances discover each other via mDNS and synchronize memory/graph states in real-time. Automatic reconnection with exponential backoff.
 - **Cross-Instance Agent Communication**: Agents can directly ask agents on peer instances for help. Architect on Instance A can query Architect on Instance B about its project. Peer handshake exchanges project info on connection.
-- **Self-Adaptive Model Resilience**: YAML-defined fallback models per agent. Health-based routing on connection failures. User-confirmed recommendations when fallback succeeds.
+- **Self-Adaptive Model Resilience**: YAML-defined fallback models per agent. Health-based routing on connection failures. Non-blocking recommendations when fallback succeeds.
+- **Learned Intent Patterns**: IntentClassifier adapts to your vocabulary. TF-IDF extraction of distinctive unigrams + bigrams from training data. System gets smarter each session.
+- **Stall Prediction & Redirect**: Maker detects stall patterns from history. On stall, routes to alternative agent (load balancer with memory) rather than giving up. Max 2 redirects before wrap-up.
+- **Heuristic Completion Detection**: Maker reads response text for completion signals ("verified", "successfully", "complete") alongside model-based prediction.
+- **Session History**: Session persists across restarts (MapDB runner). `/history` shows past exchanges. Session summary shown on startup.
 - **Token Tracking & Analytics**: Comprehensive token tracking per session, agent, and model, viewable via `/stats`.
 - **Goal Tracking**: Never lose track of original user requests during complex, multi-step sessions.
 - **Granular Configuration**: Assign different models to different agents via `/config`.
@@ -170,7 +175,7 @@ Turn complete → predict completion → if P≥75%: COMPLETE
 - **Multimodal Support**: Agents can analyze images (vision) and transcribe/summarize audio files natively via Gemini.
 - **Autonomous Memory**: Agents can commit insights to CentralMemory (`commit_to_memory`) and recall them later — persists across sessions.
 - **Session State Injection**: Coordinator starts each session aware of pending goals, project memory, and MCP context from prior sessions.
-- **Training Data Export**: `/export` extracts real chat sessions as JSONL for fine-tuning your own SLM.
+- **Training Data Export**: `/export` extracts all 15 agents' sessions as JSONL for fine-tuning your own SLM.
 - **Clipboard Integration**: Paste text or images directly into the terminal using `Ctrl+V`.
 - **Persistent Memory**:
     - **Shared Store**: Configs and goals saved to `~/Documents/mkpro/central_memory.db`.
@@ -208,8 +213,12 @@ Turn complete → predict completion → if P≥75%: COMPLETE
 | `/remember` | Save a project summary to persistent memory |
 | `/export` | Export chat sessions as JSONL training data |
 | `/train` | Train Markov Router from JSONL data |
-| `/train status` | Show router model stats and category→agent mapping |
+| `/train status` | Show router model stats, transition matrix, and learned patterns |
 | `/train reset` | Clear model and retrain from scratch |
+| `/train threshold <N>` | Set Markov confidence threshold (10-99%) |
+| `/history` | Show last 10 chat exchanges from session |
+| `/history N` | Show last N exchanges |
+| `/history new` | Start a fresh session |
 | `/status` | Show system status, endpoints, and agent assignments |
 | `/help` | Show available commands |
 | `/exit`, `/quit` | Exit the application |
@@ -289,6 +298,12 @@ export AWS_REGION=your_region
 Launch the CLI:
 ```bash
 java -jar target/mkpro-4.0.0.jar
+```
+
+With Web UI (opens browser chat at http://localhost:8080):
+```bash
+java -jar target/mkpro-4.0.0.jar --web
+java -jar target/mkpro-4.0.0.jar --web 9090   # custom port
 ```
 
 Or use the native executable (Windows):

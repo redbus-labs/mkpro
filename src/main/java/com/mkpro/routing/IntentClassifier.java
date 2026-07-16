@@ -175,4 +175,76 @@ public class IntentClassifier {
         }
         return patterns;
     }
+
+    // ========== Learned Patterns (from training data) ==========
+
+    private Map<String, java.util.Set<String>> learnedPatterns = new java.util.HashMap<>();
+
+    /**
+     * Set learned patterns from MarkovRouter.
+     * These are used as fallback when static patterns return GENERAL.
+     */
+    public void setLearnedPatterns(Map<String, java.util.Set<String>> patterns) {
+        this.learnedPatterns = patterns != null ? patterns : new java.util.HashMap<>();
+    }
+
+    public Map<String, java.util.Set<String>> getLearnedPatterns() {
+        return learnedPatterns;
+    }
+
+    /**
+     * Classify using learned patterns. Returns the best matching category
+     * with a score based on unigram (1pt) and bigram (2pt) matches.
+     *
+     * @return The best category, or GENERAL if no learned pattern matches
+     */
+    public TaskCategory classifyWithLearnedPatterns(String input) {
+        if (input == null || input.isEmpty() || learnedPatterns.isEmpty()) {
+            return TaskCategory.GENERAL;
+        }
+
+        String lower = input.toLowerCase().replaceAll("[^a-z0-9\\s]", " ");
+        String[] words = lower.split("\\s+");
+
+        int bestScore = 0;
+        TaskCategory bestCategory = TaskCategory.GENERAL;
+
+        for (var entry : learnedPatterns.entrySet()) {
+            String categoryName = entry.getKey();
+            java.util.Set<String> patterns = entry.getValue();
+            TaskCategory category;
+            try {
+                category = TaskCategory.valueOf(categoryName);
+            } catch (IllegalArgumentException e) {
+                continue;
+            }
+
+            int score = 0;
+            for (String pattern : patterns) {
+                if (pattern.startsWith("B:")) {
+                    // Bigram: check if the bigram exists in the input
+                    String bigram = pattern.substring(2);
+                    if (lower.contains(bigram)) {
+                        score += 2; // Bigrams worth 2 points
+                    }
+                } else {
+                    // Unigram: check if the word exists in the input
+                    for (String word : words) {
+                        if (word.equals(pattern)) {
+                            score += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestCategory = category;
+            }
+        }
+
+        // Require at least 2 points to override GENERAL
+        return bestScore >= 2 ? bestCategory : TaskCategory.GENERAL;
+    }
 }

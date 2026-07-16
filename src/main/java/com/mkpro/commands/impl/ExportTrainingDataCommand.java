@@ -51,6 +51,26 @@ public class ExportTrainingDataCommand implements Command {
         "(PENDING, IN_PROGRESS, COMPLETED, FAILED), and report on project progress. " +
         "You maintain a hierarchical goal tree.";
 
+    private static final java.util.Map<String, String> AGENT_SYSTEMS = new java.util.LinkedHashMap<>();
+
+    static {
+        AGENT_SYSTEMS.put("Coordinator", COORDINATOR_SYSTEM);
+        AGENT_SYSTEMS.put("GoalTracker", GOALTRACKER_SYSTEM);
+        AGENT_SYSTEMS.put("Coder", "You are the Coder agent for mkpro. You read and analyze code, implement features, fix bugs, and write clean, tested code. You use file_read, codebase_search, and graph_memory tools.");
+        AGENT_SYSTEMS.put("CodeEditor", "You are the CodeEditor agent for mkpro. You safely apply code changes to files with diff preview and user confirmation. You create backups before modifications.");
+        AGENT_SYSTEMS.put("SysAdmin", "You are the SysAdmin agent for mkpro. You execute shell commands, manage infrastructure, run build tools (Maven, Gradle, npm). You are restricted from modifying code directly.");
+        AGENT_SYSTEMS.put("GitAgent", "You are the GitAgent agent for mkpro. You manage version control: staging, committing, pushing, branching, and enforcing semantic commit messages.");
+        AGENT_SYSTEMS.put("Tester", "You are the Tester agent for mkpro. You write unit and integration tests, run test suites, perform E2E testing, and validate code correctness.");
+        AGENT_SYSTEMS.put("DocWriter", "You are the DocWriter agent for mkpro. You maintain README, generate documentation, write Javadocs/Docstrings, and keep docs in sync with code.");
+        AGENT_SYSTEMS.put("SecurityAuditor", "You are the SecurityAuditor agent for mkpro. You scan code for vulnerabilities (SQLi, XSS, secrets), run audit tools, and recommend hardening steps.");
+        AGENT_SYSTEMS.put("Architect", "You are the Architect agent for mkpro. You review high-level design, analyze cohesion/coupling, enforce patterns, plan refactoring, and store system designs in graph memory.");
+        AGENT_SYSTEMS.put("DatabaseAdmin", "You are the DatabaseAdmin agent for mkpro. You write complex SQL queries, create schema migrations, and analyze database structures.");
+        AGENT_SYSTEMS.put("DevOps", "You are the DevOps agent for mkpro. You write Dockerfiles, Kubernetes manifests, CI/CD configs, and interact with cloud CLIs (AWS, GCP).");
+        AGENT_SYSTEMS.put("DataAnalyst", "You are the DataAnalyst agent for mkpro. You analyze datasets (CSV, JSON), write Python scripts (pandas, numpy) for statistical analysis, and generate insights.");
+        AGENT_SYSTEMS.put("AndroidDev", "You are the AndroidDev agent for mkpro. Expert in Kotlin, Jetpack Compose, Android SDK, and Gradle-based Android projects.");
+        AGENT_SYSTEMS.put("IosDev", "You are the IosDev agent for mkpro. Expert in Swift, SwiftUI, Xcode, and iOS frameworks.");
+    }
+
     @Override
     public void execute(String[] args, MkProContext context) throws Exception {
         String target = args.length > 0 ? args[0].toLowerCase() : "all";
@@ -72,16 +92,29 @@ public class ExportTrainingDataCommand implements Command {
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
         int exported = 0;
 
-        if ("coordinator".equals(target) || "all".equals(target)) {
-            int count = exportCoordinatorData(entries, outputDir, timestamp);
+        if ("all".equals(target)) {
+            // Export all agents
+            for (java.util.Map.Entry<String, String> agentEntry : AGENT_SYSTEMS.entrySet()) {
+                String agentName = agentEntry.getKey();
+                String systemPrompt = agentEntry.getValue();
+                int count = exportAgentData(agentName, systemPrompt, entries, outputDir, timestamp);
+                if (count > 0) {
+                    System.out.println(ANSI_GREEN + "  " + agentName + ": " + count + " training examples" + ANSI_RESET);
+                }
+                exported += count;
+            }
+        } else {
+            // Export specific agent
+            String agentName = target.substring(0, 1).toUpperCase() + target.substring(1);
+            String systemPrompt = AGENT_SYSTEMS.get(agentName);
+            if (systemPrompt == null) {
+                System.out.println(ANSI_YELLOW + "Unknown agent: " + target + ". Available: " + 
+                    String.join(", ", AGENT_SYSTEMS.keySet()) + ANSI_RESET);
+                return;
+            }
+            int count = exportAgentData(agentName, systemPrompt, entries, outputDir, timestamp);
+            System.out.println(ANSI_GREEN + "  " + agentName + ": " + count + " training examples" + ANSI_RESET);
             exported += count;
-            System.out.println(ANSI_GREEN + "  Coordinator: " + count + " training examples" + ANSI_RESET);
-        }
-
-        if ("goaltracker".equals(target) || "all".equals(target)) {
-            int count = exportGoalTrackerData(entries, outputDir, timestamp);
-            exported += count;
-            System.out.println(ANSI_GREEN + "  GoalTracker: " + count + " training examples" + ANSI_RESET);
         }
 
         if (exported == 0) {
@@ -91,22 +124,53 @@ public class ExportTrainingDataCommand implements Command {
         }
     }
 
-    private int exportCoordinatorData(List<LogEntry> entries, Path outputDir, String timestamp) throws IOException {
-        Path file = outputDir.resolve("coordinator_session_" + timestamp + ".jsonl");
+    /**
+     * Generic agent export: finds USER→Agent response pairs in the logs.
+     */
+    private int exportAgentData(String agentName, String systemPrompt, List<LogEntry> entries, Path outputDir, String timestamp) throws IOException {
+        Path file = outputDir.resolve(agentName.toLowerCase() + "_session_" + timestamp + ".jsonl");
         List<ObjectNode> trainingLines = new ArrayList<>();
 
-        // Strategy 1: Find USER→Coordinator response pairs (new logging format)
+        if ("Coordinator".equalsIgnoreCase(agentName)) {
+            // Coordinator: USER→Coordinator pairs
+            for (int i = 0; i < entries.size() - 1; i++) {
+                LogEntry current = entries.get(i);
+                if (isUserEntry(current)) {
+                    for (int j = i + 1; j < entries.size(); j++) {
+                        LogEntry next = entries.get(j);
+                        if ("Coordinator".equalsIgnoreCase(next.role)) {
+                            trainingLines.add(createTrainingLine(systemPrompt, current.content, next.content));
+                            break;
+                        }
+                        if (isUserEntry(next)) break;
+                    }
+                }
+            }
+        } else {
+            // Other agents: find entries logged as this agent name
+            for (int i = 0; i < entries.size(); i++) {
+                LogEntry entry = entries.get(i);
+                if (agentName.equalsIgnoreCase(entry.role)) {
+                    // Find the preceding user input that triggered this
+                    String userContent = findPrecedingUserInput(entries, i);
+                    if (userContent != null && !entry.content.trim().isEmpty()) {
+                        trainingLines.add(createTrainingLine(systemPrompt, userContent, entry.content));
+                    }
+                }
+            }
+        }
+
+        // Also extract from delegation patterns in SYSTEM logs
         for (int i = 0; i < entries.size() - 1; i++) {
-            LogEntry current = entries.get(i);
-
-            if (isUserEntry(current)) {
-                String userContent = current.content;
-
-                // Find the next Coordinator response
+            LogEntry entry = entries.get(i);
+            if ("SYSTEM".equalsIgnoreCase(entry.role) && entry.content.contains("Delegating task to " + agentName)) {
                 for (int j = i + 1; j < entries.size(); j++) {
                     LogEntry next = entries.get(j);
-                    if ("Coordinator".equalsIgnoreCase(next.role)) {
-                        trainingLines.add(createTrainingLine(COORDINATOR_SYSTEM, userContent, next.content));
+                    if (agentName.equalsIgnoreCase(next.role)) {
+                        String userContent = findPrecedingUserInput(entries, i);
+                        if (userContent != null) {
+                            trainingLines.add(createTrainingLine(systemPrompt, userContent, next.content));
+                        }
                         break;
                     }
                     if (isUserEntry(next)) break;
@@ -114,63 +178,9 @@ public class ExportTrainingDataCommand implements Command {
             }
         }
 
-        // Strategy 2: Extract delegation patterns from SYSTEM logs (existing format)
-        // Pattern: SYSTEM "Delegating task to X" followed by agent response = shows routing behavior
-        for (int i = 0; i < entries.size() - 1; i++) {
-            LogEntry entry = entries.get(i);
-            if ("SYSTEM".equalsIgnoreCase(entry.role) && entry.content.contains("Delegating task to")) {
-                // Find the agent response that follows
-                for (int j = i + 1; j < entries.size(); j++) {
-                    LogEntry next = entries.get(j);
-                    if (!next.role.equalsIgnoreCase("SYSTEM") && !next.role.equalsIgnoreCase("INFO")) {
-                        // We have a delegation→response pair
-                        // Synthesize the user intent from the delegation message
-                        String agentName = next.role;
-                        String delegationNote = "I'll delegate this to the " + agentName + ".";
-                        String fullResponse = delegationNote + "\n\n" + next.content;
-                        
-                        // Find preceding user input if available
-                        String userContent = findPrecedingUserInput(entries, i);
-                        if (userContent != null) {
-                            trainingLines.add(createTrainingLine(COORDINATOR_SYSTEM, userContent, fullResponse));
-                        }
-                        break;
-                    }
-                }
-            }
+        if (!trainingLines.isEmpty()) {
+            writeJsonl(file, trainingLines);
         }
-
-        writeJsonl(file, trainingLines);
-        return trainingLines.size();
-    }
-
-    private int exportGoalTrackerData(List<LogEntry> entries, Path outputDir, String timestamp) throws IOException {
-        Path file = outputDir.resolve("goaltracker_session_" + timestamp + ".jsonl");
-        List<ObjectNode> trainingLines = new ArrayList<>();
-
-        // Find GoalTracker interactions
-        for (int i = 0; i < entries.size(); i++) {
-            LogEntry entry = entries.get(i);
-            if ("GoalTracker".equalsIgnoreCase(entry.role)) {
-                // Find the preceding user/coordinator input that triggered this
-                String userContent = findPrecedingUserInput(entries, i);
-                if (userContent == null) {
-                    // Look for Coordinator instruction to GoalTracker
-                    for (int j = i - 1; j >= Math.max(0, i - 5); j--) {
-                        LogEntry prev = entries.get(j);
-                        if ("SYSTEM".equalsIgnoreCase(prev.role) && prev.content.toLowerCase().contains("goal")) {
-                            userContent = prev.content;
-                            break;
-                        }
-                    }
-                }
-                if (userContent != null && !entry.content.trim().isEmpty()) {
-                    trainingLines.add(createTrainingLine(GOALTRACKER_SYSTEM, userContent, entry.content));
-                }
-            }
-        }
-
-        writeJsonl(file, trainingLines);
         return trainingLines.size();
     }
 
@@ -258,7 +268,7 @@ public class ExportTrainingDataCommand implements Command {
 
     @Override
     public String getDescription() {
-        return "Export chat session data as JSONL training data to datajsonl/ folder. Usage: /export [coordinator|goaltracker|all]";
+        return "Export chat session data as JSONL training data to datajsonl/ folder. Usage: /export [agent-name|all]";
     }
 
     private static class LogEntry {

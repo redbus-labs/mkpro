@@ -59,6 +59,12 @@ Categorizes user input using keyword/regex pattern matching. No ML involved — 
 
 **Threshold:** Intent confidence must be > 30% (at least one keyword match) to attempt routing.
 
+**Learned Patterns (adaptive):** When static patterns return GENERAL, the classifier checks learned patterns extracted from training data:
+- Unigrams: distinctive words per category (TF-IDF scored, ≥3 occurrences, top 20)
+- Bigrams: 2-word phrases (prefixed `B:`, scored 2x weight)
+- Minimum 2 points required to override GENERAL
+- Patterns persist in `markov_model.dat` and improve each `/train` cycle
+
 ### 2. MarkovRouter (`com.mkpro.routing.MarkovRouter`)
 
 A probabilistic state machine that predicts which agent should handle a given task category.
@@ -199,8 +205,22 @@ ROUTE DIRECTLY → Tester
 | Command | Description |
 |---|---|
 | `/train` | Re-train model from all datajsonl/*.jsonl files |
-| `/train status` | Show observations, threshold, category→agent mapping |
+| `/train status` | Show observations, threshold, category→agent mapping, learned patterns, transition matrix |
 | `/train reset` | Delete model, retrain from scratch |
+| `/train threshold <N>` | Set confidence threshold (10-99%) |
+
+## Stall Prediction & Agent Redirect
+
+The Maker tracks agent sequences that historically led to stalls. When a similar pattern is detected:
+
+1. **Predict stall** — subsequence overlap ≥60% against known stall patterns
+2. **Redirect** — `routeExcluding(triedAgents)` picks the next-best agent from the Markov matrix
+3. **Max 2 redirects** — if all alternatives exhausted, wrap up via Coordinator summary
+4. **Learn** — on every failed/escalated goal, the agent sequence is stored as a stall pattern
+
+```
+Coder stuck 4 turns → Redirect to Architect → Architect provides design → Coder finishes
+```
 
 ## Configuration
 
@@ -231,6 +251,7 @@ ROUTE DIRECTLY → Tester
 ## Future Improvements
 
 - Order-2 Markov: consider last 2 agents for better sequence prediction
-- TF-IDF classification: replace keyword matching with statistical text features
+- Semantic fallback: small ONNX embedding model for truly novel phrasing
 - Feedback loop: detect when Coordinator overrides the Markov decision and learn from it
-- Per-user models: different routing profiles for different usage patterns
+- Per-project pattern isolation: "compose" means Android in one project, Docker in another
+- Confidence blending: weighted sum of static + learned + history signals

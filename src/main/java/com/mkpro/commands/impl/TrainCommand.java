@@ -108,6 +108,9 @@ public class TrainCommand implements Command {
             System.out.println("\n  Category → Top Agent:");
             for (var entry : matrix.entrySet()) {
                 String category = entry.getKey();
+                // Skip GENERAL — it's not a real routing category
+                if ("GENERAL".equals(category)) continue;
+                
                 var agents = entry.getValue();
                 int total = agents.values().stream().mapToInt(Integer::intValue).sum();
                 
@@ -125,6 +128,59 @@ public class TrainCommand implements Command {
                     category, topAgent, pct, total));
             }
         }
+        
+        // Show learned patterns
+        var learnedPatterns = router.getLearnedPatterns();
+        if (learnedPatterns != null && !learnedPatterns.isEmpty()) {
+            System.out.println("\n  Learned Patterns (from training data):");
+            for (var entry : learnedPatterns.entrySet()) {
+                String category = entry.getKey();
+                var patterns = entry.getValue();
+                // Show first 5 patterns per category
+                java.util.List<String> display = new java.util.ArrayList<>(patterns);
+                String preview = String.join(", ", display.subList(0, Math.min(5, display.size())));
+                if (display.size() > 5) preview += " (+" + (display.size() - 5) + " more)";
+                System.out.println("    " + String.format("%-15s: %s", category, preview));
+            }
+        }
+
+        // Show transition probabilities
+        var transitions = router.getTransitionMatrix();
+        if (!transitions.isEmpty()) {
+            System.out.println("\n  Transition Probabilities (P(next | category, last)):");
+            for (var catEntry : transitions.entrySet()) {
+                String category = catEntry.getKey();
+                if ("GENERAL".equals(category)) continue;
+                var lastAgentMap = catEntry.getValue();
+                
+                System.out.println("    " + ANSI_CYAN + category + ANSI_RESET + ":");
+                for (var lastEntry : lastAgentMap.entrySet()) {
+                    String lastAgent = lastEntry.getKey();
+                    var nextAgents = lastEntry.getValue();
+                    int total = nextAgents.values().stream().mapToInt(Integer::intValue).sum();
+                    
+                    // Show top 3 transitions from this agent
+                    java.util.List<java.util.Map.Entry<String, Integer>> sorted = new java.util.ArrayList<>(nextAgents.entrySet());
+                    sorted.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+                    
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(String.format("      %-15s → ", lastAgent));
+                    int shown = 0;
+                    for (var next : sorted) {
+                        if (shown >= 3) break;
+                        int pct = total > 0 ? (next.getValue() * 100 / total) : 0;
+                        if (pct < 5) break; // Skip tiny probabilities
+                        if (shown > 0) sb.append(", ");
+                        sb.append(next.getKey()).append("(").append(pct).append("%)");
+                        shown++;
+                    }
+                    if (shown > 0) {
+                        System.out.println(sb.toString());
+                    }
+                }
+            }
+        }
+        
         System.out.println();
     }
 

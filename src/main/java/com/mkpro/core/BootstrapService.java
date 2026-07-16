@@ -112,32 +112,32 @@ public class BootstrapService {
             if (context.getSessionService() instanceof AutoCloseable) {
                 try {
                     ((AutoCloseable) context.getSessionService()).close();
-                } catch (Exception e) {
-                    // Ignore
+                } catch (Throwable e) {
+                    // Ignore — classes may be unloaded during shutdown
                 }
             }
 
             if (context.getArtifactService() instanceof AutoCloseable) {
                 try {
                     ((AutoCloseable) context.getArtifactService()).close();
-                } catch (Exception e) {
-                    // Ignore
+                } catch (Throwable e) {
+                    // Ignore — classes may be unloaded during shutdown
                 }
             }
 
             if (context.getVectorStore() instanceof MapDBVectorStore) {
                 try {
                     ((MapDBVectorStore) context.getVectorStore()).close();
-                } catch (Exception e) {
-                    // Ignore
+                } catch (Throwable e) {
+                    // Ignore — MapDB's CleanerUtil may be unloaded during shutdown
                 }
             }
 
             if (context.getCentralMemory() != null) {
                 try {
                     context.getCentralMemory().close();
-                } catch (Exception e) {
-                    // Ignore
+                } catch (Throwable e) {
+                    // Ignore — MapDB may be partially unloaded during shutdown
                 }
             }
         }));
@@ -400,6 +400,42 @@ public class BootstrapService {
                 session = context.getSessionService().createSession(sessionKey, new java.util.HashMap<>()).blockingGet();
             }
             context.setCurrentSession(session);
+
+            // Show session resume summary if there's history
+            if (session.events() != null && !session.events().isEmpty()) {
+                int eventCount = session.events().size();
+                // Count user messages
+                long userMsgs = session.events().stream()
+                    .filter(e -> "user".equals(e.author()))
+                    .count();
+                System.out.println(ANSI_CYAN + "── Session resumed (" + userMsgs + " exchanges, " + eventCount + " events). Use /history to review. ──" + ANSI_RESET);
+                
+                // Show last 3 exchanges
+                var events = session.events();
+                int shown = 0;
+                for (int i = events.size() - 1; i >= 0 && shown < 6; i--) {
+                    var event = events.get(i);
+                    if (event.content().isPresent()) {
+                        StringBuilder textBuilder = new StringBuilder();
+                        event.content().get().parts().ifPresent(parts -> {
+                            for (var part : parts) {
+                                part.text().ifPresent(textBuilder::append);
+                            }
+                        });
+                        String text = textBuilder.toString();
+                        if (!text.isBlank()) {
+                            String role = "user".equals(event.author()) ? "You" : "AI";
+                            String preview = text.length() > 100 ? text.substring(0, 100) + "..." : text;
+                            preview = preview.replace("\n", " ").trim();
+                            if (!preview.isEmpty()) {
+                                System.out.println(ANSI_DIM + "  " + role + ": " + preview + ANSI_RESET);
+                                shown++;
+                            }
+                        }
+                    }
+                }
+                if (shown > 0) System.out.println(ANSI_CYAN + "──────────────────────────────────────────" + ANSI_RESET);
+            }
 
             System.out.println(ANSI_BRIGHT_GREEN + "Services initialized successfully." + ANSI_RESET);
         } catch (Exception e) {

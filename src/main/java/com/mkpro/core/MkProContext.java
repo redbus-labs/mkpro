@@ -61,6 +61,8 @@ public class MkProContext {
     private AgentManager agentManager;
     private com.mkpro.routing.MarkovRouter markovRouter;
     private com.mkpro.routing.MakerLoop makerLoop;
+    private com.mkpro.web.WebChatServer webChatServer;
+    private final java.util.concurrent.LinkedBlockingQueue<String> webInputQueue = new java.util.concurrent.LinkedBlockingQueue<>();
 
     public MkProContext() {
     }
@@ -374,6 +376,25 @@ public class MkProContext {
 
     public void setMakerLoop(com.mkpro.routing.MakerLoop makerLoop) {
         this.makerLoop = makerLoop;
+    }
+
+    public com.mkpro.web.WebChatServer getWebChatServer() {
+        return webChatServer;
+    }
+
+    public void setWebChatServer(com.mkpro.web.WebChatServer webChatServer) {
+        this.webChatServer = webChatServer;
+    }
+
+    public void queueWebInput(String text) {
+        webInputQueue.offer(text);
+    }
+
+    /**
+     * Poll for web input (non-blocking). Returns null if no input queued.
+     */
+    public String pollWebInput() {
+        return webInputQueue.poll();
     }
 
     public Terminal getTerminal() {

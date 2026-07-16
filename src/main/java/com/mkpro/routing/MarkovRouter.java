@@ -26,6 +26,12 @@ public class MarkovRouter {
     // category -> {agent -> count} (ignoring history, just category → agent mapping)
     private final Map<String, Map<String, Integer>> categoryToAgent = new ConcurrentHashMap<>();
 
+    // Learned patterns from training data (category → set of distinctive tokens/bigrams)
+    private Map<String, java.util.Set<String>> learnedPatterns = new ConcurrentHashMap<>();
+    
+    // Stall patterns: sequences that historically led to escalation (category → list of agent sequences)
+    private final Map<String, java.util.List<java.util.List<String>>> stallPatterns = new ConcurrentHashMap<>();
+
     private double confidenceThreshold;
     private int totalObservations = 0;
 
@@ -86,6 +92,28 @@ public class MarkovRouter {
     }
 
     /**
+     * Route to the best agent for a category, EXCLUDING agents already tried.
+     * Used by Maker to redirect on stall — picks the next-best alternative.
+     *
+     * @param category The task category
+     * @param excludeAgents Agents to exclude (already tried and stuck)
+     * @return The best alternative agent, or null if all exhausted
+     */
+    public String routeExcluding(IntentClassifier.TaskCategory category, java.util.Set<String> excludeAgents) {
+        String catKey = category.name();
+        Map<String, Integer> catCounts = categoryToAgent.get(catKey);
+        if (catCounts == null || catCounts.isEmpty()) return null;
+
+        // Sort by count descending, pick first not in exclude set
+        return catCounts.entrySet().stream()
+            .filter(e -> !excludeAgents.contains(e.getKey()))
+            .filter(e -> !"Coordinator".equals(e.getKey()))
+            .max(java.util.Map.Entry.comparingByValue())
+            .map(java.util.Map.Entry::getKey)
+            .orElse(null);
+    }
+
+    /**
      * Record an observed transition (used during training and live learning).
      */
     public void recordTransition(IntentClassifier.TaskCategory category, String lastAgent, String selectedAgent) {
@@ -123,6 +151,70 @@ public class MarkovRouter {
         return confidenceThreshold;
     }
 
+    public Map<String, java.util.Set<String>> getLearnedPatterns() {
+        return learnedPatterns;
+    }
+
+    public void setLearnedPatterns(Map<String, java.util.Set<String>> patterns) {
+        this.learnedPatterns.clear();
+        if (patterns != null) {
+            this.learnedPatterns.putAll(patterns);
+        }
+    }
+
+    /**
+     * Record a stall pattern: the agent sequence that led to escalation.
+     */
+    public void recordStall(IntentClassifier.TaskCategory category, java.util.List<String> agentSequence) {
+        if (agentSequence == null || agentSequence.size() < 2) return;
+        stallPatterns
+            .computeIfAbsent(category.name(), k -> java.util.Collections.synchronizedList(new java.util.ArrayList<>()))
+            .add(new java.util.ArrayList<>(agentSequence));
+        // Keep max 50 patterns per category
+        var patterns = stallPatterns.get(category.name());
+        while (patterns.size() > 50) {
+            patterns.remove(0);
+        }
+    }
+
+    /**
+     * Predict probability of stall based on current agent sequence.
+     * Matches against stored stall patterns using subsequence overlap.
+     * 
+     * @return P(stall) between 0.0 and 1.0
+     */
+    public double predictStall(IntentClassifier.TaskCategory category, java.util.List<String> currentSequence) {
+        if (currentSequence == null || currentSequence.size() < 2) return 0.0;
+        var patterns = stallPatterns.get(category.name());
+        if (patterns == null || patterns.isEmpty()) return 0.0;
+
+        int matches = 0;
+        for (var pattern : patterns) {
+            if (sequenceOverlap(currentSequence, pattern) >= 0.6) {
+                matches++;
+            }
+        }
+        return (double) matches / patterns.size();
+    }
+
+    /**
+     * Calculate overlap between two agent sequences (0.0 - 1.0).
+     * Measures how much of the current sequence matches a known stall pattern.
+     */
+    private double sequenceOverlap(java.util.List<String> current, java.util.List<String> pattern) {
+        if (current.isEmpty() || pattern.isEmpty()) return 0.0;
+        
+        // Check suffix match: does the end of current look like the start of a stall?
+        int matchLen = Math.min(current.size(), pattern.size());
+        int matched = 0;
+        for (int i = 0; i < matchLen; i++) {
+            if (current.get(current.size() - matchLen + i).equals(pattern.get(i))) {
+                matched++;
+            }
+        }
+        return (double) matched / matchLen;
+    }
+
     /**
      * Save the transition matrix to disk.
      */
@@ -131,6 +223,18 @@ public class MarkovRouter {
             oos.writeObject(new HashMap<>(transitions));
             oos.writeObject(new HashMap<>(categoryToAgent));
             oos.writeInt(totalObservations);
+            // v2: learned patterns
+            HashMap<String, java.util.Set<String>> serializablePatterns = new HashMap<>();
+            for (var e : learnedPatterns.entrySet()) {
+                serializablePatterns.put(e.getKey(), new java.util.HashSet<>(e.getValue()));
+            }
+            oos.writeObject(serializablePatterns);
+            // v3: stall patterns
+            HashMap<String, java.util.List<java.util.List<String>>> serializableStalls = new HashMap<>();
+            for (var e : stallPatterns.entrySet()) {
+                serializableStalls.put(e.getKey(), new java.util.ArrayList<>(e.getValue()));
+            }
+            oos.writeObject(serializableStalls);
         }
     }
 
@@ -146,6 +250,16 @@ public class MarkovRouter {
             Map<String, Map<String, Integer>> loadedCat = (Map<String, Map<String, Integer>>) ois.readObject();
             categoryToAgent.putAll(loadedCat);
             totalObservations = ois.readInt();
+            // v2: try reading learned patterns (may not exist in old models)
+            try {
+                Map<String, java.util.Set<String>> loadedPatterns = (Map<String, java.util.Set<String>>) ois.readObject();
+                if (loadedPatterns != null) learnedPatterns.putAll(loadedPatterns);
+            } catch (Exception e) { /* Old model without patterns */ }
+            // v3: try reading stall patterns
+            try {
+                Map<String, java.util.List<java.util.List<String>>> loadedStalls = (Map<String, java.util.List<java.util.List<String>>>) ois.readObject();
+                if (loadedStalls != null) stallPatterns.putAll(loadedStalls);
+            } catch (Exception e) { /* Old model without stall data */ }
         }
     }
 
@@ -177,6 +291,13 @@ public class MarkovRouter {
      */
     public Map<String, Map<String, Integer>> getCategoryToAgentMatrix() {
         return Collections.unmodifiableMap(categoryToAgent);
+    }
+
+    /**
+     * Get the full transition matrix: category → lastAgent → {nextAgent → count}
+     */
+    public Map<String, Map<String, Map<String, Integer>>> getTransitionMatrix() {
+        return Collections.unmodifiableMap(transitions);
     }
 
     // ==========================================================================

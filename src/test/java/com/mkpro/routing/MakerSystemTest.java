@@ -144,9 +144,11 @@ public class MakerSystemTest {
         maker.setMaxRetries(2);
         maker.onUserInput("fix complex issue");
         maker.onTurnComplete("Coder", List.of(), false); // retry 1
-        maker.onTurnComplete("Coder", List.of(), false); // retry 2
-        MarkovRouter.MakerAction action = maker.onTurnComplete("Coder", List.of(), false); // exceeds
+        MarkovRouter.MakerAction action = maker.onTurnComplete("Coder", List.of(), false); // retry 2 - exceeds max
         assertEquals(MarkovRouter.MakerAction.ESCALATE, action);
+        // Next turn wraps up (Coordinator summarizes)
+        MarkovRouter.MakerAction wrapUp = maker.onTurnComplete("Coordinator", List.of(), true);
+        assertEquals(MarkovRouter.MakerAction.COMPLETE, wrapUp);
     }
 
     @Test

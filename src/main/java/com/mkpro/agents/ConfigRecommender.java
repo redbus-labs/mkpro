@@ -36,27 +36,21 @@ public class ConfigRecommender {
     public static void recommendAfterFallback(String agentName, String failedModel, String fallbackModel,
                                                Map<String, AgentConfig> agentConfigs, CentralMemory centralMemory) {
         try {
+            // Skip if fallback is the same as primary (misconfiguration)
+            if (failedModel != null && failedModel.equals(fallbackModel)) {
+                return;
+            }
+            
+            // Don't block the stream — just print the recommendation.
+            // User can apply via /config command later.
             System.out.println();
             System.out.println(ANSI_CYAN + "💡 Recommendation:" + ANSI_RESET);
-            System.out.println(ANSI_YELLOW + "   " + agentName + "'s primary model (" + failedModel + ") failed on this task." + ANSI_RESET);
-            System.out.println(ANSI_YELLOW + "   The fallback (" + fallbackModel + ") succeeded." + ANSI_RESET);
-            System.out.println(ANSI_YELLOW + "   Upgrade " + agentName + " to: " + fallbackModel + "?" + ANSI_RESET);
-            System.out.print(ANSI_CYAN + "   Apply? [y/N]: " + ANSI_RESET);
-            System.out.flush();
-
-            // Read user input — use Console for immediate single-char input
-            String input = readUserInput();
-
-            if (input != null && (input.equalsIgnoreCase("y") || input.equalsIgnoreCase("yes"))) {
-                applyRecommendation(agentName, fallbackModel, agentConfigs, centralMemory);
-                System.out.println(ANSI_GREEN + "   ✓ Updated " + agentName + " to " + fallbackModel + ANSI_RESET);
-            } else {
-                System.out.println("   Skipped. Use '/config " + agentName + " " + fallbackModel + "' to apply later.");
-            }
+            System.out.println(ANSI_YELLOW + "   " + agentName + "'s primary model (" + failedModel + ") failed." + ANSI_RESET);
+            System.out.println(ANSI_YELLOW + "   Fallback (" + fallbackModel + ") succeeded." + ANSI_RESET);
+            System.out.println(ANSI_YELLOW + "   Run: /config " + agentName + " " + fallbackModel + ANSI_RESET);
             System.out.println();
         } catch (Exception e) {
             // Don't let recommendation failures break the flow
-            System.err.println("   (Recommendation prompt failed: " + e.getMessage() + ")");
         }
     }
 

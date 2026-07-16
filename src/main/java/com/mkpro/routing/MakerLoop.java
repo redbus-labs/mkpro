@@ -117,10 +117,22 @@ public class MakerLoop {
             return null;
         }
         
-        // Predict next likely agent
-        MarkovRouter.RoutingDecision next = router.route(currentGoal.getCategory(), 
-            currentGoal.getLastAgent());
+        // Wrap-up: ask Coordinator to summarize and close
+        if (currentGoal.getPhase() == MakerState.GoalPhase.WRAPPING_UP) {
+            return "Summarize what has been accomplished so far for the goal: \"" + 
+                truncate(currentGoal.getGoalDescription(), 80) + 
+                "\". List what was completed and what remains (if anything). Then conclude.";
+        }
         
+        // Redirect: force delegation to a different agent
+        String redirectTarget = currentGoal.getRedirectTarget();
+        if (redirectTarget != null) {
+            currentGoal.setRedirectTarget(null); // Consume it
+            return "Delegate to " + redirectTarget + ": " + currentGoal.getGoalDescription() + 
+                "\n\n(Previous approach with " + currentGoal.getLastAgent() + " was not making progress. Try a different strategy.)";
+        }
+        
+        // Normal continue
         String stimulus = currentGoal.generateStimulus(router);
         String base = "Continue with the current task. " + 
             (stimulus != null ? stimulus : "Proceed to the next step.");
@@ -142,16 +154,33 @@ public class MakerLoop {
      * @param agentUsed Which agent handled the task
      * @param toolsInvoked List of tools that were called
      * @param success Whether the turn succeeded
+     * @param response The full response text (for heuristic completion detection)
      * @return The recommended action
      */
-    public MarkovRouter.MakerAction onTurnComplete(String agentUsed, List<String> toolsInvoked, boolean success) {
+    public MarkovRouter.MakerAction onTurnComplete(String agentUsed, List<String> toolsInvoked, boolean success, String response) {
         if (currentGoal == null) return MarkovRouter.MakerAction.CONTINUE;
+
+        // If we were wrapping up, this turn is the summary — mark complete
+        if (currentGoal.getPhase() == MakerState.GoalPhase.WRAPPING_UP) {
+            currentGoal.setPhase(MakerState.GoalPhase.DONE);
+            learnFromCompletion(true);
+            System.out.println(ANSI_GREEN + "  ✓ [Maker] Goal wrapped up: \"" + 
+                truncate(currentGoal.getGoalDescription(), 60) + "\" (" + 
+                currentGoal.getTurnCount() + " turns)" + ANSI_RESET);
+            return MarkovRouter.MakerAction.COMPLETE;
+        }
 
         // Record this turn
         currentGoal.recordTurn(agentUsed, toolsInvoked, success);
 
         // Show turn progress with reasoning
         double completionProb = router.predictCompletion(currentGoal.getCategory(), currentGoal.getToolSequence());
+        
+        // Heuristic boost: if response contains completion language, boost probability
+        if (response != null && completionProb < 0.75) {
+            completionProb = Math.max(completionProb, detectCompletionFromResponse(response));
+        }
+        
         int avgTurns = router.getAvgTurns(currentGoal.getCategory());
         boolean stalled = router.isStalled(currentGoal.getCategory(), currentGoal.getTurnCount());
         
@@ -169,10 +198,36 @@ public class MakerLoop {
         } else if (!success) {
             thought.append("Last step failed → RETRY (attempt ").append(currentGoal.getRetryCount()).append("/").append(maxRetries).append(")");
         } else if (stalled) {
-            thought.append("Turn count exceeds ").append((int)(avgTurns * 2)).append(" (2x avg) → ESCALATE");
+            // Try redirecting to a different agent before wrapping up
+            java.util.Set<String> triedAgents = new java.util.HashSet<>(currentGoal.getAgentSequence());
+            String alternative = router.routeExcluding(currentGoal.getCategory(), triedAgents);
+            if (alternative != null && currentGoal.getRedirectCount() < 2) {
+                thought.append("Stuck with ").append(triedAgents).append(". Redirecting to ").append(alternative).append(".");
+                currentGoal.incrementRedirectCount();
+                currentGoal.setRedirectTarget(alternative);
+                stalled = false; // Don't escalate — we're redirecting
+            } else {
+                thought.append("All alternatives exhausted → ESCALATE (wrap up)");
+            }
         } else {
-            MarkovRouter.RoutingDecision next = router.route(currentGoal.getCategory(), agentUsed);
-            thought.append("Progress OK. Next likely: ").append(next.agent).append(" (").append((int)(next.confidence * 100)).append("%) → CONTINUE");
+            // Check stall prediction before deciding CONTINUE
+            double stallProb = router.predictStall(currentGoal.getCategory(), currentGoal.getAgentSequence());
+            if (stallProb >= 0.6) {
+                java.util.Set<String> triedAgents = new java.util.HashSet<>(currentGoal.getAgentSequence());
+                String alternative = router.routeExcluding(currentGoal.getCategory(), triedAgents);
+                if (alternative != null && currentGoal.getRedirectCount() < 2) {
+                    thought.append("⚡ Stall predicted (").append((int)(stallProb * 100)).append("%). Redirecting to ").append(alternative).append(".");
+                    currentGoal.incrementRedirectCount();
+                    currentGoal.setRedirectTarget(alternative);
+                    stalled = false; // Don't escalate, redirect instead
+                } else {
+                    thought.append("⚡ Stall predicted, no alternatives → ESCALATE");
+                    stalled = true;
+                }
+            } else {
+                MarkovRouter.RoutingDecision next = router.route(currentGoal.getCategory(), agentUsed);
+                thought.append("Progress OK. Next likely: ").append(next.agent).append(" (").append((int)(next.confidence * 100)).append("%) → CONTINUE");
+            }
         }
         System.out.println(ANSI_PURPLE + thought + ANSI_RESET);
 
@@ -184,6 +239,16 @@ public class MakerLoop {
             success,
             currentGoal.getToolSequence()
         );
+
+        // Override: if completion detected (by model OR heuristic), force COMPLETE
+        if (completionProb >= 0.75 && success) {
+            action = MarkovRouter.MakerAction.COMPLETE;
+        }
+
+        // Override: if redirect target is set, force CONTINUE (auto-continue will handle it)
+        if (currentGoal.getRedirectTarget() != null) {
+            action = MarkovRouter.MakerAction.CONTINUE;
+        }
 
         // Override: if max retries exceeded, escalate
         if (action == MarkovRouter.MakerAction.RETRY && currentGoal.isMaxRetriesExceeded()) {
@@ -216,10 +281,11 @@ public class MakerLoop {
                 break;
 
             case ESCALATE:
-                currentGoal.setPhase(MakerState.GoalPhase.ESCALATED);
-                System.out.println(ANSI_RED + "  ⚠ [Maker] Escalating to user — " + 
-                    (currentGoal.isMaxRetriesExceeded() ? "max retries exceeded" : "stalled") + ANSI_RESET);
-                learnFromCompletion(false);
+                // Instead of stopping, ask Coordinator to summarize and wrap up
+                System.out.println(ANSI_YELLOW + "  ⚠ [Maker] Stall detected (" + currentGoal.getTurnCount() + 
+                    " turns). Asking Coordinator to summarize and conclude." + ANSI_RESET);
+                // Don't mark as failed — let one more turn happen with wrap-up stimulus
+                currentGoal.setPhase(MakerState.GoalPhase.WRAPPING_UP);
                 break;
 
             case CONTINUE:
@@ -286,6 +352,10 @@ public class MakerLoop {
             success,
             currentGoal.getTurnCount()
         );
+        // Record stall pattern on failure/escalation for future prediction
+        if (!success && currentGoal.getAgentSequence().size() >= 2) {
+            router.recordStall(currentGoal.getCategory(), currentGoal.getAgentSequence());
+        }
     }
 
     /**
@@ -312,6 +382,54 @@ public class MakerLoop {
     public void setAutoCompleteThreshold(double t) { this.autoCompleteThreshold = t; }
     public void setEscalateThreshold(double t) { this.escalateThreshold = t; }
     public void setMaxRetries(int r) { this.maxRetries = r; }
+
+    /**
+     * Backward-compatible overload without response text.
+     */
+    public MarkovRouter.MakerAction onTurnComplete(String agentUsed, List<String> toolsInvoked, boolean success) {
+        return onTurnComplete(agentUsed, toolsInvoked, success, null);
+    }
+
+    /**
+     * Heuristic completion detection from response text.
+     * Looks for language indicating the task is done.
+     * Returns a probability (0.0 - 1.0).
+     */
+    private double detectCompletionFromResponse(String response) {
+        if (response == null || response.isEmpty()) return 0.0;
+        
+        String lower = response.toLowerCase();
+        int signals = 0;
+        
+        // Strong completion signals
+        String[] strongSignals = {
+            "has been verified", "has been completed", "has been confirmed",
+            "is complete", "is done", "is finished", "is ready",
+            "successfully", "task complete", "all done",
+            "here's the result", "here are the results",
+            "confirmed that", "everything is working",
+            "operation completed", "operation successful"
+        };
+        
+        for (String signal : strongSignals) {
+            if (lower.contains(signal)) signals += 2;
+        }
+        
+        // Moderate completion signals
+        String[] moderateSignals = {
+            "summary", "in conclusion", "to summarize",
+            "the output shows", "as you can see",
+            "no issues found", "no errors",
+            "working correctly", "functioning properly"
+        };
+        
+        for (String signal : moderateSignals) {
+            if (lower.contains(signal)) signals += 1;
+        }
+        
+        // Cap at 1.0, threshold at 3 signal points for high confidence
+        return Math.min(1.0, signals / 3.0);
+    }
 
     private String truncate(String s, int max) {
         return s.length() <= max ? s : s.substring(0, max) + "...";

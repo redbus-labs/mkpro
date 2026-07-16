@@ -46,20 +46,36 @@ public class MarkovTrainer {
         if (!Files.isDirectory(directory)) return 0;
 
         int total = 0;
+        java.util.Map<String, java.util.List<String>> messagesPerCategory = new java.util.HashMap<>();
+        
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory, "*.jsonl")) {
             for (Path file : stream) {
-                total += trainFromFile(router, file);
+                total += trainFromFile(router, file, messagesPerCategory);
             }
         } catch (IOException e) {
             System.err.println("[MarkovTrainer] Error reading directory: " + e.getMessage());
         }
+        
+        // Extract learned patterns (unigrams + bigrams) and store in router
+        if (!messagesPerCategory.isEmpty()) {
+            java.util.Map<String, java.util.Set<String>> patterns = extractLearnedPatterns(messagesPerCategory);
+            router.setLearnedPatterns(patterns);
+        }
+        
         return total;
+    }
+
+    /**
+     * Train from a single JSONL file, collecting user messages per category.
+     */
+    public static int trainFromFile(MarkovRouter router, Path file) {
+        return trainFromFile(router, file, null);
     }
 
     /**
      * Train from a single JSONL file.
      */
-    public static int trainFromFile(MarkovRouter router, Path file) {
+    public static int trainFromFile(MarkovRouter router, Path file, java.util.Map<String, java.util.List<String>> messagesPerCategory) {
         int count = 0;
         String lastAgent = null;
 
@@ -97,9 +113,19 @@ public class MarkovTrainer {
                             if (category == IntentClassifier.TaskCategory.GENERAL) {
                                 category = inferCategoryFromAgent(selectedAgent);
                             }
-                            router.recordTransition(category, lastAgent, selectedAgent);
-                            lastAgent = selectedAgent;
-                            count++;
+                            // Only record routing transitions for non-GENERAL categories
+                            if (category != IntentClassifier.TaskCategory.GENERAL) {
+                                router.recordTransition(category, lastAgent, selectedAgent);
+                                lastAgent = selectedAgent;
+                                count++;
+                            }
+                            
+                            // Collect user message for pattern learning (all categories including GENERAL-inferred)
+                            if (messagesPerCategory != null && category != IntentClassifier.TaskCategory.GENERAL) {
+                                messagesPerCategory
+                                    .computeIfAbsent(category.name(), k -> new java.util.ArrayList<>())
+                                    .add(userMessage);
+                            }
                         }
                     }
                 } catch (Exception e) {
@@ -113,6 +139,13 @@ public class MarkovTrainer {
         return count;
     }
 
+    // Valid agent names — anything else is a false positive
+    private static final java.util.Set<String> VALID_AGENTS = java.util.Set.of(
+        "Coordinator", "GoalTracker", "Coder", "CodeEditor", "SysAdmin", "GitAgent",
+        "Tester", "DocWriter", "SecurityAuditor", "Architect", "DatabaseAdmin",
+        "DevOps", "DataAnalyst", "AndroidDev", "IosDev"
+    );
+
     /**
      * Extract the agent name from an assistant response.
      */
@@ -122,19 +155,22 @@ public class MarkovTrainer {
         // Try tool-call pattern: "ask_coder", "ask_sys_admin"
         Matcher m = DELEGATION_PATTERN.matcher(response);
         if (m.find()) {
-            return normalizeAgentName(m.group(1));
+            String agent = normalizeAgentName(m.group(1));
+            if (VALID_AGENTS.contains(agent)) return agent;
         }
 
         // Try direct delegation pattern: ">> Delegating to SysAdmin..."
         m = DIRECT_DELEGATION_PATTERN.matcher(response);
         if (m.find()) {
-            return normalizeAgentName(m.group(1));
+            String agent = normalizeAgentName(m.group(1));
+            if (VALID_AGENTS.contains(agent)) return agent;
         }
 
         // Try natural language pattern: "delegate to the Architect"
         m = AGENT_NAME_PATTERN.matcher(response);
         if (m.find()) {
-            return normalizeAgentName(m.group(1));
+            String agent = normalizeAgentName(m.group(1));
+            if (VALID_AGENTS.contains(agent)) return agent;
         }
 
         return null;
@@ -186,6 +222,110 @@ public class MarkovTrainer {
             System.err.println("[MarkovTrainer] Error reading maker sequences: " + e.getMessage());
         }
         return count;
+    }
+
+    // Stopwords to ignore during pattern extraction
+    private static final java.util.Set<String> STOPWORDS = java.util.Set.of(
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "shall", "can", "need", "to", "of", "in",
+        "for", "on", "with", "at", "by", "from", "as", "into", "through",
+        "and", "but", "or", "not", "so", "yet", "all", "any", "some", "no",
+        "than", "too", "very", "just", "if", "when", "where", "how", "what",
+        "which", "who", "this", "that", "these", "those", "it", "its", "he",
+        "she", "they", "them", "we", "us", "me", "my", "your", "his", "her",
+        "our", "their", "i", "you", "please", "also", "about", "up", "out",
+        "then", "here", "there", "now", "make", "like", "get", "go", "see"
+    );
+
+    /**
+     * Extract distinctive unigrams and bigrams per category from collected user messages.
+     * Uses TF-IDF-like scoring: tokens that appear frequently in ONE category but rarely in others.
+     *
+     * @param messagesPerCategory Map of category name to list of user messages
+     * @return Map of category name to set of distinctive patterns (bigrams prefixed with "B:")
+     */
+    static java.util.Map<String, java.util.Set<String>> extractLearnedPatterns(
+            java.util.Map<String, java.util.List<String>> messagesPerCategory) {
+
+        // Count token frequency per category
+        java.util.Map<String, java.util.Map<String, Integer>> categoryTokenCounts = new java.util.HashMap<>();
+        // Count how many categories each token appears in (for IDF)
+        java.util.Map<String, java.util.Set<String>> tokenCategories = new java.util.HashMap<>();
+
+        for (var entry : messagesPerCategory.entrySet()) {
+            String category = entry.getKey();
+            java.util.Map<String, Integer> tokenCounts = new java.util.HashMap<>();
+
+            for (String message : entry.getValue()) {
+                String[] words = message.toLowerCase().replaceAll("[^a-z0-9\\s]", " ").split("\\s+");
+
+                // Unigrams
+                for (String word : words) {
+                    if (word.length() >= 3 && !STOPWORDS.contains(word)) {
+                        tokenCounts.merge(word, 1, Integer::sum);
+                        tokenCategories.computeIfAbsent(word, k -> new java.util.HashSet<>()).add(category);
+                    }
+                }
+
+                // Bigrams
+                for (int i = 0; i < words.length - 1; i++) {
+                    if (words[i].length() >= 2 && words[i + 1].length() >= 2
+                        && !STOPWORDS.contains(words[i]) && !STOPWORDS.contains(words[i + 1])) {
+                        String bigram = "B:" + words[i] + " " + words[i + 1];
+                        tokenCounts.merge(bigram, 1, Integer::sum);
+                        tokenCategories.computeIfAbsent(bigram, k -> new java.util.HashSet<>()).add(category);
+                    }
+                }
+            }
+
+            categoryTokenCounts.put(category, tokenCounts);
+        }
+
+        // Score and select top patterns per category
+        int totalCategories = Math.max(1, messagesPerCategory.size());
+        java.util.Map<String, java.util.Set<String>> result = new java.util.HashMap<>();
+
+        for (var entry : categoryTokenCounts.entrySet()) {
+            String category = entry.getKey();
+            java.util.Map<String, Integer> counts = entry.getValue();
+
+            // Need minimum 5 messages to extract patterns
+            if (messagesPerCategory.get(category).size() < 5) continue;
+
+            // Score each token: TF * IDF
+            java.util.List<java.util.Map.Entry<String, Double>> scored = new java.util.ArrayList<>();
+            for (var tokenEntry : counts.entrySet()) {
+                String token = tokenEntry.getKey();
+                int tf = tokenEntry.getValue();
+
+                // Must appear at least 3 times in this category
+                if (tf < 3) continue;
+
+                // IDF: distinctive means appears in few categories
+                int categoriesWithToken = tokenCategories.getOrDefault(token, java.util.Set.of()).size();
+                double idf = Math.log((double) (totalCategories + 1) / (categoriesWithToken + 1));
+
+                // Boost bigrams (2x weight)
+                double boost = token.startsWith("B:") ? 2.0 : 1.0;
+                double score = tf * idf * boost;
+
+                scored.add(java.util.Map.entry(token, score));
+            }
+
+            // Sort by score descending, keep top 20
+            scored.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
+            java.util.Set<String> topPatterns = new java.util.LinkedHashSet<>();
+            for (int i = 0; i < Math.min(20, scored.size()); i++) {
+                topPatterns.add(scored.get(i).getKey());
+            }
+
+            if (!topPatterns.isEmpty()) {
+                result.put(category, topPatterns);
+            }
+        }
+
+        return result;
     }
 
     /**

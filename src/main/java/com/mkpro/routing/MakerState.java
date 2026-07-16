@@ -15,6 +15,7 @@ public class MakerState {
         RETRYING,     // Failed, retrying
         STALLED,      // No progress detected
         COMPLETING,   // Verifying completion
+        WRAPPING_UP,  // Coordinator summarizing before close
         DONE,         // Verified complete
         ESCALATED     // Handed to user
     }
@@ -25,6 +26,8 @@ public class MakerState {
     private GoalPhase phase;
     private int turnCount;
     private int retryCount;
+    private int redirectCount;
+    private String redirectTarget;
     private final int maxRetries;
     private String lastAgent;
     private boolean lastSuccess;
@@ -45,6 +48,8 @@ public class MakerState {
         this.phase = GoalPhase.ACTIVE;
         this.turnCount = 0;
         this.retryCount = 0;
+        this.redirectCount = 0;
+        this.redirectTarget = null;
         this.maxRetries = maxRetries;
         this.lastAgent = null;
         this.lastSuccess = true;
@@ -139,4 +144,9 @@ public class MakerState {
     public List<String> getAgentSequence() { return agentSequence; }
     public List<String> getToolSequence() { return toolSequence; }
     public long getStartedAt() { return startedAt; }
+    
+    public int getRedirectCount() { return redirectCount; }
+    public void incrementRedirectCount() { redirectCount++; }
+    public String getRedirectTarget() { return redirectTarget; }
+    public void setRedirectTarget(String target) { this.redirectTarget = target; }
 }

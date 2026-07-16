@@ -225,6 +225,9 @@ public class BootstrapService {
             // Seed default public MCP servers on first run (safe, no data leakage)
             seedDefaultMcpServers(context.getCentralMemory());
 
+            // Initialize Groovy script engine with CentralMemory backing
+            com.mkpro.scripting.ScriptTools.init(context.getCentralMemory());
+
             // Networking Initialization
             P2PMessageBus p2pBus = null;
             String instanceId;

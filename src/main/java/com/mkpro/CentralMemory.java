@@ -344,6 +344,79 @@ public class CentralMemory {
         });
     }
 
+    /**
+     * Dump all shared stores as a map of storeName → map of key→value (as strings).
+     * Used by the web MapDB browser for visualization/debugging.
+     */
+    public Map<String, Map<String, String>> dumpAllStores() {
+        Map<String, Map<String, String>> result = new java.util.LinkedHashMap<>();
+        
+        // Shared stores
+        Map<String, Map<String, String>> shared = withSharedDb(db -> {
+            Map<String, Map<String, String>> r = new java.util.LinkedHashMap<>();
+
+            // Memories
+            Map<String, String> memories = db.hashMap("memories", Serializer.STRING, Serializer.STRING).createOrOpen();
+            r.put("memories", new java.util.LinkedHashMap<>(memories));
+
+            // Agent configs
+            Map<String, Object> configs = db.hashMap("agent_configs", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            Map<String, String> configStrings = new java.util.LinkedHashMap<>();
+            configs.forEach((k, v) -> configStrings.put(k, v != null ? v.toString() : "null"));
+            r.put("agent_configs", configStrings);
+
+            // MCP servers
+            Map<String, Object> mcpMap = db.hashMap("mcp_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            Map<String, String> mcpStrings = new java.util.LinkedHashMap<>();
+            mcpMap.forEach((k, v) -> mcpStrings.put(k, v != null ? v.toString() : "null"));
+            r.put("mcp_servers", mcpStrings);
+
+            // Ollama servers
+            Map<String, Object> ollamaMap = db.hashMap("ollama_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            Map<String, String> ollamaStrings = new java.util.LinkedHashMap<>();
+            ollamaMap.forEach((k, v) -> ollamaStrings.put(k, v != null ? v.toString() : "null"));
+            r.put("ollama_servers", ollamaStrings);
+
+            // Goals
+            Map<String, Object> goalsMap = db.hashMap("project_goals", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            Map<String, String> goalStrings = new java.util.LinkedHashMap<>();
+            goalsMap.forEach((k, v) -> goalStrings.put(k, v != null ? v.toString() : "null"));
+            r.put("project_goals", goalStrings);
+
+            return r;
+        });
+        result.putAll(shared);
+
+        // Local stats (agent_stats from local DB)
+        try {
+            List<AgentStat> stats = (List<AgentStat>) localDb.indexTreeList("agent_stats", Serializer.JAVA).createOrOpen();
+            Map<String, String> statsMap = new java.util.LinkedHashMap<>();
+            int count = Math.min(stats.size(), 100); // Last 100 entries
+            for (int i = Math.max(0, stats.size() - count); i < stats.size(); i++) {
+                AgentStat stat = stats.get(i);
+                statsMap.put(String.valueOf(i), stat != null ? stat.toString() : "null");
+            }
+            result.put("agent_stats (local, last 100)", statsMap);
+        } catch (Exception e) {
+            result.put("agent_stats (local)", Map.of("error", e.getMessage()));
+        }
+
+        // Session logs (from ActionLogger)
+        try {
+            List<String> logs = ActionLogger.getLogs();
+            Map<String, String> logMap = new java.util.LinkedHashMap<>();
+            int start = Math.max(0, logs.size() - 50); // Last 50 log entries
+            for (int i = start; i < logs.size(); i++) {
+                logMap.put(String.valueOf(i), logs.get(i));
+            }
+            result.put("session_logs (last 50)", logMap);
+        } catch (Exception e) {
+            result.put("session_logs", Map.of("error", e.getMessage()));
+        }
+
+        return result;
+    }
+
     // ==========================================================================
     // SHARED PATH — Goals (moderate frequency, shared DB)
     // ==========================================================================

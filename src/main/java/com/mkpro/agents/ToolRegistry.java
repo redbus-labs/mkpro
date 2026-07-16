@@ -83,6 +83,13 @@ public class ToolRegistry {
             CentralMemoryTools.recallProjectMemory()
         ));
 
+        // Groovy script engine (core Java only, algorithm/data processing)
+        toolCache.put("scripting", List.of(
+            com.mkpro.scripting.ScriptTools.executeScript(),
+            com.mkpro.scripting.ScriptTools.createScript(),
+            com.mkpro.scripting.ScriptTools.listScripts()
+        ));
+
         // Selenium browser tools
         try {
             toolCache.put("selenium", List.of(

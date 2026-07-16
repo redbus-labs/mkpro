@@ -41,6 +41,7 @@ public class WebChatServer {
     private HttpServer httpServer;
     private ChatWebSocketServer wsServer;
     private volatile WebInputHandler inputHandler;
+    private volatile com.mkpro.CentralMemory centralMemory;
 
     // All connected WebSocket clients
     private final Set<WebSocket> clients = Collections.newSetFromMap(new ConcurrentHashMap<>());
@@ -48,6 +49,13 @@ public class WebChatServer {
     public WebChatServer(int httpPort) {
         this.httpPort = httpPort;
         this.wsPort = httpPort + 1;
+    }
+
+    /**
+     * Set the CentralMemory reference for the /db browser.
+     */
+    public void setCentralMemory(com.mkpro.CentralMemory memory) {
+        this.centralMemory = memory;
     }
 
     /**
@@ -67,6 +75,10 @@ public class WebChatServer {
             String path = exchange.getRequestURI().getPath();
             if ("/".equals(path) || "/index.html".equals(path)) {
                 serveResource(exchange, "/web/index.html", "text/html");
+            } else if ("/db".equals(path)) {
+                serveResource(exchange, "/web/db.html", "text/html");
+            } else if ("/api/db".equals(path)) {
+                serveDbApi(exchange);
             } else {
                 exchange.sendResponseHeaders(404, -1);
                 exchange.close();
@@ -172,6 +184,31 @@ public class WebChatServer {
             }
         } catch (Exception e) {
             // Ignore malformed messages
+        }
+    }
+
+    private void serveDbApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        if (centralMemory == null) {
+            byte[] err = "{\"error\":\"CentralMemory not available\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.sendResponseHeaders(503, err.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+            return;
+        }
+
+        try {
+            java.util.Map<String, java.util.Map<String, String>> stores = centralMemory.dumpAllStores();
+            String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(stores);
+            byte[] content = json.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.sendResponseHeaders(200, content.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(content); }
+        } catch (Exception e) {
+            byte[] err = ("{\"error\":\"" + e.getMessage() + "\"}").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.sendResponseHeaders(500, err.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
         }
     }
 

@@ -297,13 +297,13 @@ export AWS_REGION=your_region
 
 Launch the CLI:
 ```bash
-java -jar target/mkpro-4.0.0.jar
+java -jar target/mkpro-4.1.0.jar
 ```
 
 With Web UI (opens browser chat at http://localhost:8080):
 ```bash
-java -jar target/mkpro-4.0.0.jar --web
-java -jar target/mkpro-4.0.0.jar --web 9090   # custom port
+java -jar target/mkpro-4.1.0.jar --web
+java -jar target/mkpro-4.1.0.jar --web 9090   # custom port
 ```
 
 Or use the native executable (Windows):

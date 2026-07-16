@@ -53,6 +53,7 @@ public class MkPro {
             int webPort = getWebPort(args);
             if (webPort > 0) {
                 com.mkpro.web.WebChatServer webServer = new com.mkpro.web.WebChatServer(webPort);
+                webServer.setCentralMemory(context.getCentralMemory());
                 webServer.start();
                 context.setWebChatServer(webServer);
             }

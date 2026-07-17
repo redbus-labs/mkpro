@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Resolve symlink so running via /usr/local/bin/mkpro still points to project dir
+# Resolve symlink so running via /usr/local/bin works
 SOURCE="${BASH_SOURCE[0]}"
 while [ -L "$SOURCE" ]; do
   SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" &> /dev/null && pwd )"
@@ -19,5 +19,9 @@ if [ ! -f "$JAR_PATH" ]; then
     exit 1
 fi
 
-# Run the application
-java -Dmkpro.db.name=$(basename "$0" .sh) -jar "$JAR_PATH" "$@"
+# Run with web UI + knowledge scheduler enabled
+echo "Starting mkpro with Web UI + Knowledge Scheduler"
+echo "  Web UI:    http://localhost:8080"
+echo "  Knowledge: http://localhost:8080/knowledge"
+echo "  DB Browser: http://localhost:8080/db"
+java -Dmkpro.db.name=$(basename "$0" .sh) -jar "$JAR_PATH" --web --scheduler "$@"

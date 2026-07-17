@@ -14,7 +14,8 @@ if not exist "%JAR_PATH%" (
     exit /b 1
 )
 
-:: Run the application with registry enabled
-java -Dmkpro.db.name=%~n0 -jar "%JAR_PATH%" --enable-registry %*
+:: Run with web UI enabled (default port 8080, WS on 8081)
+echo Starting mkpro with Web UI at http://localhost:8080
+java -Dmkpro.db.name=%~n0 -jar "%JAR_PATH%" --web %*
 
 endlocal

@@ -14,7 +14,11 @@ if not exist "%JAR_PATH%" (
     exit /b 1
 )
 
-:: Run the application with registry enabled
-java -Dmkpro.db.name=%~n0 -jar "%JAR_PATH%" --enable-registry %*
+:: Run with web UI + knowledge scheduler enabled
+echo Starting mkpro with Web UI + Knowledge Scheduler
+echo   Web UI:    http://localhost:8080
+echo   Knowledge: http://localhost:8080/knowledge
+echo   DB Browser: http://localhost:8080/db
+java -Dmkpro.db.name=%~n0 -jar "%JAR_PATH%" --web --scheduler %*
 
 endlocal

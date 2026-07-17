@@ -107,6 +107,7 @@ public class ModelRegistry {
             "meta.llama3-8b-instruct-v1:0", "amazon.titan-text-express-v1"
         ));
         AZURE_MODELS = new ArrayList<>(Arrays.asList(
+            "gpt-5-pro", "gpt-5.5", "gpt-5.1", "gpt-5", "gpt-5-mini",
             "gpt-4o", "gpt-4-turbo", "gpt-35-turbo"
         ));
     }

@@ -177,7 +177,15 @@ public class MkProContext {
             );
 
             // 4. Instantiate a new active runner
-            this.runner = this.agentManager.createRunner(this.agentConfigs, "");
+            Runner newRunner = this.agentManager.createRunner(this.agentConfigs, "");
+            if (newRunner == null) {
+                this.runner = null;
+                this.currentSession = null;
+                System.err.println("\u001b[31mFatal: Runner rebuild failed — no active runner/session.\u001b[0m");
+                System.err.println("\u001b[33mHint: For AZURE set AZURE_OPENAI_API_KEY + AZURE_RESPONSE_ENDPOINT, then /config again (or switch back to GEMINI).\u001b[0m");
+                return;
+            }
+            this.runner = newRunner;
 
             // 5. Establish a clean default session in the new environment
             String sessionId = "default-session";
@@ -195,6 +203,8 @@ public class MkProContext {
 
             System.out.println("\u001b[32mSuccessfully rebuilt active runner & session context.\u001b[0m");
         } catch (Exception e) {
+            this.runner = null;
+            this.currentSession = null;
             System.err.println("Fatal: Rebuild sequence failed - " + e.getMessage());
             e.printStackTrace();
         }

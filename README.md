@@ -92,7 +92,7 @@ agents:
     tools: [file_read, file_write, safe_write, clipboard, shell, selenium]
 ```
 
-Available tool names: `file_read`, `file_write`, `safe_write`, `clipboard`, `shell`, `image`, `codebase_search`, `multi_project_search`, `mcp_scan`, `graph_memory`, `fetch_url`, `stats`, `selenium`.
+Available tool names: `file_read`, `file_write`, `safe_write`, `clipboard`, `shell`, `image`, `codebase_search`, `multi_project_search`, `mcp_scan`, `graph_memory`, `fetch_url`, `stats`, `selenium`, `scripting`.
 
 YAMLs without a `tools` field fall back to name-based assignment for backward compatibility.
 
@@ -158,7 +158,8 @@ Turn complete → predict completion → if P≥75%: COMPLETE
 
 ## 🚀 Key Features
 
-- **Web UI**: Optional browser-based chat interface (`--web` flag). Markdown rendering, syntax highlighting, real-time streaming via WebSocket. Commands work from web too.
+- **Web UI**: Optional browser-based chat interface (`--web` flag). Markdown rendering, syntax highlighting, real-time streaming via WebSocket. Commands work from web too. Includes MapDB browser (`/db`) and Knowledge dashboard (`/knowledge`).
+- **Groovy Script Engine**: Sandboxed Groovy execution for data processing. Agents use `execute_script`, `create_script`, `list_scripts` tools. Scripts persist in CentralMemory, blocked from Runtime/ProcessBuilder/Thread/networking. 30s timeout.
 - **Graph Memory & Visualization**: Agents store structured associative memories in a MapDB-backed graph, viewable via `/visualize`.
 - **Mesh Networking**: Multiple mkpro instances discover each other via mDNS and synchronize memory/graph states in real-time. Automatic reconnection with exponential backoff.
 - **Cross-Instance Agent Communication**: Agents can directly ask agents on peer instances for help. Architect on Instance A can query Architect on Instance B about its project. Peer handshake exchanges project info on connection.
@@ -225,6 +226,8 @@ Turn complete → predict completion → if P≥75%: COMPLETE
 | `/know topic <name>` | Show full report for a specific topic |
 | `/know status` | Show knowledge scheduler status |
 | `/know refresh <name>` | Force refresh a topic (or 'all') |
+| `/know approve <name>` | Promote a discovered sub-topic to scheduled |
+| `/know dismiss <name>` | Discard a pending discovery |
 | `/status` | Show system status, endpoints, and agent assignments |
 | `/help` | Show available commands |
 | `/exit`, `/quit` | Exit the application |
@@ -321,6 +324,20 @@ java -jar target/mkpro-4.1.0.jar --web --scheduler   # both web UI + scheduler
 Or use the native executable (Windows):
 ```bash
 target/mkpro.exe
+```
+
+Or use the convenience launch scripts:
+```bash
+./mkpro-web.sh              # Web UI mode
+./mkpro-scheduler.sh        # Web UI + Knowledge Scheduler
+./mkpro-full.sh             # With instance registry
+```
+
+On Windows:
+```batch
+mkpro-web.bat
+mkpro-scheduler.bat
+mkpro-full.bat
 ```
 
 On first launch, select your execution runner (InMemory, MapDB, or Postgres). Use `/config` to set your default provider and model.

@@ -21,7 +21,7 @@ public class PathValidator {
 
     private PathValidator(List<Path> allowedRoots) {
         this.allowedRoots = Collections.unmodifiableList(allowedRoots);
-        List<String> patterns = new ArrayList<>(List.of(
+        this.blockedPatterns = List.of(
             ".env",
             "id_rsa",
             "id_ed25519",
@@ -30,10 +30,8 @@ public class PathValidator {
             ".aws/credentials",
             ".ssh/",
             "shadow",
-            "passwd",
-            "certs/" // Added per mTLS rotation requirements
-        ));
-        this.blockedPatterns = Collections.unmodifiableList(patterns);
+            "passwd"
+        );
     }
 
     /**
@@ -123,20 +121,8 @@ public class PathValidator {
 
         // Check for sensitive file patterns
         String pathLower = resolved.toString().toLowerCase().replace('\\', '/');
-        
-        // mTLS Protection: Block .key and .p12 files unless accessed by CertManager
-        if ((pathLower.endsWith(".key") || pathLower.endsWith(".p12")) && !isCalledByCertManager()) {
-            throw new SecurityException(
-                "Access denied: access to certificate keys/stores is restricted to CertManager only."
-            );
-        }
-
         for (String pattern : blockedPatterns) {
             if (pathLower.contains(pattern.toLowerCase())) {
-                // Special exception for CertManager accessing the certs/ directory
-                if (pattern.equals("certs/") && isCalledByCertManager()) {
-                    continue;
-                }
                 throw new SecurityException(
                     "Access denied: path '" + pathStr + "' matches blocked sensitive pattern '" + pattern + "'"
                 );
@@ -156,22 +142,12 @@ public class PathValidator {
         } catch (SecurityException e) {
             // Additional check: allow reading from ~/.mkpro/ for config purposes
             Path requested = Paths.get(pathStr).toAbsolutePath().normalize();
-            Path mkproHome = Paths.get(System.getProperty("user.home"), ".mkpro");
-            
-            if (requested.startsWith(mkproHome)) {
+            Path mkproConfig = Paths.get(System.getProperty("user.home"), ".mkpro");
+            if (requested.startsWith(mkproConfig)) {
+                // Still check sensitive patterns
                 String pathLower = requested.toString().toLowerCase().replace('\\', '/');
-                
-                // Still enforce .key/.p12 restriction even in home directory
-                if ((pathLower.endsWith(".key") || pathLower.endsWith(".p12")) && !isCalledByCertManager()) {
-                    throw e;
-                }
-
                 for (String pattern : blockedPatterns) {
                     if (pathLower.contains(pattern.toLowerCase())) {
-                        // Allow CertManager to access certs/ in home dir
-                        if (pattern.equals("certs/") && isCalledByCertManager()) {
-                            continue;
-                        }
                         throw e; // Re-throw original
                     }
                 }
@@ -179,15 +155,6 @@ public class PathValidator {
             }
             throw e;
         }
-    }
-
-    /**
-     * Identifies if the current call stack originates from the CertManager.
-     */
-    private boolean isCalledByCertManager() {
-        return StackWalker.getInstance().walk(s -> 
-            s.anyMatch(frame -> frame.getClassName().contains("CertManager"))
-        );
     }
 
     /**

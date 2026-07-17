@@ -8,6 +8,7 @@ import com.google.adk.models.OllamaBaseLM;
 import com.google.adk.models.Gemini;
 import com.google.adk.models.BedrockBaseLM;
 import com.google.adk.models.AzureBaseLM;
+import com.google.adk.models.SarvamBaseLM;
 import com.google.adk.models.BaseLlm;
 import com.google.adk.runner.Runner;
 import com.google.adk.runner.MapDbRunner;
@@ -202,21 +203,30 @@ public class AgentManager {
     private BaseLlm createLlm(AgentConfig config) {
         if (config == null || config.getProvider() == null) return null;
         
-        switch (config.getProvider()) {
-            case GEMINI:
-                return Gemini.builder()
-                        .apiKey(apiKey)
-                        .modelName(config.getModelName())
-                        .build();
-            case OLLAMA:
-                String resolvedUrl = resolveOllamaUrl(config);
-                return new OllamaBaseLM(config.getModelName(), resolvedUrl);
-            case BEDROCK:
-                return new BedrockBaseLM(config.getModelName());
-            case AZURE:
-                return new AzureBaseLM(config.getModelName());
-            default:
-                return null;
+        try {
+            switch (config.getProvider()) {
+                case GEMINI:
+                    return Gemini.builder()
+                            .apiKey(apiKey)
+                            .modelName(config.getModelName())
+                            .build();
+                case OLLAMA:
+                    String resolvedUrl = resolveOllamaUrl(config);
+                    return new OllamaBaseLM(config.getModelName(), resolvedUrl);
+                case BEDROCK:
+                    return new BedrockBaseLM(config.getModelName());
+                case AZURE:
+                    return new AzureBaseLM(config.getModelName());
+                case SARVAM:
+                    return new SarvamBaseLM(config.getModelName());
+                default:
+                    return null;
+            }
+        } catch (RuntimeException e) {
+            throw new IllegalStateException(
+                "Failed to create LLM for provider=" + config.getProvider()
+                    + " model=" + config.getModelName() + ": " + e.getMessage(),
+                e);
         }
     }
 
@@ -441,6 +451,12 @@ public class AgentManager {
             // Coordinator LLM initialization
             AgentConfig coordConfig = agentConfigs.getOrDefault("Coordinator", new AgentConfig(Provider.OLLAMA, "devstral-small-2"));
             BaseLlm coordLlm = createLlm(coordConfig);
+            if (coordLlm == null) {
+                throw new IllegalStateException(
+                    "Could not create Coordinator LLM for provider=" + coordConfig.getProvider()
+                        + " model=" + coordConfig.getModelName()
+                        + ". For AZURE set AZURE_OPENAI_API_KEY and AZURE_RESPONSE_ENDPOINT.");
+            }
             
             // Build Coordinator instruction: YAML-defined instruction + project context + state memory
             String coordInstruction = fullContext;
@@ -560,6 +576,10 @@ public class AgentManager {
 
         } catch (Exception e) {
             logger.log("ERROR", "Error creating runner: " + e.getMessage());
+            System.err.println("\u001b[31mError creating runner: " + e.getMessage() + "\u001b[0m");
+            if (e.getCause() != null) {
+                System.err.println("\u001b[31m  cause: " + e.getCause().getMessage() + "\u001b[0m");
+            }
             return null;
         }
     }

@@ -151,20 +151,20 @@
   </dependencyManagement>
   <properties>
     <webdrivermanager.version>5.8.0</webdrivermanager.version>
-    <javaparser.version>3.26.2</javaparser.version>
-    <maven.compiler.source>21</maven.compiler.source>
-    <jgrapht.version>1.5.2</jgrapht.version>
     <rxjava.version>3.1.8</rxjava.version>
     <jackson.version>2.18.2</jackson.version>
-    <adk.version>1.3.1-SNAPSHOT</adk.version>
-    <jocl.version>2.0.4</jocl.version>
-    <jline.version>3.26.3</jline.version>
-    <mapdb.version>3.1.0</mapdb.version>
-    <maven.compiler.target>21</maven.compiler.target>
+    <adk.version>1.5.1-SNAPSHOT</adk.version>
     <selenium.version>4.21.0</selenium.version>
     <slf4j.version>2.0.12</slf4j.version>
     <picocli.version>4.7.5</picocli.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <junit.version>5.11.0</junit.version>
+    <javaparser.version>3.26.2</javaparser.version>
+    <maven.compiler.source>21</maven.compiler.source>
+    <jgrapht.version>1.5.2</jgrapht.version>
+    <jocl.version>2.0.4</jocl.version>
+    <jline.version>3.26.3</jline.version>
+    <mapdb.version>3.1.0</mapdb.version>
+    <maven.compiler.target>21</maven.compiler.target>
   </properties>
 </project>

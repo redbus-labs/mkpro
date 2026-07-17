@@ -33,6 +33,7 @@ bedrock:
 azure:
   # GPT-5 Series (Frontier Logic & Adaptive Reasoning)
   - gpt-5.5                                 # Latest flagship frontier multimodal model
+  - gpt-5-pro                               # High-capability GPT-5 Pro deployment
   - gpt-5.1                                 # Advanced adaptive reasoning model
   - gpt-5.1-mini                            # Fast, reasoning-capable lightweight variant
   - gpt-5                                   # Base GPT-5 logic-heavy model

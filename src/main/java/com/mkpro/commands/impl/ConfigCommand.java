@@ -184,6 +184,10 @@ public class ConfigCommand implements Command {
     private void applyConfig(String agent, String providerStr, String model, MkProContext context) {
         try {
             Provider provider = Provider.valueOf(providerStr.toUpperCase());
+
+            if (!validateProviderCredentials(provider, model)) {
+                return;
+            }
             
             // Parse model@server syntax for Ollama per-agent routing
             String serverUrl = null;
@@ -246,6 +250,57 @@ public class ConfigCommand implements Command {
             case "OLLAMA": return ModelRegistry.OLLAMA_MODELS;
             default: return Arrays.asList();
         }
+    }
+
+    /**
+     * Validate provider credentials before persisting config / rebuilding the runner.
+     * Prevents a failed Azure/Sarvam init from wiping the active runner.
+     */
+    private boolean validateProviderCredentials(Provider provider, String model) {
+        if (provider == Provider.AZURE) {
+            List<String> missing = new ArrayList<>();
+            if (isBlankEnv("AZURE_OPENAI_API_KEY")) {
+                missing.add("AZURE_OPENAI_API_KEY");
+            }
+            String lower = model != null ? model.toLowerCase() : "";
+            boolean realtime = lower.contains("realtime");
+            if (realtime) {
+                if (lower.contains("translate")) {
+                    if (isBlankEnv("AZURE_TRANSLATE_ENDPOINT") && isBlankEnv("AZURE_REALTIME_ENDPOINT")) {
+                        missing.add("AZURE_TRANSLATE_ENDPOINT (or AZURE_REALTIME_ENDPOINT)");
+                    }
+                } else if (isBlankEnv("AZURE_REALTIME_ENDPOINT")) {
+                    missing.add("AZURE_REALTIME_ENDPOINT");
+                }
+            } else if (isBlankEnv("AZURE_RESPONSE_ENDPOINT") && isBlankEnv("AZURE_MODEL_ENDPOINT")) {
+                missing.add("AZURE_RESPONSE_ENDPOINT");
+            }
+            if (!missing.isEmpty()) {
+                System.out.println("\u001b[31mCannot configure AZURE — missing environment variables:\u001b[0m");
+                for (String m : missing) {
+                    System.out.println("  - " + m);
+                }
+                System.out.println("Export them in your shell before starting mkpro, e.g.:");
+                System.out.println("  export AZURE_OPENAI_API_KEY=...");
+                System.out.println("  export AZURE_RESPONSE_ENDPOINT=https://<resource>.openai.azure.com/openai/v1/responses");
+                return false;
+            }
+        } else if (provider == Provider.SARVAM) {
+            if (isBlankEnv("SARVAM_API_KEY")) {
+                System.out.println("\u001b[31mCannot configure SARVAM — SARVAM_API_KEY is not set.\u001b[0m");
+                System.out.println("  export SARVAM_API_KEY=...");
+                return false;
+            }
+        } else if (provider == Provider.GEMINI) {
+            // Gemini key may come from config.properties; warn only.
+            // Actual validation happens via Gemini client.
+        }
+        return true;
+    }
+
+    private static boolean isBlankEnv(String name) {
+        String val = System.getenv(name);
+        return val == null || val.isBlank();
     }
 
     private void setFallbackModel(String agentName, String fallbackModel, MkProContext context) {

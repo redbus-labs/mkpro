@@ -169,59 +169,18 @@ public class BootstrapService {
         var scheduler = new com.mkpro.knowledge.KnowledgeScheduler(knowledgeStore, topicIndex, fetcher, topics);
 
         // The analyze callback uses the ADK runner for real LLM analysis
+        // Wrapped with scheduler context flag to prevent circular knowledge requests
         scheduler.setAnalyzeCallback((topicName, prompt) -> {
-            if (context.getRunner() == null || context.getCurrentSession() == null) {
-                System.out.println(ANSI_YELLOW + "[Knowledge] Runner not available for " + topicName + ", storing raw data" + ANSI_RESET);
-                return prompt.length() > 2000 ? prompt.substring(0, 2000) : prompt;
-            }
-
+            com.mkpro.knowledge.RequestKnowledgeTool.enterSchedulerContext();
             try {
-                // Build content message for the agent
-                com.google.genai.types.Content message = com.google.genai.types.Content.fromParts(
-                    new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(prompt)});
-
-                StringBuilder responseText = new StringBuilder();
-                java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-                java.util.concurrent.atomic.AtomicReference<String> errorRef = new java.util.concurrent.atomic.AtomicReference<>();
-
-                context.getRunner().runAsync(context.getCurrentSession().sessionKey(), message)
-                    .blockingSubscribe(
-                        event -> {
-                            event.content().ifPresent(content -> {
-                                content.parts().ifPresent(parts -> {
-                                    for (com.google.genai.types.Part part : parts) {
-                                        part.text().ifPresent(responseText::append);
-                                    }
-                                });
-                            });
-                        },
-                        error -> {
-                            errorRef.set(error.getMessage());
-                            latch.countDown();
-                        },
-                        latch::countDown
-                    );
-
-                latch.await(120, java.util.concurrent.TimeUnit.SECONDS);
-
-                if (errorRef.get() != null) {
-                    System.out.println(ANSI_YELLOW + "[Knowledge] Analysis error for " + topicName + ": " + errorRef.get() + ANSI_RESET);
-                    return null;
-                }
-
-                String result = responseText.toString().trim();
-                if (result.isEmpty()) {
-                    return null;
-                }
-
-                System.out.println(ANSI_GREEN + "[Knowledge] Analysis complete for " + topicName + " (" + result.length() + " chars)" + ANSI_RESET);
-                return result;
-
-            } catch (Exception e) {
-                System.out.println(ANSI_YELLOW + "[Knowledge] Analysis failed for " + topicName + ": " + e.getMessage() + ANSI_RESET);
-                return null;
+                return analyzeWithRunner(context, topicName, prompt);
+            } finally {
+                com.mkpro.knowledge.RequestKnowledgeTool.exitSchedulerContext();
             }
         });
+
+        // Initialize RequestKnowledgeTool
+        com.mkpro.knowledge.RequestKnowledgeTool.init(scheduler, knowledgeStore);
 
         // Rebuild index from existing reports
         for (var report : knowledgeStore.getAllReports()) {
@@ -238,6 +197,63 @@ public class BootstrapService {
         if (!topics.isEmpty()) {
             scheduler.start();
             System.out.println(ANSI_GREEN + "[Knowledge] Scheduler started." + ANSI_RESET);
+        }
+    }
+
+    /**
+     * Run LLM analysis for a knowledge topic via the ADK runner.
+     * Extracted to keep the callback clean and enable scheduler context wrapping.
+     */
+    private String analyzeWithRunner(MkProContext context, String topicName, String prompt) {
+        if (context.getRunner() == null || context.getCurrentSession() == null) {
+            System.out.println(ANSI_YELLOW + "[Knowledge] Runner not available for " + topicName + ", storing raw data" + ANSI_RESET);
+            return prompt.length() > 2000 ? prompt.substring(0, 2000) : prompt;
+        }
+
+        try {
+            com.google.genai.types.Content message = com.google.genai.types.Content.fromParts(
+                new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(prompt)});
+
+            StringBuilder responseText = new StringBuilder();
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicReference<String> errorRef = new java.util.concurrent.atomic.AtomicReference<>();
+
+            context.getRunner().runAsync(context.getCurrentSession().sessionKey(), message)
+                .blockingSubscribe(
+                    event -> {
+                        event.content().ifPresent(content -> {
+                            content.parts().ifPresent(parts -> {
+                                for (com.google.genai.types.Part part : parts) {
+                                    part.text().ifPresent(responseText::append);
+                                }
+                            });
+                        });
+                    },
+                    error -> {
+                        errorRef.set(error.getMessage());
+                        latch.countDown();
+                    },
+                    latch::countDown
+                );
+
+            latch.await(120, java.util.concurrent.TimeUnit.SECONDS);
+
+            if (errorRef.get() != null) {
+                System.out.println(ANSI_YELLOW + "[Knowledge] Analysis error for " + topicName + ": " + errorRef.get() + ANSI_RESET);
+                return null;
+            }
+
+            String result = responseText.toString().trim();
+            if (result.isEmpty()) {
+                return null;
+            }
+
+            System.out.println(ANSI_GREEN + "[Knowledge] Analysis complete for " + topicName + " (" + result.length() + " chars)" + ANSI_RESET);
+            return result;
+
+        } catch (Exception e) {
+            System.out.println(ANSI_YELLOW + "[Knowledge] Analysis failed for " + topicName + ": " + e.getMessage() + ANSI_RESET);
+            return null;
         }
     }
 

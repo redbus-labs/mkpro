@@ -90,6 +90,11 @@ public class ToolRegistry {
             com.mkpro.scripting.ScriptTools.listScripts()
         ));
 
+        // Knowledge request (agents signal knowledge gaps to scheduler)
+        toolCache.put("request_knowledge", List.of(
+            com.mkpro.knowledge.RequestKnowledgeTool.create()
+        ));
+
         // Selenium browser tools
         try {
             toolCache.put("selenium", List.of(

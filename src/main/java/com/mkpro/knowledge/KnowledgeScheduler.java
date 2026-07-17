@@ -351,6 +351,34 @@ public class KnowledgeScheduler {
         return Collections.unmodifiableList(pendingDiscoveries);
     }
 
+    /**
+     * Add a topic requested by an agent. Auto-approved, priority boosted.
+     * This skips the pending discoveries queue and immediately schedules.
+     */
+    public void addAgentRequestedTopic(String topicName, String description, List<String> sources) {
+        // Dedup check
+        if (topicsByName.containsKey(topicName)) {
+            log("Topic '" + topicName + "' already scheduled, skipping agent request.");
+            return;
+        }
+
+        TopicConfig newTopic = new TopicConfig();
+        newTopic.setName(topicName);
+        newTopic.setTitle(topicName);
+        newTopic.setInstruction("Agent knowledge gap: " + description);
+        newTopic.setSources(sources != null && !sources.isEmpty() ? sources : Collections.emptyList());
+        // Priority boost: 50% of default interval
+        newTopic.setRefreshIntervalMinutes(30); // Aggressive initial refresh
+
+        topics.add(newTopic);
+        topicsByName.put(topicName, newTopic);
+
+        log("Agent-requested topic added: " + topicName + " (auto-approved, priority boost)");
+
+        // Schedule immediate refresh
+        executor.schedule(() -> safeRefresh(newTopic), 5, TimeUnit.SECONDS);
+    }
+
     /** Approve a discovered topic — adds it to the scheduler */
     public void approveDiscovery(String name) {
         DiscoveredTopic discovery = pendingDiscoveries.stream()

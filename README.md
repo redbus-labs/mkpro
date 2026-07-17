@@ -149,12 +149,25 @@ Turn complete → predict completion → if P≥75%: COMPLETE
 | **File Access** | `PathValidator` | Restricts all file operations to the project root + temp directory. Blocks path traversal (`../../`), symlink escapes, and sensitive files (.env, id_rsa, .pem, credentials.json, .aws/, .ssh/). |
 | **Shell Execution** | `ShellExecutor` | Enforces timeouts (120s default), output size limits (100KB), stderr capture, and working directory control. Kills processes that exceed limits. |
 | **Message Authentication** | `MessageAuthenticator` | HMAC-SHA256 signing for all P2P mesh messages. Unsigned messages rejected when auth is enabled. |
+| **mTLS Mesh Security** | `CertTools` | Mandatory mutual TLS for all peer-to-peer communication. Zero-downtime rotation using the **Dual-Trust** lifecycle. |
 
 ### Additional Safety Mechanisms
 
 - **Automatic Backups**: `CodeEditor` creates backups before modifications (`Maker.backItUp`).
 - **Enforced Role Delegation**: `SysAdmin` cannot modify code directly — must delegate to `CodeEditor`.
 - **Configurable Policy**: Users can customize the command allowlist via `~/.mkpro/command_policy.yaml`.
+- **Manual Emergency Revocation**: Operators can immediately block compromised nodes by removing them from `~/.mkpro/p2p_whitelist.txt`.
+
+### mTLS & Mesh Operations
+
+For detailed mTLS procedures, refer to:
+- **[mTLS Policy & Recovery](MTLS_POLICY.md)**: Standards, Emergency Revocation, and Recovery guides.
+- **[Rotation Checklist](MTLS_ROTATION_CHECKLIST.md)**: Step-by-step guide for zero-downtime certificate rotation.
+
+**The Dual-Trust Lifecycle:**
+1.  **Phase A (Expansion)**: Nodes trust both the Old and New Root CAs.
+2.  **Phase B (Rotation)**: Node identity certificates are swapped to the New CA.
+3.  **Phase C (Contraction)**: Old Root CA is removed; only the New CA is trusted.
 
 ## 🚀 Key Features
 
@@ -210,6 +223,7 @@ Turn complete → predict completion → if P≥75%: COMPLETE
 | `/network` | Manage mesh networking peers |
 | `/network connect <ip:port>` | Manually connect to a peer instance |
 | `/network peers` | List discovered peers with project info |
+| `/cert` | Show mTLS certificate details and rotation status |
 | `/config fallback <agent> <model@provider>` | Set fallback model for an agent |
 | `/config fallback default <model@provider>` | Set global fallback for all agents |
 | `/remember` | Save a project summary to persistent memory |

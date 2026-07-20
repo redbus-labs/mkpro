@@ -54,6 +54,7 @@ public class MkPro {
             if (webPort > 0) {
                 com.mkpro.web.WebChatServer webServer = new com.mkpro.web.WebChatServer(webPort);
                 webServer.setCentralMemory(context.getCentralMemory());
+                webServer.setContext(context);
                 if (context.getKnowledgeStore() != null && context.getTopicIndex() != null) {
                     webServer.setKnowledgeComponents(context.getKnowledgeStore(), context.getTopicIndex());
                 }
@@ -64,6 +65,11 @@ public class MkPro {
             // 3. Initialize Command Registry
             CommandRegistry registry = new CommandRegistry();
             registerCommands(registry);
+
+            // Wire command registry to web server for /api/command endpoint
+            if (context.getWebChatServer() != null) {
+                context.getWebChatServer().setCommandRegistry(registry);
+            }
             
             // 4. Wire web input handler (web messages processed directly via runner in background thread)
             if (context.getWebChatServer() != null) {

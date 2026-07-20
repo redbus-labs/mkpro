@@ -358,6 +358,80 @@ mkpro-full.bat
 
 On first launch, select your execution runner (InMemory, MapDB, or Postgres). Use `/config` to set your default provider and model.
 
+## 🌐 REST API
+
+When running with `--web`, mkpro exposes a full HTTP REST API alongside the WebSocket chat. No additional configuration needed.
+
+### Endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/chat` | Synchronous chat — send message, get full response |
+| `POST` | `/api/chat/stream` | Streaming chat via Server-Sent Events (SSE) |
+| `POST` | `/api/command` | Execute CLI commands (`/know`, `/train`, `/status`, etc.) |
+| `GET` | `/api/status` | System info (version, runner, scheduler, Markov stats) |
+| `GET` | `/api/agents` | List all agents with tools, model, and provider |
+| `GET` | `/api/knowledge` | All knowledge topics as JSON |
+| `GET` | `/api/knowledge/search?q=` | TF-IDF knowledge search |
+| `GET` | `/api/files?path=` | List project directory contents |
+| `GET` | `/api/file-content?path=` | Read file content (10KB cap) |
+| `GET` | `/api/db` | MapDB store browser (all stores as JSON) |
+
+### Usage Examples
+
+```bash
+# Ask a question (synchronous, blocks until complete)
+curl -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "explain the Markov router architecture"}'
+
+# Stream response (Server-Sent Events)
+curl -N -X POST http://localhost:8080/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"message": "write unit tests for TopicIndex"}'
+
+# Execute a CLI command
+curl -X POST http://localhost:8080/api/command \
+  -H "Content-Type: application/json" \
+  -d '{"command": "/know status"}'
+
+# Get system status
+curl http://localhost:8080/api/status
+
+# List all agents
+curl http://localhost:8080/api/agents
+
+# Search knowledge base
+curl "http://localhost:8080/api/knowledge/search?q=kubernetes+security"
+
+# Browse project files
+curl "http://localhost:8080/api/files?path=src/main/java/com/mkpro"
+```
+
+### Response Format
+
+**POST /api/chat**
+```json
+{
+  "agent": "SecurityAuditor",
+  "response": "Here's my analysis of the security...",
+  "duration_ms": 3200
+}
+```
+
+**POST /api/chat/stream** (SSE events)
+```
+data: {"type":"stream_start","agent":"Coder"}
+data: {"type":"chunk","text":"Here's my analysis..."}
+data: {"type":"chunk","text":" of the code."}
+data: {"type":"stream_end"}
+```
+
+**POST /api/command**
+```json
+{"output": "Knowledge Scheduler Status\n  ✓ kubernetes-security → 2026-07-20T15:30\n..."}
+```
+
 ## 📚 Additional Documentation
 
 - **[Knowledge Scheduler](README_knowledge.md)** — Autonomous topic-based knowledge accumulation, TF-IDF search, topic discovery, confidence scoring, and the self-improving flywheel.

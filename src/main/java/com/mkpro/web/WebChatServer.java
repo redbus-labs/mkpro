@@ -44,6 +44,8 @@ public class WebChatServer {
     private volatile com.mkpro.CentralMemory centralMemory;
     private volatile com.mkpro.knowledge.KnowledgeStore knowledgeStore;
     private volatile com.mkpro.knowledge.TopicIndex topicIndex;
+    private volatile com.mkpro.core.MkProContext mkproContext;
+    private volatile com.mkpro.commands.CommandRegistry commandRegistry;
 
     // All connected WebSocket clients
     private final Set<WebSocket> clients = Collections.newSetFromMap(new ConcurrentHashMap<>());
@@ -66,6 +68,20 @@ public class WebChatServer {
     public void setKnowledgeComponents(com.mkpro.knowledge.KnowledgeStore store, com.mkpro.knowledge.TopicIndex index) {
         this.knowledgeStore = store;
         this.topicIndex = index;
+    }
+
+    /**
+     * Set the MkProContext for REST API access (runner, agents, etc.).
+     */
+    public void setContext(com.mkpro.core.MkProContext context) {
+        this.mkproContext = context;
+    }
+
+    /**
+     * Set the CommandRegistry for /api/command endpoint.
+     */
+    public void setCommandRegistry(com.mkpro.commands.CommandRegistry registry) {
+        this.commandRegistry = registry;
     }
 
     /**
@@ -99,6 +115,16 @@ public class WebChatServer {
                 serveFilesApi(exchange);
             } else if (path.startsWith("/api/file-content")) {
                 serveFileContentApi(exchange);
+            } else if ("/api/chat".equals(path)) {
+                handleChatApi(exchange);
+            } else if ("/api/chat/stream".equals(path)) {
+                handleChatStreamApi(exchange);
+            } else if ("/api/command".equals(path)) {
+                handleCommandApi(exchange);
+            } else if ("/api/status".equals(path)) {
+                handleStatusApi(exchange);
+            } else if ("/api/agents".equals(path)) {
+                handleAgentsApi(exchange);
             } else {
                 exchange.sendResponseHeaders(404, -1);
                 exchange.close();
@@ -315,6 +341,337 @@ public class WebChatServer {
             exchange.sendResponseHeaders(500, err.length);
             try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
         }
+    }
+
+    // ========================================================================
+    // REST API Handlers
+    // ========================================================================
+
+    /**
+     * POST /api/chat — Synchronous chat. Send message, get full response.
+     * Request: {"message": "...", "attachments": [...]}
+     * Response: {"agent": "...", "model": "...", "response": "...", "duration_ms": N}
+     */
+    private void handleChatApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+
+        if (mkproContext == null || mkproContext.getRunner() == null || mkproContext.getCurrentSession() == null) {
+            sendJsonError(exchange, 503, "Runner not available");
+            return;
+        }
+
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            com.fasterxml.jackson.databind.JsonNode req = mapper.readTree(body);
+            String message = req.has("message") ? req.get("message").asText() : "";
+
+            if (message.isBlank()) {
+                sendJsonError(exchange, 400, "message field required");
+                return;
+            }
+
+            // Process attachments (same logic as WebSocket)
+            if (req.has("attachments") && req.get("attachments").isArray()) {
+                StringBuilder contextBuilder = new StringBuilder();
+                for (com.fasterxml.jackson.databind.JsonNode att : req.get("attachments")) {
+                    String name = att.has("name") ? att.get("name").asText() : "file";
+                    String content = att.has("content") ? att.get("content").asText() : "";
+                    contextBuilder.append("--- File: ").append(name).append(" ---\n");
+                    if (content.length() > 10000) {
+                        contextBuilder.append(content, 0, 10000).append("\n... [truncated]\n");
+                    } else {
+                        contextBuilder.append(content);
+                    }
+                    contextBuilder.append("\n--- End: ").append(name).append(" ---\n\n");
+                }
+                message = contextBuilder + message;
+            }
+
+            long startTime = System.currentTimeMillis();
+
+            // Send through runner synchronously
+            com.google.genai.types.Content content = com.google.genai.types.Content.fromParts(
+                new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(message)});
+
+            StringBuilder responseText = new StringBuilder();
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicReference<String> errorRef = new java.util.concurrent.atomic.AtomicReference<>();
+
+            mkproContext.getRunner().runAsync(mkproContext.getCurrentSession().sessionKey(), content)
+                .blockingSubscribe(
+                    event -> {
+                        event.content().ifPresent(c -> {
+                            c.parts().ifPresent(parts -> {
+                                for (com.google.genai.types.Part part : parts) {
+                                    part.text().ifPresent(responseText::append);
+                                }
+                            });
+                        });
+                    },
+                    error -> { errorRef.set(error.getMessage()); latch.countDown(); },
+                    latch::countDown
+                );
+
+            latch.await(120, java.util.concurrent.TimeUnit.SECONDS);
+            long duration = System.currentTimeMillis() - startTime;
+
+            if (errorRef.get() != null) {
+                sendJsonError(exchange, 500, errorRef.get());
+                return;
+            }
+
+            // Get agent info
+            String agent = com.mkpro.agents.AgentManager.lastDelegatedAgent;
+
+            java.util.Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("agent", agent != null ? agent : "Coordinator");
+            response.put("response", responseText.toString());
+            response.put("duration_ms", duration);
+
+            sendJsonResponse(exchange, 200, response);
+
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * POST /api/chat/stream — SSE streaming chat.
+     * Request: {"message": "..."}
+     * Response: Server-Sent Events stream
+     */
+    private void handleChatStreamApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+
+        if (mkproContext == null || mkproContext.getRunner() == null || mkproContext.getCurrentSession() == null) {
+            sendJsonError(exchange, 503, "Runner not available");
+            return;
+        }
+
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            com.fasterxml.jackson.databind.JsonNode req = mapper.readTree(body);
+            String message = req.has("message") ? req.get("message").asText() : "";
+
+            if (message.isBlank()) {
+                sendJsonError(exchange, 400, "message field required");
+                return;
+            }
+
+            // Set SSE headers
+            exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
+            exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+            exchange.getResponseHeaders().set("Connection", "keep-alive");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.sendResponseHeaders(200, 0); // chunked
+
+            OutputStream os = exchange.getResponseBody();
+
+            com.google.genai.types.Content content = com.google.genai.types.Content.fromParts(
+                new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(message)});
+
+            java.util.concurrent.atomic.AtomicBoolean first = new java.util.concurrent.atomic.AtomicBoolean(true);
+
+            mkproContext.getRunner().runAsync(mkproContext.getCurrentSession().sessionKey(), content)
+                .blockingSubscribe(
+                    event -> {
+                        event.content().ifPresent(c -> {
+                            c.parts().ifPresent(parts -> {
+                                for (com.google.genai.types.Part part : parts) {
+                                    part.text().ifPresent(text -> {
+                                        try {
+                                            if (first.compareAndSet(true, false)) {
+                                                String agent = com.mkpro.agents.AgentManager.lastDelegatedAgent;
+                                                String startEvent = "data: " + mapper.writeValueAsString(
+                                                    java.util.Map.of("type", "stream_start", "agent", agent != null ? agent : "Coordinator")) + "\n\n";
+                                                os.write(startEvent.getBytes(StandardCharsets.UTF_8));
+                                                os.flush();
+                                            }
+                                            String chunkEvent = "data: " + mapper.writeValueAsString(
+                                                java.util.Map.of("type", "chunk", "text", text)) + "\n\n";
+                                            os.write(chunkEvent.getBytes(StandardCharsets.UTF_8));
+                                            os.flush();
+                                        } catch (IOException ignored) {}
+                                    });
+                                }
+                            });
+                        });
+                    },
+                    error -> {
+                        try {
+                            String errEvent = "data: " + mapper.writeValueAsString(
+                                java.util.Map.of("type", "error", "message", error.getMessage())) + "\n\n";
+                            os.write(errEvent.getBytes(StandardCharsets.UTF_8));
+                            os.flush();
+                            os.close();
+                        } catch (IOException ignored) {}
+                    },
+                    () -> {
+                        try {
+                            String endEvent = "data: " + mapper.writeValueAsString(
+                                java.util.Map.of("type", "stream_end")) + "\n\n";
+                            os.write(endEvent.getBytes(StandardCharsets.UTF_8));
+                            os.flush();
+                            os.close();
+                        } catch (IOException ignored) {}
+                    }
+                );
+
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * POST /api/command — Execute a CLI command (e.g. /know topics, /train status).
+     * Request: {"command": "/know topics"}
+     * Response: {"output": "..."}
+     */
+    private void handleCommandApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+
+        if (mkproContext == null) {
+            sendJsonError(exchange, 503, "Context not available");
+            return;
+        }
+
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            com.fasterxml.jackson.databind.JsonNode req = mapper.readTree(body);
+            String command = req.has("command") ? req.get("command").asText().trim() : "";
+
+            if (command.isBlank()) {
+                sendJsonError(exchange, 400, "command field required");
+                return;
+            }
+
+            // Capture stdout
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            java.io.PrintStream capture = new java.io.PrintStream(baos, true, StandardCharsets.UTF_8);
+            java.io.PrintStream originalOut = System.out;
+            System.setOut(capture);
+
+            try {
+                if (commandRegistry != null) {
+                    commandRegistry.executeCommand(command, mkproContext);
+                }
+            } finally {
+                System.setOut(originalOut);
+            }
+
+            String output = baos.toString(StandardCharsets.UTF_8);
+            // Strip ANSI escape codes
+            output = output.replaceAll("\u001B\\[[;\\d]*m", "");
+
+            sendJsonResponse(exchange, 200, java.util.Map.of("output", output));
+
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * GET /api/status — System status overview.
+     */
+    private void handleStatusApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        if (mkproContext == null) {
+            sendJsonError(exchange, 503, "Context not available");
+            return;
+        }
+
+        try {
+            java.util.Map<String, Object> status = new java.util.LinkedHashMap<>();
+            status.put("version", "4.1.0");
+            status.put("runner", mkproContext.getCurrentRunnerType().get() != null ?
+                mkproContext.getCurrentRunnerType().get().name() : "UNKNOWN");
+            status.put("scheduler_active", mkproContext.getKnowledgeScheduler() != null);
+            status.put("instance_name", mkproContext.getInstanceName());
+
+            // Agent count
+            if (mkproContext.getAgentManager() != null) {
+                status.put("agent_count", mkproContext.getAgentManager().getAgentDefinitions().size());
+            }
+
+            // Markov router info
+            if (mkproContext.getMarkovRouter() != null) {
+                status.put("markov_observations", mkproContext.getMarkovRouter().getTotalObservations());
+                status.put("markov_threshold", mkproContext.getMarkovRouter().getConfidenceThreshold());
+            }
+
+            sendJsonResponse(exchange, 200, status);
+
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * GET /api/agents — List all agents with their configurations.
+     */
+    private void handleAgentsApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        if (mkproContext == null) {
+            sendJsonError(exchange, 503, "Context not available");
+            return;
+        }
+
+        try {
+            java.util.List<java.util.Map<String, Object>> agents = new java.util.ArrayList<>();
+
+            if (mkproContext.getAgentManager() != null) {
+                for (var def : mkproContext.getAgentManager().getAgentDefinitions().values()) {
+                    java.util.Map<String, Object> agent = new java.util.LinkedHashMap<>();
+                    agent.put("name", def.getName());
+                    agent.put("description", def.getDescription());
+                    agent.put("tools", def.getTools());
+                    agent.put("needs_context", def.isNeedsContext());
+                    if (def.getRoutingKeywords() != null) {
+                        agent.put("routing_keywords", def.getRoutingKeywords());
+                    }
+
+                    // Add current config (model/provider)
+                    var config = mkproContext.getAgentConfigs().get(def.getName());
+                    if (config != null) {
+                        agent.put("provider", config.getProvider().name());
+                        agent.put("model", config.getModelName());
+                    }
+                    agents.add(agent);
+                }
+            }
+
+            sendJsonResponse(exchange, 200, java.util.Map.of("agents", agents));
+
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    // ========================================================================
+    // JSON response helpers
+    // ========================================================================
+
+    private void sendJsonResponse(com.sun.net.httpserver.HttpExchange exchange, int code, Object data) throws IOException {
+        String json = mapper.writeValueAsString(data);
+        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.sendResponseHeaders(code, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) { os.write(bytes); }
+    }
+
+    private void sendJsonError(com.sun.net.httpserver.HttpExchange exchange, int code, String message) throws IOException {
+        sendJsonResponse(exchange, code, java.util.Map.of("error", message != null ? message : "Unknown error"));
     }
 
     private static final java.util.Set<String> EXCLUDED_DIRS = java.util.Set.of(

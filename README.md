@@ -344,6 +344,7 @@ Or use the convenience launch scripts:
 ```bash
 ./mkpro-web.sh              # Web UI mode
 ./mkpro-scheduler.sh        # Web UI + Knowledge Scheduler
+./mkpro-headless.sh         # Headless: Web + Scheduler + MapDB (no interactive prompts)
 ./mkpro-full.sh             # With instance registry
 ```
 
@@ -351,6 +352,7 @@ On Windows:
 ```batch
 mkpro-web.bat
 mkpro-scheduler.bat
+mkpro-headless.bat
 mkpro-full.bat
 ```
 

@@ -8,6 +8,7 @@ import com.google.adk.models.OllamaBaseLM;
 import com.google.adk.models.Gemini;
 import com.google.adk.models.BedrockBaseLM;
 import com.google.adk.models.AzureBaseLM;
+import com.google.adk.models.NvidiaBaseLM;
 import com.google.adk.models.SarvamBaseLM;
 import com.google.adk.models.BaseLlm;
 import com.google.adk.runner.Runner;
@@ -224,6 +225,8 @@ public class AgentManager {
                     return new AzureBaseLM(config.getModelName());
                 case SARVAM:
                     return new SarvamBaseLM(config.getModelName());
+                case NVIDIA:
+                    return new NvidiaBaseLM(config.getModelName());
                 default:
                     return null;
             }

@@ -95,6 +95,10 @@ public class WebChatServer {
                 serveKnowledgeApi(exchange);
             } else if (path.startsWith("/api/knowledge/search")) {
                 serveKnowledgeSearchApi(exchange);
+            } else if (path.startsWith("/api/files")) {
+                serveFilesApi(exchange);
+            } else if (path.startsWith("/api/file-content")) {
+                serveFileContentApi(exchange);
             } else {
                 exchange.sendResponseHeaders(404, -1);
                 exchange.close();
@@ -192,8 +196,44 @@ public class WebChatServer {
         try {
             ObjectNode msg = (ObjectNode) mapper.readTree(json);
             String type = msg.has("type") ? msg.get("type").asText() : "";
-            if ("user_input".equals(type) && msg.has("text")) {
-                String text = msg.get("text").asText().trim();
+            if ("user_input".equals(type)) {
+                String text = msg.has("text") ? msg.get("text").asText().trim() : "";
+
+                // Process file attachments — prepend content to the message
+                if (msg.has("attachments") && msg.get("attachments").isArray()) {
+                    StringBuilder contextBuilder = new StringBuilder();
+                    for (com.fasterxml.jackson.databind.JsonNode attachment : msg.get("attachments")) {
+                        String name = attachment.has("name") ? attachment.get("name").asText() : "file";
+                        String content = attachment.has("content") ? attachment.get("content").asText() : "";
+                        boolean isImage = attachment.has("isImage") && attachment.get("isImage").asBoolean();
+
+                        if (isImage) {
+                            // For images, include as a data URL reference (vision tool can process)
+                            contextBuilder.append("[Attached image: ").append(name).append("]\n");
+                            // Store image data URL — truncate display but keep reference
+                            if (content.length() > 100) {
+                                contextBuilder.append("[Image data: ").append(content.substring(0, 50)).append("...]\n\n");
+                            }
+                        } else {
+                            // For text files, include content directly
+                            contextBuilder.append("--- File: ").append(name).append(" ---\n");
+                            // Cap at 10000 chars per file to prevent token overflow
+                            if (content.length() > 10000) {
+                                contextBuilder.append(content, 0, 10000);
+                                contextBuilder.append("\n... [truncated, ").append(content.length()).append(" chars total]\n");
+                            } else {
+                                contextBuilder.append(content);
+                            }
+                            contextBuilder.append("\n--- End: ").append(name).append(" ---\n\n");
+                        }
+                    }
+
+                    // Prepend file context to user message
+                    if (contextBuilder.length() > 0) {
+                        text = contextBuilder.toString() + (text.isEmpty() ? "Analyze the attached file(s)." : text);
+                    }
+                }
+
                 if (!text.isEmpty() && inputHandler != null) {
                     inputHandler.onWebInput(text);
                 }
@@ -269,6 +309,168 @@ public class WebChatServer {
             exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
             exchange.sendResponseHeaders(200, content.length);
             try (OutputStream os = exchange.getResponseBody()) { os.write(content); }
+        } catch (Exception e) {
+            byte[] err = ("{\"error\":\"" + e.getMessage() + "\"}").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.sendResponseHeaders(500, err.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+        }
+    }
+
+    private static final java.util.Set<String> EXCLUDED_DIRS = java.util.Set.of(
+        "target", ".git", "node_modules", ".mkpro", "build", "out", ".idea", ".vscode", ".gradle", ".cache"
+    );
+
+    private void serveFilesApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        try {
+            // Parse ?path= parameter
+            String relativePath = "";
+            String rawQuery = exchange.getRequestURI().getQuery();
+            if (rawQuery != null) {
+                for (String param : rawQuery.split("&")) {
+                    if (param.startsWith("path=")) {
+                        relativePath = java.net.URLDecoder.decode(param.substring(5), StandardCharsets.UTF_8);
+                    }
+                }
+            }
+
+            // Security: resolve against project root, prevent traversal
+            java.nio.file.Path projectRoot = java.nio.file.Paths.get("").toAbsolutePath();
+            java.nio.file.Path targetDir = projectRoot.resolve(relativePath).normalize();
+            if (!targetDir.startsWith(projectRoot)) {
+                byte[] err = "{\"error\":\"Access denied\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+                exchange.sendResponseHeaders(403, err.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+                return;
+            }
+
+            if (!java.nio.file.Files.isDirectory(targetDir)) {
+                byte[] err = "{\"error\":\"Not a directory\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+                exchange.sendResponseHeaders(404, err.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+                return;
+            }
+
+            // List directory entries
+            java.util.List<java.util.Map<String, Object>> entries = new java.util.ArrayList<>();
+            try (java.nio.file.DirectoryStream<java.nio.file.Path> stream = java.nio.file.Files.newDirectoryStream(targetDir)) {
+                for (java.nio.file.Path entry : stream) {
+                    String name = entry.getFileName().toString();
+                    boolean isDir = java.nio.file.Files.isDirectory(entry);
+
+                    // Skip excluded directories
+                    if (isDir && EXCLUDED_DIRS.contains(name)) continue;
+                    // Skip hidden files (starting with .)
+                    if (name.startsWith(".") && !name.equals(".mkpro")) continue;
+
+                    java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+                    item.put("name", name);
+                    item.put("type", isDir ? "directory" : "file");
+                    if (!isDir) {
+                        try {
+                            item.put("size", java.nio.file.Files.size(entry));
+                        } catch (Exception e) {
+                            item.put("size", 0);
+                        }
+                    }
+                    entries.add(item);
+                }
+            }
+
+            // Sort: directories first, then alphabetical
+            entries.sort((a, b) -> {
+                boolean aDir = "directory".equals(a.get("type"));
+                boolean bDir = "directory".equals(b.get("type"));
+                if (aDir != bDir) return aDir ? -1 : 1;
+                return ((String) a.get("name")).compareToIgnoreCase((String) b.get("name"));
+            });
+
+            java.util.Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("path", relativePath.isEmpty() ? "." : relativePath);
+            response.put("entries", entries);
+
+            String json = mapper.writeValueAsString(response);
+            byte[] content = json.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.sendResponseHeaders(200, content.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(content); }
+
+        } catch (Exception e) {
+            byte[] err = ("{\"error\":\"" + e.getMessage() + "\"}").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.sendResponseHeaders(500, err.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+        }
+    }
+
+    private void serveFileContentApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        try {
+            String relativePath = "";
+            String rawQuery = exchange.getRequestURI().getQuery();
+            if (rawQuery != null) {
+                for (String param : rawQuery.split("&")) {
+                    if (param.startsWith("path=")) {
+                        relativePath = java.net.URLDecoder.decode(param.substring(5), StandardCharsets.UTF_8);
+                    }
+                }
+            }
+
+            if (relativePath.isEmpty()) {
+                byte[] err = "{\"error\":\"path parameter required\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+                exchange.sendResponseHeaders(400, err.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+                return;
+            }
+
+            // Security: resolve against project root
+            java.nio.file.Path projectRoot = java.nio.file.Paths.get("").toAbsolutePath();
+            java.nio.file.Path targetFile = projectRoot.resolve(relativePath).normalize();
+            if (!targetFile.startsWith(projectRoot)) {
+                byte[] err = "{\"error\":\"Access denied\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+                exchange.sendResponseHeaders(403, err.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+                return;
+            }
+
+            if (!java.nio.file.Files.isRegularFile(targetFile)) {
+                byte[] err = "{\"error\":\"File not found\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+                exchange.sendResponseHeaders(404, err.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+                return;
+            }
+
+            // Cap at 10KB
+            long fileSize = java.nio.file.Files.size(targetFile);
+            String fileContent;
+            if (fileSize > 10240) {
+                byte[] bytes = new byte[10240];
+                try (java.io.InputStream is = java.nio.file.Files.newInputStream(targetFile)) {
+                    is.read(bytes);
+                }
+                fileContent = new String(bytes, StandardCharsets.UTF_8) + "\n... [truncated at 10KB, total " + fileSize + " bytes]";
+            } else {
+                fileContent = java.nio.file.Files.readString(targetFile, StandardCharsets.UTF_8);
+            }
+
+            java.util.Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("path", relativePath);
+            response.put("name", targetFile.getFileName().toString());
+            response.put("size", fileSize);
+            response.put("content", fileContent);
+
+            String json = mapper.writeValueAsString(response);
+            byte[] content = json.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.sendResponseHeaders(200, content.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(content); }
+
         } catch (Exception e) {
             byte[] err = ("{\"error\":\"" + e.getMessage() + "\"}").getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");

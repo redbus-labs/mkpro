@@ -5,6 +5,15 @@
   <artifactId>mkpro</artifactId>
   <version>4.1.0</version>
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
+        <targetPath>teams</targetPath>
+        <directory>teams</directory>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <artifactId>maven-shade-plugin</artifactId>
@@ -35,45 +44,6 @@
           </execution>
         </executions>
       </plugin>
-      <plugin>
-        <groupId>com.akathist.maven.plugins.launch4j</groupId>
-        <artifactId>launch4j-maven-plugin</artifactId>
-        <version>2.5.2</version>
-        <executions>
-          <execution>
-            <id>l4j-clui</id>
-            <phase>package</phase>
-            <goals>
-              <goal>launch4j</goal>
-            </goals>
-            <configuration>
-              <headerType>console</headerType>
-              <outfile>target/mkpro.exe</outfile>
-              <jar>target/${project.artifactId}-${project.version}.jar</jar>
-              <errTitle>mkpro</errTitle>
-              <classPath>
-                <mainClass>com.mkpro.MkPro</mainClass>
-              </classPath>
-              <jre>
-                <minVersion>21.0.0</minVersion>
-                <path>%JAVA_HOME%</path>
-                <runtimeBits>64</runtimeBits>
-              </jre>
-              <versionInfo>
-                <fileVersion>1.0.0.0</fileVersion>
-                <txtFileVersion>${project.version}</txtFileVersion>
-                <fileDescription>mkpro AI Assistant</fileDescription>
-                <copyright>mkpro</copyright>
-                <productVersion>1.0.0.0</productVersion>
-                <txtProductVersion>${project.version}</txtProductVersion>
-                <productName>mkpro</productName>
-                <internalName>mkpro</internalName>
-                <originalFilename>mkpro.exe</originalFilename>
-              </versionInfo>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
     </plugins>
   </build>
   <dependencies>
@@ -91,10 +61,6 @@
           <artifactId>junit-platform-commons</artifactId>
           <groupId>org.junit.platform</groupId>
         </exclusion>
-        <exclusion>
-          <artifactId>apiguardian-api</artifactId>
-          <groupId>org.apiguardian</groupId>
-        </exclusion>
       </exclusions>
     </dependency>
     <dependency>
@@ -106,22 +72,6 @@
         <exclusion>
           <artifactId>junit-platform-engine</artifactId>
           <groupId>org.junit.platform</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>apiguardian-api</artifactId>
-          <groupId>org.apiguardian</groupId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter-params</artifactId>
-      <version>5.11.0</version>
-      <scope>test</scope>
-      <exclusions>
-        <exclusion>
-          <artifactId>apiguardian-api</artifactId>
-          <groupId>org.apiguardian</groupId>
         </exclusion>
       </exclusions>
     </dependency>
@@ -151,20 +101,21 @@
   </dependencyManagement>
   <properties>
     <webdrivermanager.version>5.8.0</webdrivermanager.version>
+    <javaparser.version>3.26.2</javaparser.version>
+    <maven.compiler.source>21</maven.compiler.source>
+    <mockito.version>5.12.0</mockito.version>
+    <jgrapht.version>1.5.2</jgrapht.version>
     <rxjava.version>3.1.8</rxjava.version>
     <jackson.version>2.18.2</jackson.version>
-    <adk.version>1.5.1-SNAPSHOT</adk.version>
+    <adk.version>1.6.1-SNAPSHOT</adk.version>
+    <jocl.version>2.0.4</jocl.version>
+    <jline.version>3.26.3</jline.version>
+    <mapdb.version>3.1.0</mapdb.version>
+    <maven.compiler.target>21</maven.compiler.target>
     <selenium.version>4.21.0</selenium.version>
     <slf4j.version>2.0.12</slf4j.version>
     <picocli.version>4.7.5</picocli.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <junit.version>5.11.0</junit.version>
-    <javaparser.version>3.26.2</javaparser.version>
-    <maven.compiler.source>21</maven.compiler.source>
-    <jgrapht.version>1.5.2</jgrapht.version>
-    <jocl.version>2.0.4</jocl.version>
-    <jline.version>3.26.3</jline.version>
-    <mapdb.version>3.1.0</mapdb.version>
-    <maven.compiler.target>21</maven.compiler.target>
   </properties>
 </project>

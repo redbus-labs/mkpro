@@ -137,6 +137,7 @@ public class ConfigCommand implements Command {
         providers.add("BEDROCK");
         providers.add("SARVAM");
         providers.add("AZURE");
+        providers.add("NVIDIA");
         
         String providerChoice = ConsoleUtils.selectOption(context, "Select a provider:", providers);
         if (providerChoice == null) return;

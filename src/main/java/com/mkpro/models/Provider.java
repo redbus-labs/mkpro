@@ -8,4 +8,5 @@ public enum Provider implements Serializable {
     BEDROCK,
     SARVAM,
     AZURE,
+    NVIDIA,
 }

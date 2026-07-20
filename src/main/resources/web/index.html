@@ -42,9 +42,110 @@
             gap: 12px;
         }
         .header h1 { font-size: 16px; color: var(--accent); font-weight: 600; }
-        .header .status { font-size: 12px; color: var(--text-dim); }
+        .header .nav-links { margin-left: 16px; display: flex; gap: 12px; }
+        .header .nav-links a { color: var(--cyan); text-decoration: none; font-size: 12px; }
+        .header .nav-links a:hover { text-decoration: underline; }
+        .header .status { font-size: 12px; color: var(--text-dim); margin-left: auto; }
         .header .status.connected { color: var(--green); }
         .header .status.disconnected { color: var(--red); }
+
+        /* Main layout: sidebar + chat */
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* File Browser Sidebar */
+        .sidebar {
+            width: 250px;
+            background: var(--surface);
+            border-right: 1px solid var(--surface2);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: width 0.2s;
+        }
+        .sidebar.collapsed { width: 0; border-right: none; }
+        .sidebar-header {
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--surface2);
+            flex-shrink: 0;
+        }
+        .sidebar-header span { font-size: 12px; color: var(--accent); font-weight: 600; }
+        .sidebar-toggle {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .sidebar-toggle:hover { background: var(--surface2); color: var(--text); }
+        .file-tree {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+            font-size: 12px;
+        }
+        .file-tree::-webkit-scrollbar { width: 4px; }
+        .file-tree::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 2px; }
+        .tree-item {
+            display: flex;
+            align-items: center;
+            padding: 3px 12px;
+            cursor: pointer;
+            gap: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tree-item:hover { background: var(--surface2); }
+        .tree-item.active { background: rgba(122, 162, 247, 0.15); }
+        .tree-item .icon { flex-shrink: 0; font-size: 13px; }
+        .tree-item .name { overflow: hidden; text-overflow: ellipsis; }
+        .tree-item .name.dir { color: var(--cyan); }
+        .tree-item .name.file { color: var(--text); }
+        .tree-children { display: none; }
+        .tree-children.open { display: block; }
+        .tree-item .arrow {
+            font-size: 10px;
+            color: var(--text-dim);
+            flex-shrink: 0;
+            width: 12px;
+            text-align: center;
+            transition: transform 0.15s;
+        }
+        .tree-item .arrow.expanded { transform: rotate(90deg); }
+        .sidebar-toggle-external {
+            position: absolute;
+            left: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--surface2);
+            border: 1px solid var(--surface2);
+            color: var(--text-dim);
+            cursor: pointer;
+            padding: 8px 4px;
+            border-radius: 0 4px 4px 0;
+            font-size: 12px;
+            z-index: 10;
+            display: none;
+        }
+        .sidebar.collapsed ~ .chat-container .sidebar-toggle-external { display: block; }
+
+        /* Chat container (right side) */
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
 
         /* Chat area */
         .chat {
@@ -62,6 +163,13 @@
             border-radius: 12px;
             line-height: 1.6;
             font-size: 14px;
+            position: relative;
+        }
+        .message .timestamp {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 4px;
+            opacity: 0.7;
         }
         .message.user {
             align-self: flex-end;
@@ -69,6 +177,7 @@
             color: #1a1b26;
             border-bottom-right-radius: 4px;
         }
+        .message.user .timestamp { color: rgba(26, 27, 38, 0.6); text-align: right; }
         .message.assistant {
             align-self: flex-start;
             background: var(--surface);
@@ -142,22 +251,82 @@
         .message.assistant a { color: var(--cyan); }
 
         /* Streaming indicator */
-        .streaming::after {
+        .streaming .content::after {
             content: '▊';
             animation: blink 0.8s infinite;
             color: var(--accent);
         }
         @keyframes blink { 50% { opacity: 0; } }
 
+        /* Loading/thinking indicator */
+        .loader {
+            align-self: flex-start;
+            padding: 12px 20px;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        .loader .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: bounce 1.4s ease-in-out infinite;
+        }
+        .loader .dot:nth-child(2) { animation-delay: 0.2s; }
+        .loader .dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+        .loader .loader-text {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-left: 8px;
+        }
+
         /* Input area */
         .input-area {
-            padding: 16px 20px;
+            padding: 12px 20px 16px;
             background: var(--surface);
             border-top: 1px solid var(--surface2);
+        }
+        .attachments-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            min-height: 0;
+        }
+        .attachments-bar:empty { display: none; }
+        .attachment-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--surface2);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 11px;
+            color: var(--cyan);
+        }
+        .attachment-chip .remove {
+            cursor: pointer;
+            color: var(--red);
+            font-weight: bold;
+            font-size: 13px;
+        }
+        .attachment-chip .remove:hover { opacity: 0.7; }
+        .attachment-chip.path-only {
+            border-color: var(--green);
+            color: var(--green);
+        }
+        .input-row {
             display: flex;
             gap: 12px;
+            align-items: center;
         }
-        .input-area input {
+        .input-row input[type="text"] {
             flex: 1;
             background: var(--bg);
             border: 1px solid var(--surface2);
@@ -169,10 +338,23 @@
             outline: none;
             transition: border-color 0.2s;
         }
-        .input-area input:focus {
+        .input-row input[type="text"]:focus {
             border-color: var(--accent);
         }
-        .input-area button {
+        .attach-btn {
+            background: var(--surface2);
+            border: 1px solid var(--surface2);
+            border-radius: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            color: var(--text-dim);
+            font-size: 18px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+        }
+        .attach-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .send-btn {
             background: var(--accent);
             color: #1a1b26;
             border: none;
@@ -184,24 +366,48 @@
             cursor: pointer;
             transition: opacity 0.2s;
         }
-        .input-area button:hover { opacity: 0.9; }
-        .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .send-btn:hover { opacity: 0.9; }
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* Scrollbar */
         .chat::-webkit-scrollbar { width: 6px; }
         .chat::-webkit-scrollbar-track { background: var(--bg); }
         .chat::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
+
+        /* Hidden file input */
+        #fileInput { display: none; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>mkpro</h1>
+        <div class="nav-links">
+            <a href="/knowledge">🧠 Knowledge</a>
+            <a href="/db">📦 DB</a>
+        </div>
         <span class="status disconnected" id="status">● Disconnected</span>
     </div>
-    <div class="chat" id="chat"></div>
-    <div class="input-area">
-        <input type="text" id="input" placeholder="Type a message..." autocomplete="off" />
-        <button id="send" onclick="sendMessage()">Send</button>
+    <div class="main-container">
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <span>📁 Project Files</span>
+                <button class="sidebar-toggle" onclick="toggleSidebar()" title="Hide panel">✕</button>
+            </div>
+            <div class="file-tree" id="fileTree"></div>
+        </div>
+        <div class="chat-container">
+            <button class="sidebar-toggle-external" onclick="toggleSidebar()" title="Show file browser">📁</button>
+            <div class="chat" id="chat"></div>
+            <div class="input-area">
+                <div class="attachments-bar" id="attachments"></div>
+                <div class="input-row">
+                    <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Attach file">📎</button>
+                    <input type="file" id="fileInput" multiple accept=".txt,.java,.py,.js,.ts,.json,.yaml,.yml,.md,.csv,.log,.xml,.html,.css,.sh,.bat,.sql,.groovy,.kt,.swift,.rs,.go,.c,.cpp,.h,.png,.jpg,.jpeg,.gif,.webp" onchange="handleFiles(event)" />
+                    <input type="text" id="input" placeholder="Type a message..." autocomplete="off" />
+                    <button class="send-btn" id="send" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
@@ -222,11 +428,94 @@
         const input = document.getElementById('input');
         const sendBtn = document.getElementById('send');
         const statusEl = document.getElementById('status');
+        const attachmentsBar = document.getElementById('attachments');
 
         let ws = null;
-        let currentMessage = null; // Currently streaming message element
+        let currentMessage = null;
         let streamBuffer = '';
+        let loaderEl = null;
+        let pendingAttachments = []; // {name, content, type, isImage}
 
+        // ========== Timestamp helper ==========
+        function getTimestamp() {
+            const now = new Date();
+            return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // ========== File Attachments ==========
+        function handleFiles(event) {
+            const files = event.target.files;
+            for (const file of files) {
+                const isImage = file.type.startsWith('image/');
+                const reader = new FileReader();
+
+                if (isImage) {
+                    reader.onload = (e) => {
+                        pendingAttachments.push({
+                            name: file.name,
+                            content: e.target.result, // base64 data URL
+                            type: file.type,
+                            isImage: true
+                        });
+                        renderAttachments();
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    reader.onload = (e) => {
+                        pendingAttachments.push({
+                            name: file.name,
+                            content: e.target.result,
+                            type: file.type || 'text/plain',
+                            isImage: false
+                        });
+                        renderAttachments();
+                    };
+                    reader.readAsText(file);
+                }
+            }
+            // Reset input so same file can be re-attached
+            event.target.value = '';
+        }
+
+        function renderAttachments() {
+            attachmentsBar.innerHTML = pendingAttachments.map((a, i) => {
+                const icon = a.isImage ? '🖼️' : (a.isPathOnly ? '📌' : '📄');
+                const label = a.isPathOnly ? a.path : a.name;
+                return `<div class="attachment-chip${a.isPathOnly ? ' path-only' : ''}">
+                    ${icon} ${label}
+                    <span class="remove" onclick="removeAttachment(${i})">✕</span>
+                </div>`;
+            }).join('');
+        }
+
+        function removeAttachment(index) {
+            pendingAttachments.splice(index, 1);
+            renderAttachments();
+        }
+
+        // ========== Loading Indicator ==========
+        function showLoader() {
+            if (loaderEl) return;
+            loaderEl = document.createElement('div');
+            loaderEl.className = 'loader';
+            loaderEl.innerHTML = `
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <span class="loader-text">Thinking...</span>
+            `;
+            chat.appendChild(loaderEl);
+            scrollToBottom();
+        }
+
+        function hideLoader() {
+            if (loaderEl) {
+                loaderEl.remove();
+                loaderEl = null;
+            }
+        }
+
+        // ========== WebSocket ==========
         function connect() {
             const wsPort = {{WS_PORT}};
             ws = new WebSocket(`ws://${location.hostname}:${wsPort}`);
@@ -243,13 +532,10 @@
                 statusEl.className = 'status disconnected';
                 input.disabled = true;
                 sendBtn.disabled = true;
-                // Reconnect after 3s
                 setTimeout(connect, 3000);
             };
 
-            ws.onerror = () => {
-                ws.close();
-            };
+            ws.onerror = () => { ws.close(); };
 
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
@@ -262,29 +548,25 @@
                 case 'system':
                     addSystemMessage(msg.text);
                     break;
-
                 case 'stream_start':
+                    hideLoader();
                     startStreaming(msg.agent, msg.model);
                     break;
-
                 case 'stream_chunk':
+                    hideLoader();
                     appendChunk(msg.text);
                     break;
-
                 case 'stream_end':
+                    hideLoader();
                     endStreaming();
                     break;
-
                 case 'maker':
                     addMakerMessage(msg.message);
                     break;
-
                 case 'routing':
                     addRoutingMessage(msg.message);
                     break;
-
                 case 'delegation':
-                    // Update current message badge if streaming
                     if (currentMessage) {
                         const badge = currentMessage.querySelector('.agent-badge');
                         if (badge) badge.textContent = msg.agent;
@@ -293,24 +575,63 @@
             }
         }
 
+        // ========== Send Message ==========
         function sendMessage() {
             const text = input.value.trim();
-            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+            if ((!text && pendingAttachments.length === 0) || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-            // Show user message
-            addUserMessage(text);
+            // Build display text
+            let displayText = text;
+            if (pendingAttachments.length > 0) {
+                const fileNames = pendingAttachments.map(a => a.isPathOnly ? '📌 ' + a.path : a.name).join(', ');
+                if (text) {
+                    displayText = text + '\n📎 ' + fileNames;
+                } else {
+                    displayText = '📎 ' + fileNames;
+                }
+            }
 
-            // Send to server
-            ws.send(JSON.stringify({ type: 'user_input', text: text }));
+            addUserMessage(displayText);
 
+            // Build the actual text sent to agent
+            let messageText = text;
+
+            // For path-only attachments, prepend file references (agent uses file_read tool)
+            const pathAttachments = pendingAttachments.filter(a => a.isPathOnly);
+            if (pathAttachments.length > 0) {
+                const fileRefs = pathAttachments.map(a => '[File: ' + a.path + ']').join(' ');
+                messageText = fileRefs + (messageText ? ' ' + messageText : ' Analyze this file.');
+            }
+
+            // Build payload with content attachments only (path-only are in the text)
+            const payload = { type: 'user_input', text: messageText };
+            const contentAttachments = pendingAttachments.filter(a => !a.isPathOnly);
+            if (contentAttachments.length > 0) {
+                payload.attachments = contentAttachments.map(a => ({
+                    name: a.name,
+                    content: a.content,
+                    type: a.type,
+                    isImage: a.isImage
+                }));
+            }
+
+            ws.send(JSON.stringify(payload));
+
+            // Clear
             input.value = '';
+            pendingAttachments = [];
+            renderAttachments();
             input.focus();
+
+            // Show loader
+            showLoader();
         }
 
+        // ========== Message Rendering ==========
         function addUserMessage(text) {
             const div = document.createElement('div');
             div.className = 'message user';
-            div.textContent = text;
+            div.innerHTML = `<div>${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="timestamp">${getTimestamp()}</div>`;
             chat.appendChild(div);
             scrollToBottom();
         }
@@ -342,7 +663,7 @@
         function startStreaming(agent, model) {
             const div = document.createElement('div');
             div.className = 'message assistant streaming';
-            div.innerHTML = `<span class="agent-badge">${agent}${model ? ' · ' + model : ''}</span><div class="content"></div>`;
+            div.innerHTML = `<span class="agent-badge">${agent}${model ? ' · ' + model : ''}</span><div class="content"></div><div class="timestamp">${getTimestamp()}</div>`;
             chat.appendChild(div);
             currentMessage = div;
             streamBuffer = '';
@@ -364,7 +685,6 @@
         function endStreaming() {
             if (currentMessage) {
                 currentMessage.classList.remove('streaming');
-                // Final render with highlighting
                 const contentDiv = currentMessage.querySelector('.content');
                 if (contentDiv) {
                     contentDiv.innerHTML = marked.parse(streamBuffer);
@@ -379,6 +699,11 @@
             chat.scrollTop = chat.scrollHeight;
         }
 
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
         // Input handling
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -386,6 +711,142 @@
                 sendMessage();
             }
         });
+
+        // ========== File Browser ==========
+        const fileTree = document.getElementById('fileTree');
+        const sidebar = document.getElementById('sidebar');
+
+        function toggleSidebar() {
+            sidebar.classList.toggle('collapsed');
+        }
+
+        const FILE_ICONS = {
+            'java': '☕', 'py': '🐍', 'js': '🟨', 'ts': '🔷', 'json': '📋',
+            'yaml': '⚙️', 'yml': '⚙️', 'md': '📝', 'xml': '📄', 'html': '🌐',
+            'css': '🎨', 'sql': '🗃️', 'sh': '🐚', 'bat': '🖥️', 'groovy': '⭐',
+            'kt': '🟣', 'swift': '🦅', 'rs': '🦀', 'go': '🐹', 'c': '©️',
+            'cpp': '➕', 'h': '📐', 'png': '🖼️', 'jpg': '🖼️', 'gif': '🖼️'
+        };
+
+        function getFileIcon(name) {
+            const ext = name.split('.').pop().toLowerCase();
+            return FILE_ICONS[ext] || '📄';
+        }
+
+        async function loadDirectory(path, container, depth) {
+            try {
+                const url = '/api/files' + (path ? '?path=' + encodeURIComponent(path) : '');
+                const resp = await fetch(url);
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                for (const entry of data.entries) {
+                    const fullPath = path ? path + '/' + entry.name : entry.name;
+                    const isDir = entry.type === 'directory';
+
+                    const itemDiv = document.createElement('div');
+                    itemDiv.style.paddingLeft = (depth * 16 + 12) + 'px';
+
+                    if (isDir) {
+                        itemDiv.className = 'tree-item';
+                        itemDiv.innerHTML = `<span class="arrow">▶</span><span class="icon">📁</span><span class="name dir">${entry.name}</span>`;
+
+                        const childrenDiv = document.createElement('div');
+                        childrenDiv.className = 'tree-children';
+
+                        let loaded = false;
+                        itemDiv.onclick = async (e) => {
+                            e.stopPropagation();
+                            const arrow = itemDiv.querySelector('.arrow');
+                            if (childrenDiv.classList.contains('open')) {
+                                childrenDiv.classList.remove('open');
+                                arrow.classList.remove('expanded');
+                            } else {
+                                if (!loaded) {
+                                    await loadDirectory(fullPath, childrenDiv, depth + 1);
+                                    loaded = true;
+                                }
+                                childrenDiv.classList.add('open');
+                                arrow.classList.add('expanded');
+                            }
+                        };
+
+                        container.appendChild(itemDiv);
+                        container.appendChild(childrenDiv);
+                    } else {
+                        itemDiv.className = 'tree-item';
+                        itemDiv.innerHTML = `<span class="arrow" style="visibility:hidden">▶</span><span class="icon">${getFileIcon(entry.name)}</span><span class="name file">${entry.name}</span>`;
+
+                        // Single click: select file (attach path only)
+                        itemDiv.onclick = (e) => {
+                            e.stopPropagation();
+                            document.querySelectorAll('.tree-item.active').forEach(el => el.classList.remove('active'));
+                            itemDiv.classList.add('active');
+                            attachFilePath(fullPath, entry.name);
+                        };
+
+                        // Double-click: attach full file content (legacy behavior)
+                        itemDiv.ondblclick = async (e) => {
+                            e.stopPropagation();
+                            await attachFileContent(fullPath, entry.name);
+                        };
+
+                        container.appendChild(itemDiv);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load directory:', path, err);
+            }
+        }
+
+        /**
+         * Attach file by path only (single click) — agent uses file_read tool to access it.
+         * More efficient: no token waste, agent reads on demand.
+         */
+        function attachFilePath(path, name) {
+            // Remove any existing path-only attachment for the same file
+            pendingAttachments = pendingAttachments.filter(a => !(a.isPathOnly && a.path === path));
+
+            pendingAttachments.push({
+                name: name,
+                path: path,
+                content: null,
+                type: 'path',
+                isImage: false,
+                isPathOnly: true
+            });
+            renderAttachments();
+        }
+
+        /**
+         * Attach full file content (double-click) — content sent directly in prompt.
+         * Use when you explicitly want the content included.
+         */
+        async function attachFileContent(path, name) {
+            try {
+                const resp = await fetch('/api/file-content?path=' + encodeURIComponent(path));
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                // Remove path-only attachment if replacing with content
+                pendingAttachments = pendingAttachments.filter(a => !(a.isPathOnly && a.path === path));
+
+                pendingAttachments.push({
+                    name: name,
+                    path: path,
+                    content: data.content,
+                    type: 'text/plain',
+                    isImage: false,
+                    isPathOnly: false
+                });
+                renderAttachments();
+            } catch (err) {
+                console.error('Failed to read file:', path, err);
+            }
+        }
+
+        // Load root directory on startup
+        loadDirectory('', fileTree, 0);
 
         // Start connection
         connect();

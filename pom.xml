@@ -209,6 +209,17 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Default resources -->
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- Auto-pack teams/ folder into JAR as /teams/ -->
+            <resource>
+                <directory>teams</directory>
+                <targetPath>teams</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <!-- Build Fat JAR -->
             <plugin>

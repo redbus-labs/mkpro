@@ -277,6 +277,25 @@ public class BootstrapService {
         }
 
         if (configPath == null) {
+            // No schedules.yaml found — copy template from bundled resources
+            try {
+                java.io.InputStream templateStream = getClass().getClassLoader()
+                    .getResourceAsStream("schedules_template.yaml");
+                if (templateStream != null) {
+                    Path targetDir = Paths.get(".mkpro");
+                    Files.createDirectories(targetDir);
+                    Path targetPath = targetDir.resolve("schedules.yaml");
+                    Files.copy(templateStream, targetPath);
+                    templateStream.close();
+                    System.out.println(ANSI_GREEN + "[Knowledge] Created .mkpro/schedules.yaml from template. Edit it to configure your topics." + ANSI_RESET);
+                    configPath = targetPath;
+                }
+            } catch (Exception e) {
+                // Silent — template copy is best-effort
+            }
+        }
+
+        if (configPath == null) {
             return topics;
         }
 

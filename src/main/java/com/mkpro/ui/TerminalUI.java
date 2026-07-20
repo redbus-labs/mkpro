@@ -86,6 +86,15 @@ public class TerminalUI {
                                     intentConfidence = 0.5; // Moderate confidence for learned matches
                                 }
                             }
+
+                            // Try YAML-defined agent routing keywords (direct agent match)
+                            String directAgent = intentClassifier.classifyToAgent(line);
+                            if (directAgent != null && !markovRouted) {
+                                System.out.println("\u001b[36m[Fast-route → " + directAgent + 
+                                    " (YAML routing_keywords match)]\u001b[0m");
+                                line = "Delegate to " + directAgent + ": " + line;
+                                markovRouted = true;
+                            }
                             
                             // Route if: specific category detected
                             boolean shouldTryRoute = (intentConfidence > 0.3 && category != com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL);

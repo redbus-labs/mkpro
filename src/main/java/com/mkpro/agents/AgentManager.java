@@ -148,6 +148,11 @@ public class AgentManager {
                 AgentConfig config = new AgentConfig(provider, model);
                 centralMemory.saveAgentConfig(def.getName(), config);
             }
+
+            // Register routing keywords for IntentClassifier fast-routing
+            if (def.getRoutingKeywords() != null && !def.getRoutingKeywords().isEmpty()) {
+                com.mkpro.routing.IntentClassifier.registerAgentKeywords(def.getName(), def.getRoutingKeywords());
+            }
         }
     }
 
@@ -426,18 +431,15 @@ public class AgentManager {
             //coordinatorTools.add(McpServerConnectTools.createListMcpServersTool(centralMemory));
 
             // Generate delegation tools for all sub-agents and add them to coordinatorTools
-            // Determine which agents need full project context injected
-            java.util.Set<String> needsProjectContext = java.util.Set.of(
-                "coder", "codeeditor", "architect", "securityauditor", "devops",
-                "tester", "androiddev", "iosdev", "sysadmin"
-            );
-            
+            // Determine which agents need full project context injected (from YAML needs_context field)
             for (Map.Entry<String, List<BaseTool>> entry : toolMap.entrySet()) {
                 String agentName = entry.getKey();
                 List<BaseTool> toolsForAgent = entry.getValue();
                 
-                // Only inject project context for agents that need it
-                String agentContext = needsProjectContext.contains(agentName.toLowerCase()) ? fullContext : "";
+                // Check YAML definition for needs_context (defaults to true)
+                AgentDefinition def = agentDefinitions.get(agentName);
+                boolean needsCtx = def == null || def.isNeedsContext();
+                String agentContext = needsCtx ? fullContext : "";
                 
                 String toolName = "ask_" + agentName.replaceAll("([a-z])([A-Z]+)", "$1_$2").toLowerCase();
                 BaseTool delegationTool = createDelegationToolFromDef(agentName, toolName, agentConfigs, toolsForAgent, agentContext);

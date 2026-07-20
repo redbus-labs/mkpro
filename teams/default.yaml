@@ -38,6 +38,7 @@ agents:
   - name: GoalTracker
     description: "Delegates project goal and task tracking to the Goal Tracker agent."
     tools: [file_read, clipboard, central_memory]
+    needs_context: false
     instruction: |
       Authority:
       - You are an autonomous specialist operating under the Coordinator agent.
@@ -171,6 +172,7 @@ agents:
   - name: SecurityAuditor
     description: "Delegates security review and vulnerability assessment to the Security Auditor agent."
     tools: [file_read, file_write, safe_write, shell, clipboard, codebase_search, request_knowledge]
+    routing_keywords: [vulnerability, CVE, security scan, XSS, SQL injection, OWASP, penetration, exploit, hardening, secrets leak, credentials]
     instruction: |
       Authority:
       - You are an autonomous specialist operating under the Coordinator agent.
@@ -216,6 +218,7 @@ agents:
   - name: DevOps
     description: "Delegates infrastructure, deployment, and CI/CD tasks to the DevOps agent."
     tools: [shell, file_read, file_write, safe_write, clipboard, codebase_search, request_knowledge]
+    routing_keywords: [docker, kubernetes, k8s, helm, terraform, CI/CD, pipeline, deploy, container, pod, ingress, ECS, EKS, GKE, CloudFormation]
     instruction: |
       Authority:
       - You are an autonomous specialist operating under the Coordinator agent.

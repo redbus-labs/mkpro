@@ -16,6 +16,8 @@ public class AgentDefinition implements Serializable {
     private java.util.List<String> tools;
     private String fallbackModel;  // e.g., "codestral@gpu4090" — tried if primary fails
     private int maxRetries = 1;    // How many times to retry with fallback (default: 1)
+    private boolean needsContext = true;  // Whether to inject project context into this agent (default: true)
+    private java.util.List<String> routingKeywords;  // Keywords for IntentClassifier fast-routing (optional)
 
     public AgentDefinition() {}
 
@@ -50,4 +52,12 @@ public class AgentDefinition implements Serializable {
     @com.fasterxml.jackson.annotation.JsonProperty("max_retries")
     public int getMaxRetries() { return maxRetries; }
     public void setMaxRetries(int maxRetries) { this.maxRetries = maxRetries; }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("needs_context")
+    public boolean isNeedsContext() { return needsContext; }
+    public void setNeedsContext(boolean needsContext) { this.needsContext = needsContext; }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("routing_keywords")
+    public java.util.List<String> getRoutingKeywords() { return routingKeywords; }
+    public void setRoutingKeywords(java.util.List<String> routingKeywords) { this.routingKeywords = routingKeywords; }
 }

@@ -180,6 +180,58 @@ public class IntentClassifier {
 
     private Map<String, java.util.Set<String>> learnedPatterns = new java.util.HashMap<>();
 
+    /** Dynamic routing patterns registered from YAML agent definitions */
+    private static final Map<String, List<Pattern>> DYNAMIC_AGENT_PATTERNS = new LinkedHashMap<>();
+
+    /**
+     * Register routing keywords for a custom agent defined in YAML.
+     * These patterns map directly to the agent name (not a TaskCategory).
+     * Used by MarkovRouter for direct agent routing.
+     */
+    public static void registerAgentKeywords(String agentName, List<String> keywords) {
+        if (keywords == null || keywords.isEmpty()) return;
+        List<Pattern> compiled = new ArrayList<>();
+        for (String kw : keywords) {
+            compiled.add(Pattern.compile(kw.replace(" ", "\\s*"), Pattern.CASE_INSENSITIVE));
+        }
+        DYNAMIC_AGENT_PATTERNS.put(agentName, compiled);
+    }
+
+    /**
+     * Try to match input directly to a YAML-defined agent via routing_keywords.
+     * Returns the agent name if matched with score >= 2, or null if no match.
+     */
+    public String classifyToAgent(String input) {
+        if (input == null || input.isEmpty() || DYNAMIC_AGENT_PATTERNS.isEmpty()) return null;
+
+        String lower = input.toLowerCase().trim();
+        int bestScore = 0;
+        String bestAgent = null;
+
+        for (Map.Entry<String, List<Pattern>> entry : DYNAMIC_AGENT_PATTERNS.entrySet()) {
+            int score = 0;
+            for (Pattern pattern : entry.getValue()) {
+                if (pattern.matcher(lower).find()) {
+                    score++;
+                }
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestAgent = entry.getKey();
+            }
+        }
+
+        // Require at least 1 keyword match
+        return bestScore >= 1 ? bestAgent : null;
+    }
+
+    /**
+     * Get all registered dynamic agent patterns (for /train status display).
+     */
+    public static Map<String, List<Pattern>> getDynamicAgentPatterns() {
+        return Collections.unmodifiableMap(DYNAMIC_AGENT_PATTERNS);
+    }
+
     /**
      * Set learned patterns from MarkovRouter.
      * These are used as fallback when static patterns return GENERAL.

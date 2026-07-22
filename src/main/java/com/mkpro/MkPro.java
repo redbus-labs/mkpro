@@ -64,11 +64,16 @@ public class MkPro {
 
             // 2b. Initialize Event Bus and register sinks
             com.mkpro.events.MkProEventBus eventBus = new com.mkpro.events.MkProEventBus();
+            com.mkpro.events.MkProEventBus.INSTANCE = eventBus;
             eventBus.register(new com.mkpro.events.TerminalSink());
             if (context.getWebChatServer() != null) {
                 eventBus.register(new com.mkpro.events.WebSocketSink(context.getWebChatServer()));
             }
             context.setEventBus(eventBus);
+
+            // Initialize EditApprovalService
+            com.mkpro.events.EditApprovalService approvalService = new com.mkpro.events.EditApprovalService();
+            com.mkpro.events.EditApprovalService.INSTANCE = approvalService;
 
             // Wire event bus to MakerLoop
             if (context.getMakerLoop() != null) {

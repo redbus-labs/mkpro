@@ -320,7 +320,7 @@ public class MkProTools {
     }
 
     public static BaseTool createWriteFileTool() {
-        return new BaseTool("write_file", "Writes content to a file. Path must be within the project directory.") {
+        return new BaseTool("write_file", "Writes content to a file. Shows a diff preview and requires approval before writing. Path must be within the project directory.") {
             @Override public Optional<FunctionDeclaration> declaration() {
                 return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
                     .parameters(Schema.builder().type("OBJECT")
@@ -335,13 +335,54 @@ public class MkProTools {
                     String content = (String) args.get("content");
                     try {
                         Path validated = com.mkpro.security.PathValidator.getInstance().validate(pathStr);
-                        if (validated.getParent() != null) {
-                            Files.createDirectories(validated.getParent());
+                        String oldContent = "";
+                        if (Files.exists(validated)) {
+                            oldContent = Files.readString(validated);
                         }
-                        Files.writeString(validated, content);
-                        return Collections.<String, Object>singletonMap("status", "Success");
+
+                        // Route through approval service
+                        com.mkpro.events.EditApprovalService approvalService = com.mkpro.events.EditApprovalService.INSTANCE;
+                        com.mkpro.events.MkProEventBus eventBus = com.mkpro.events.MkProEventBus.INSTANCE;
+
+                        if (approvalService == null || eventBus == null) {
+                            // Fallback: no approval service, write directly
+                            if (validated.getParent() != null) Files.createDirectories(validated.getParent());
+                            Files.writeString(validated, content);
+                            return Collections.<String, Object>singletonMap("status", "Success (no approval service)");
+                        }
+
+                        String proposalId = "edit-" + System.currentTimeMillis();
+                        com.mkpro.events.EditProposal proposal = new com.mkpro.events.EditProposal(
+                            proposalId, pathStr, oldContent, content);
+
+                        java.util.concurrent.CompletableFuture<Boolean> future = approvalService.submitProposal(proposal);
+                        eventBus.emit(com.mkpro.events.MkProEvent.editProposal(proposal));
+
+                        boolean approved;
+                        try {
+                            approved = future.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (java.util.concurrent.TimeoutException e) {
+                            approved = true;
+                            approvalService.approve(proposalId);
+                        }
+
+                        if (approved) {
+                            eventBus.emit(com.mkpro.events.MkProEvent.editApproved(proposalId, pathStr));
+                            if (validated.getParent() != null) Files.createDirectories(validated.getParent());
+                            if (Files.exists(validated)) Maker.backItUp(validated.toFile());
+                            Files.writeString(validated, content,
+                                java.nio.file.StandardOpenOption.CREATE,
+                                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                            return Collections.<String, Object>singletonMap("status", "File written successfully: " + pathStr);
+                        } else {
+                            eventBus.emit(com.mkpro.events.MkProEvent.editRejected(proposalId, pathStr));
+                            return Collections.<String, Object>singletonMap("status", "User rejected changes for: " + pathStr);
+                        }
+
                     } catch (SecurityException e) {
                         return Collections.<String, Object>singletonMap("error", e.getMessage());
+                    } catch (Exception e) {
+                        return Collections.<String, Object>singletonMap("error", "Write failed: " + e.getMessage());
                     }
                 });
             }
@@ -391,117 +432,62 @@ public class MkProTools {
                         String oldContent = "";
                         if (Files.exists(path)) {
                             oldContent = Files.readString(path);
+                        }
+
+                        // Create edit proposal
+                        String proposalId = "edit-" + System.currentTimeMillis();
+                        com.mkpro.events.EditProposal proposal = new com.mkpro.events.EditProposal(
+                            proposalId, finalFilePath, oldContent, newContent);
+
+                        // Get approval service and event bus
+                        com.mkpro.events.EditApprovalService approvalService = com.mkpro.events.EditApprovalService.INSTANCE;
+                        com.mkpro.events.MkProEventBus eventBus = com.mkpro.events.MkProEventBus.INSTANCE;
+
+                        if (approvalService == null || eventBus == null) {
+                            // Fallback: no event bus available, auto-approve
+                            writeFile(path, newContent, finalFilePath);
+                            return Collections.singletonMap("status", "File written (no approval service): " + finalFilePath);
+                        }
+
+                        // Submit proposal and emit event
+                        java.util.concurrent.CompletableFuture<Boolean> future = approvalService.submitProposal(proposal);
+                        eventBus.emit(com.mkpro.events.MkProEvent.editProposal(proposal));
+
+                        // Wait for approval (30s timeout — auto-approve timer in TerminalSink fires at 7s)
+                        boolean approved;
+                        try {
+                            approved = future.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (java.util.concurrent.TimeoutException e) {
+                            // Timeout = auto-approve (headless safety)
+                            approved = true;
+                            approvalService.approve(proposalId);
+                        }
+
+                        if (approved) {
+                            eventBus.emit(com.mkpro.events.MkProEvent.editApproved(proposalId, finalFilePath));
+                            writeFile(path, newContent, finalFilePath);
+                            return Collections.singletonMap("status", "File written successfully: " + finalFilePath);
                         } else {
-                             System.out.println(ANSI_BLUE + "[CodeEditor] Creating NEW file: " + finalFilePath + ANSI_RESET);
+                            eventBus.emit(com.mkpro.events.MkProEvent.editRejected(proposalId, finalFilePath));
+                            return Collections.singletonMap("status", "User rejected changes for: " + finalFilePath);
                         }
 
-                        System.out.println(ANSI_BLUE + "\n--- PROPOSED CHANGES FOR: " + finalFilePath + " ---" + ANSI_RESET);
-                        
-                        // Simple Diff Preview
-                        String[] oldLines = oldContent.split("\n");
-                        String[] newLines = newContent.split("\n");
-                        
-                        // Heuristic: If file is huge, just show head/tail or size diff
-                        if (newLines.length > 50 && oldLines.length > 50) {
-                            System.out.println(ANSI_YELLOW + "File is large (" + newLines.length + " lines). Showing first 10 and last 10 lines." + ANSI_RESET);
-                             for (int i = 0; i < Math.min(10, newLines.length); i++) {
-                                System.out.println(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
-                            }
-                            System.out.println("...");
-                            for (int i = Math.max(0, newLines.length - 10); i < newLines.length; i++) {
-                                System.out.println(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
-                            }
-                        } else {
-                            // Let's try a very basic diff logic:
-                            int maxLen = Math.max(oldLines.length, newLines.length);
-                            boolean hasChanges = false;
-                            
-                            for (int i = 0; i < maxLen; i++) {
-                                String oldL = (i < oldLines.length) ? oldLines[i] : null;
-                                String newL = (i < newLines.length) ? newLines[i] : null;
-                                
-                                if (oldL == null && newL != null) {
-                                    System.out.println(ANSI_GREEN + "+ " + newL + ANSI_RESET);
-                                    hasChanges = true;
-                                } else if (oldL != null && newL == null) {
-                                    System.out.println(ANSI_RED + "- " + oldL + ANSI_RESET);
-                                    hasChanges = true;
-                                } else if (!oldL.equals(newL)) {
-                                    System.out.println(ANSI_RED + "- " + oldL + ANSI_RESET);
-                                    System.out.println(ANSI_GREEN + "+ " + newL + ANSI_RESET);
-                                    hasChanges = true;
-                                }
-                            }
-                            
-                            if (!hasChanges) {
-                                System.out.println(ANSI_YELLOW + "No textual changes detected." + ANSI_RESET);
-                            }
-                        }
-
-                        System.out.println(ANSI_BLUE + "---------------------------------------------" + ANSI_RESET);
-                        
-                        // Auto-approve logic
-                        System.out.print(ANSI_YELLOW + "Auto-approving in 7s... (Press Enter to pause/reject) " + ANSI_RESET);
-                        
-                        boolean interrupted = false;
-                        for (int i = 7; i > 0; i--) {
-                            System.out.print("\r" + ANSI_YELLOW + "Auto-approving in " + i + "s... (Press Enter to pause/reject)   " + ANSI_RESET);
-                            // Check if input is available (non-blocking check)
-                            try {
-                                if (System.in.available() > 0) {
-                                    interrupted = true;
-                                    break;
-                                }
-                                Thread.sleep(1000);
-                            } catch (Exception e) {
-                                // Ignore
-                            }
-                        }
-                        System.out.println(); // Newline
-
-                        if (!interrupted) {
-                            System.out.println(ANSI_GREEN + "Time's up! Auto-approving changes." + ANSI_RESET);
-                            if (path.getParent() != null) {
-                                Files.createDirectories(path.getParent());
-                            }
-                            if (Files.exists(path)) {
-                                System.out.println(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
-                                Maker.backItUp(path.toFile());
-                            }
-                            Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                            return Collections.singletonMap("status", "File written successfully (Auto-approved): " + finalFilePath);
-                        }
-
-                        // Fallback to manual confirmation if interrupted
-                        System.out.print(ANSI_YELLOW + "Apply these changes? [y/N]: " + ANSI_RESET);
-                        Scanner scanner = new Scanner(System.in);
-                        if (scanner.hasNextLine()) {
-                            String input = scanner.nextLine().trim();
-                            if ("y".equalsIgnoreCase(input) || "yes".equalsIgnoreCase(input)) {
-                                if (path.getParent() != null) {
-                                    Files.createDirectories(path.getParent());
-                                }
-                                if (Files.exists(path)) {
-                                    System.out.println(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
-                                    Maker.backItUp(path.toFile());
-                                }
-                                Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                                System.out.println(ANSI_GREEN + "File written successfully." + ANSI_RESET);
-                                return Collections.singletonMap("status", "File written successfully: " + finalFilePath);
-                            } else {
-                                System.out.println(ANSI_RED + "Changes rejected by user." + ANSI_RESET);
-                                return Collections.singletonMap("status", "User rejected changes for: " + finalFilePath);
-                            }
-                        }
-                        
-                        return Collections.singletonMap("status", "No input received. Changes rejected.");
-
-                    } catch (SecurityException se) {
-                        return Collections.singletonMap("error", (Object) se.getMessage());
-                    } catch (IOException e) {
-                        return Collections.singletonMap("error", (Object) ("Error processing safe write: " + e.getMessage()));
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Write failed: " + e.getMessage());
                     }
                 });
+            }
+
+            private void writeFile(Path path, String content, String filePath) throws java.io.IOException {
+                if (path.getParent() != null) {
+                    Files.createDirectories(path.getParent());
+                }
+                if (Files.exists(path)) {
+                    Maker.backItUp(path.toFile());
+                }
+                Files.writeString(path, content,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
             }
         };
     }

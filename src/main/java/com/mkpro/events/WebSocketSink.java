@@ -59,6 +59,41 @@ public class WebSocketSink implements MkProEventListener {
             case SYSTEM -> {
                 webChatServer.broadcastSystem(event.get("message"));
             }
+            case EDIT_PROPOSAL -> {
+                EditProposal proposal = event.getEditProposal();
+                if (proposal != null) {
+                    // Send structured diff to web UI
+                    com.fasterxml.jackson.databind.node.ObjectNode msg = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+                    msg.put("type", "edit_proposal");
+                    msg.put("id", proposal.getId());
+                    msg.put("path", proposal.getFilePath());
+                    msg.put("isNewFile", proposal.isNewFile());
+
+                    com.fasterxml.jackson.databind.node.ArrayNode diffArray = msg.putArray("diff");
+                    for (EditProposal.DiffLine line : proposal.getDiffLines()) {
+                        com.fasterxml.jackson.databind.node.ObjectNode dl = diffArray.addObject();
+                        dl.put("type", line.getType().name());
+                        dl.put("text", line.getText());
+                        dl.put("line", line.getLineNumber());
+                    }
+
+                    webChatServer.broadcast(msg);
+                }
+            }
+            case EDIT_APPROVED -> {
+                com.fasterxml.jackson.databind.node.ObjectNode msg = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+                msg.put("type", "edit_approved");
+                msg.put("id", event.get("id"));
+                msg.put("path", event.get("path"));
+                webChatServer.broadcast(msg);
+            }
+            case EDIT_REJECTED -> {
+                com.fasterxml.jackson.databind.node.ObjectNode msg = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+                msg.put("type", "edit_rejected");
+                msg.put("id", event.get("id"));
+                msg.put("path", event.get("path"));
+                webChatServer.broadcast(msg);
+            }
             default -> {
                 // Not handled by WebSocket sink
             }

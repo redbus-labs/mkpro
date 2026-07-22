@@ -2,8 +2,20 @@ docs: update GitAgent prompt instructions [mkpro]
 
 Updated the GitAgent instructions in default.yaml and polyglot.yaml to require the '[mkpro]' suffix in the commit summary.
 
+- Added new versioning metadata for the 3.4.x and 3.5.x lines.
+- Incorporated CDS and Virtual Thread performance optimization documentation.
+- Updated security patch table with recent CVE mitigations.
+- Standardized architectural trend mapping for 2024-2026.
+- Fixed minor formatting issues in the report tables.
+- Expanded the "Actionable Insights" section for better CI/CD automation guidance.
+- Added comprehensive documentation links to the "DISCOVER_TOPIC" section.
+- Integrated the latest Spring AI preview feature summary.
+- Enhanced the "Current Version Status" table with explicit EOL and preview dates.
+
 ---
-AI Resource Usage (Session current):
-Session 'current' has consumed 0 tokens in total.
+AI Resource Usage (Session mkpro-manoj.kumar:GitAgent:C:\DevTools\rblab\mkpro (auto-resolved)):
+Session 'mkpro-manoj.kumar:GitAgent:C:\DevTools\rblab\mkpro (auto-resolved)' has consumed 3,881 tokens in total.
 Breakdown by Agent:
+ - GitAgent: 3,881 tokens
 Breakdown by Model:
+ - gemini-3.1-flash-lite: 3,881 tokens

@@ -376,6 +376,58 @@
 
         /* Hidden file input */
         #fileInput { display: none; }
+
+        /* Diff Viewer */
+        .edit-proposal {
+            align-self: flex-start;
+            max-width: 90%;
+            background: var(--surface);
+            border: 1px solid var(--yellow);
+            border-radius: 8px;
+            padding: 12px;
+            margin: 8px 0;
+        }
+        .edit-proposal .edit-header {
+            font-size: 12px;
+            color: var(--yellow);
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .edit-proposal .diff-view {
+            background: var(--bg);
+            border-radius: 6px;
+            padding: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 11px;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+        .edit-proposal .diff-line { white-space: pre-wrap; font-family: inherit; }
+        .edit-proposal .diff-line.added { color: var(--green); }
+        .edit-proposal .diff-line.removed { color: var(--red); text-decoration: line-through; opacity: 0.8; }
+        .edit-proposal .diff-line.info { color: var(--yellow); font-style: italic; }
+        .edit-proposal .edit-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .edit-proposal .edit-actions button {
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: none;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .edit-proposal .btn-approve { background: var(--green); color: var(--bg); }
+        .edit-proposal .btn-approve:hover { opacity: 0.9; }
+        .edit-proposal .btn-reject { background: var(--red); color: white; }
+        .edit-proposal .btn-reject:hover { opacity: 0.9; }
+        .edit-proposal .edit-countdown { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+        .edit-proposal.resolved { opacity: 0.6; border-color: var(--surface2); }
+        .edit-proposal.resolved .edit-actions { display: none; }
     </style>
 </head>
 <body>
@@ -572,6 +624,15 @@
                         if (badge) badge.textContent = msg.agent;
                     }
                     break;
+                case 'edit_proposal':
+                    showEditProposal(msg);
+                    break;
+                case 'edit_approved':
+                    resolveEditProposal(msg.id, true);
+                    break;
+                case 'edit_rejected':
+                    resolveEditProposal(msg.id, false);
+                    break;
             }
         }
 
@@ -711,6 +772,75 @@
                 sendMessage();
             }
         });
+
+        // ========== Edit Proposals (Diff Viewer) ==========
+        function showEditProposal(msg) {
+            hideLoader();
+            const div = document.createElement('div');
+            div.className = 'edit-proposal';
+            div.id = 'proposal-' + msg.id;
+
+            let diffHtml = '';
+            for (const line of (msg.diff || [])) {
+                const cls = line.type === 'ADDED' ? 'added' : line.type === 'REMOVED' ? 'removed' : 'info';
+                const prefix = line.type === 'ADDED' ? '+ ' : line.type === 'REMOVED' ? '- ' : '  ';
+                diffHtml += `<div class="diff-line ${cls}">${prefix}${escapeHtml(line.text)}</div>`;
+            }
+
+            div.innerHTML = `
+                <div class="edit-header">📝 Edit Proposal: ${escapeHtml(msg.path)} ${msg.isNewFile ? '(NEW FILE)' : ''}</div>
+                <div class="diff-view">${diffHtml || '<div class="diff-line info">No changes detected</div>'}</div>
+                <div class="edit-actions">
+                    <button class="btn-approve" onclick="approveEdit('${msg.id}')">✓ Approve</button>
+                    <button class="btn-reject" onclick="rejectEdit('${msg.id}')">✕ Reject</button>
+                    <span class="edit-countdown" id="countdown-${msg.id}">Auto-approve in 7s</span>
+                </div>
+                <div class="timestamp">${getTimestamp()}</div>
+            `;
+
+            chat.appendChild(div);
+            scrollToBottom();
+
+            // Countdown display (actual timer runs on backend TerminalSink)
+            let seconds = 7;
+            const interval = setInterval(() => {
+                seconds--;
+                const el = document.getElementById('countdown-' + msg.id);
+                if (el && seconds > 0) {
+                    el.textContent = 'Auto-approve in ' + seconds + 's';
+                } else {
+                    clearInterval(interval);
+                }
+            }, 1000);
+        }
+
+        function approveEdit(id) {
+            fetch('/api/edit/approve', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id: id})
+            });
+        }
+
+        function rejectEdit(id) {
+            fetch('/api/edit/reject', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id: id})
+            });
+        }
+
+        function resolveEditProposal(id, approved) {
+            const el = document.getElementById('proposal-' + id);
+            if (el) {
+                el.classList.add('resolved');
+                const header = el.querySelector('.edit-header');
+                if (header) {
+                    header.textContent += approved ? ' ✓ APPROVED' : ' ✕ REJECTED';
+                    header.style.color = approved ? 'var(--green)' : 'var(--red)';
+                }
+            }
+        }
 
         // ========== Scroll-to-Load History ==========
         let historyOffset = 0;

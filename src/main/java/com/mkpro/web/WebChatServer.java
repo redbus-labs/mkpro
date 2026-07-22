@@ -127,6 +127,12 @@ public class WebChatServer {
                 handleAgentsApi(exchange);
             } else if (path.startsWith("/api/history")) {
                 handleHistoryApi(exchange);
+            } else if ("/api/edit/approve".equals(path)) {
+                handleEditApproveApi(exchange);
+            } else if ("/api/edit/reject".equals(path)) {
+                handleEditRejectApi(exchange);
+            } else if ("/api/edit/pending".equals(path)) {
+                handleEditPendingApi(exchange);
             } else {
                 exchange.sendResponseHeaders(404, -1);
                 exchange.close();
@@ -217,7 +223,7 @@ public class WebChatServer {
         return node;
     }
 
-    private void broadcast(ObjectNode message) {
+    public void broadcast(ObjectNode message) {
         if (clients.isEmpty()) return;
         String json = message.toString();
         for (WebSocket client : clients) {
@@ -675,6 +681,95 @@ public class WebChatServer {
      * Returns messages in reverse chronological order (newest first).
      * Response: {"messages": [{role, text, timestamp}], "total": N, "hasMore": bool}
      */
+    /**
+     * POST /api/edit/approve — Approve a pending edit proposal.
+     * Request: {"id": "edit-123"}
+     */
+    private void handleEditApproveApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1); exchange.close(); return;
+        }
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            com.fasterxml.jackson.databind.JsonNode req = mapper.readTree(body);
+            String id = req.has("id") ? req.get("id").asText() : "";
+
+            com.mkpro.events.EditApprovalService service = com.mkpro.events.EditApprovalService.INSTANCE;
+            if (service == null || id.isBlank()) {
+                sendJsonError(exchange, 400, "Invalid request");
+                return;
+            }
+
+            boolean found = service.approve(id);
+            if (found) {
+                sendJsonResponse(exchange, 200, java.util.Map.of("status", "approved", "id", id));
+            } else {
+                sendJsonError(exchange, 404, "Proposal not found or already resolved: " + id);
+            }
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * POST /api/edit/reject — Reject a pending edit proposal.
+     * Request: {"id": "edit-123"}
+     */
+    private void handleEditRejectApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1); exchange.close(); return;
+        }
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            com.fasterxml.jackson.databind.JsonNode req = mapper.readTree(body);
+            String id = req.has("id") ? req.get("id").asText() : "";
+
+            com.mkpro.events.EditApprovalService service = com.mkpro.events.EditApprovalService.INSTANCE;
+            if (service == null || id.isBlank()) {
+                sendJsonError(exchange, 400, "Invalid request");
+                return;
+            }
+
+            boolean found = service.reject(id);
+            if (found) {
+                sendJsonResponse(exchange, 200, java.util.Map.of("status", "rejected", "id", id));
+            } else {
+                sendJsonError(exchange, 404, "Proposal not found or already resolved: " + id);
+            }
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * GET /api/edit/pending — List all pending edit proposals.
+     */
+    private void handleEditPendingApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        try {
+            com.mkpro.events.EditApprovalService service = com.mkpro.events.EditApprovalService.INSTANCE;
+            if (service == null) {
+                sendJsonResponse(exchange, 200, java.util.Map.of("pending", java.util.List.of()));
+                return;
+            }
+
+            java.util.List<java.util.Map<String, Object>> pending = new java.util.ArrayList<>();
+            for (var entry : service.getPendingProposals().entrySet()) {
+                com.mkpro.events.EditProposal p = entry.getValue();
+                java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+                item.put("id", p.getId());
+                item.put("path", p.getFilePath());
+                item.put("isNewFile", p.isNewFile());
+                item.put("createdAt", p.getCreatedAt());
+                item.put("diffLineCount", p.getDiffLines().size());
+                pending.add(item);
+            }
+
+            sendJsonResponse(exchange, 200, java.util.Map.of("pending", pending));
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
     private void handleHistoryApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
         try {
             // Parse params

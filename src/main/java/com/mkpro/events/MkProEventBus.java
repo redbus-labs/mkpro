@@ -12,6 +12,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class MkProEventBus {
 
+    /** Singleton instance — set during bootstrap, accessed by tools */
+    public static volatile MkProEventBus INSTANCE;
+
     private final List<MkProEventListener> listeners = new CopyOnWriteArrayList<>();
 
     /**

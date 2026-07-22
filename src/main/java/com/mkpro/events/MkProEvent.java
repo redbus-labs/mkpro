@@ -23,12 +23,16 @@ public class MkProEvent {
         DELEGATION,          // Coordinator delegated to agent
         SYSTEM,              // System messages
         GOAL_UPDATE,         // Goal status changed
-        KNOWLEDGE_UPDATE     // Scheduler refreshed a topic
+        KNOWLEDGE_UPDATE,    // Scheduler refreshed a topic
+        EDIT_PROPOSAL,       // File edit awaiting approval (carries EditProposal)
+        EDIT_APPROVED,       // Edit was approved
+        EDIT_REJECTED        // Edit was rejected
     }
 
     private final Type type;
     private final Map<String, String> data;
     private final long timestamp;
+    private EditProposal editProposal; // Only set for EDIT_PROPOSAL events
 
     public MkProEvent(Type type, Map<String, String> data) {
         this.type = type;
@@ -39,6 +43,7 @@ public class MkProEvent {
     public Type getType() { return type; }
     public Map<String, String> getData() { return data; }
     public long getTimestamp() { return timestamp; }
+    public EditProposal getEditProposal() { return editProposal; }
 
     public String get(String key) {
         return data.getOrDefault(key, "");
@@ -98,5 +103,20 @@ public class MkProEvent {
 
     public static MkProEvent delegation(String agent) {
         return new MkProEvent(Type.DELEGATION, Map.of("agent", agent));
+    }
+
+    public static MkProEvent editProposal(EditProposal proposal) {
+        MkProEvent event = new MkProEvent(Type.EDIT_PROPOSAL, Map.of(
+            "id", proposal.getId(), "path", proposal.getFilePath()));
+        event.editProposal = proposal;
+        return event;
+    }
+
+    public static MkProEvent editApproved(String proposalId, String path) {
+        return new MkProEvent(Type.EDIT_APPROVED, Map.of("id", proposalId, "path", path));
+    }
+
+    public static MkProEvent editRejected(String proposalId, String path) {
+        return new MkProEvent(Type.EDIT_REJECTED, Map.of("id", proposalId, "path", path));
     }
 }

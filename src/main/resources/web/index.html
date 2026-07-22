@@ -712,6 +712,81 @@
             }
         });
 
+        // ========== Scroll-to-Load History ==========
+        let historyOffset = 0;
+        let loadingHistory = false;
+        let noMoreHistory = false;
+
+        chat.addEventListener('scroll', async () => {
+            if (chat.scrollTop === 0 && !loadingHistory && !noMoreHistory) {
+                await loadOlderMessages();
+            }
+        });
+
+        async function loadOlderMessages() {
+            loadingHistory = true;
+            const indicator = document.createElement('div');
+            indicator.className = 'message system';
+            indicator.textContent = '⏳ Loading older messages...';
+            indicator.id = 'history-loader';
+            chat.prepend(indicator);
+
+            try {
+                const resp = await fetch(`/api/history?offset=${historyOffset}&limit=20`);
+                if (!resp.ok) throw new Error('Failed to load history');
+                const data = await resp.json();
+
+                indicator.remove();
+
+                if (data.messages.length === 0) {
+                    noMoreHistory = true;
+                    return;
+                }
+
+                // Remember scroll height to preserve position
+                const prevHeight = chat.scrollHeight;
+
+                // Prepend messages (they arrive in chronological order)
+                const fragment = document.createDocumentFragment();
+                for (const msg of data.messages) {
+                    const div = document.createElement('div');
+                    if (msg.role === 'USER') {
+                        div.className = 'message user';
+                        div.innerHTML = `<div>${escapeHtml(msg.text)}</div><div class="timestamp">${formatHistoryTimestamp(msg.timestamp)}</div>`;
+                    } else {
+                        div.className = 'message assistant';
+                        div.innerHTML = `<span class="agent-badge">${escapeHtml(msg.role)}</span><div class="content">${marked.parse(msg.text)}</div><div class="timestamp">${formatHistoryTimestamp(msg.timestamp)}</div>`;
+                    }
+                    fragment.appendChild(div);
+                }
+                chat.prepend(fragment);
+
+                // Restore scroll position
+                chat.scrollTop = chat.scrollHeight - prevHeight;
+
+                historyOffset += data.messages.length;
+                noMoreHistory = !data.hasMore;
+
+            } catch (err) {
+                indicator.textContent = 'Failed to load history';
+                setTimeout(() => indicator.remove(), 2000);
+            } finally {
+                loadingHistory = false;
+            }
+        }
+
+        function formatHistoryTimestamp(ts) {
+            if (!ts) return '';
+            try {
+                // ts is like "2026-07-22T12:00:00.123"
+                const d = new Date(ts);
+                if (isNaN(d.getTime())) return ts.substring(11, 16); // fallback: extract HH:MM
+                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch(e) {
+                return '';
+            }
+        }
+
         // ========== File Browser ==========
         const fileTree = document.getElementById('fileTree');
         const sidebar = document.getElementById('sidebar');

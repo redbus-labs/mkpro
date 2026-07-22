@@ -62,6 +62,19 @@ public class MkPro {
                 context.setWebChatServer(webServer);
             }
 
+            // 2b. Initialize Event Bus and register sinks
+            com.mkpro.events.MkProEventBus eventBus = new com.mkpro.events.MkProEventBus();
+            eventBus.register(new com.mkpro.events.TerminalSink());
+            if (context.getWebChatServer() != null) {
+                eventBus.register(new com.mkpro.events.WebSocketSink(context.getWebChatServer()));
+            }
+            context.setEventBus(eventBus);
+
+            // Wire event bus to MakerLoop
+            if (context.getMakerLoop() != null) {
+                context.getMakerLoop().setEventBus(eventBus);
+            }
+
             // 3. Initialize Command Registry
             CommandRegistry registry = new CommandRegistry();
             registerCommands(registry);
@@ -154,18 +167,22 @@ public class MkPro {
             if (!output.isEmpty()) {
                 // Strip ANSI codes for web display
                 String clean = output.replaceAll("\u001b\\[[0-9;]*m", "");
-                web.broadcastStreamStart("System", "command");
-                web.broadcastStreamChunk("```\n" + clean + "```");
-                web.broadcastStreamEnd();
+                if (context.getEventBus() != null) {
+                    context.getEventBus().emit(com.mkpro.events.MkProEvent.streamStart("System", "command"));
+                    context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk("```\n" + clean + "```"));
+                    context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
+                }
             }
             
             // Also print to terminal
             originalOut.print(ANSI_CYAN + "[Web] " + text + ANSI_RESET + "\n");
             originalOut.print(output);
         } catch (Exception e) {
-            web.broadcastStreamStart("System", "error");
-            web.broadcastStreamChunk("Error: " + e.getMessage());
-            web.broadcastStreamEnd();
+            if (context.getEventBus() != null) {
+                context.getEventBus().emit(com.mkpro.events.MkProEvent.streamStart("System", "error"));
+                context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk("Error: " + e.getMessage()));
+                context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
+            }
         }
     }
 
@@ -213,9 +230,63 @@ public class MkPro {
 
             context.getActionLogger().log("USER", text);
 
-            // Create message
+            // Markov routing (same as TerminalUI)
+            String line = text;
+            if (context.getMarkovRouter() != null && context.getMarkovRouter().getTotalObservations() > 20) {
+                com.mkpro.routing.IntentClassifier intentClassifier = new com.mkpro.routing.IntentClassifier();
+                intentClassifier.setLearnedPatterns(context.getMarkovRouter().getLearnedPatterns());
+
+                com.mkpro.routing.IntentClassifier.TaskCategory category = intentClassifier.classify(line);
+                double intentConfidence = intentClassifier.classifyWithConfidence(line);
+
+                if (category == com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL) {
+                    com.mkpro.routing.IntentClassifier.TaskCategory learned = intentClassifier.classifyWithLearnedPatterns(line);
+                    if (learned != com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL) {
+                        category = learned;
+                        intentConfidence = 0.5;
+                    }
+                }
+
+                // YAML routing keywords
+                String directAgent = intentClassifier.classifyToAgent(line);
+                boolean markovRouted = false;
+                if (directAgent != null) {
+                    if (context.getEventBus() != null) context.getEventBus().emit(com.mkpro.events.MkProEvent.routingKeywords(directAgent));
+                    line = "Delegate to " + directAgent + ": " + line;
+                    markovRouted = true;
+                }
+
+                if (!markovRouted) {
+                    boolean shouldTryRoute = (intentConfidence > 0.3 && category != com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL);
+                    if (shouldTryRoute) {
+                        com.mkpro.routing.MarkovRouter.RoutingDecision decision = context.getMarkovRouter().route(category, null);
+                        if (decision.shouldRoute && !"Coordinator".equals(decision.agent)) {
+                            if (context.getEventBus() != null) context.getEventBus().emit(
+                                com.mkpro.events.MkProEvent.routing(decision.agent, String.valueOf((int)(decision.confidence * 100)), category.name()));
+                            line = "Delegate to " + decision.agent + ": " + line;
+                            context.getMarkovRouter().recordTransition(category, null, decision.agent);
+                        } else {
+                            if (context.getEventBus() != null) context.getEventBus().emit(
+                                com.mkpro.events.MkProEvent.routingBelow(decision.agent, String.valueOf((int)(decision.confidence * 100))));
+                        }
+                    } else {
+                        if (context.getEventBus() != null) context.getEventBus().emit(
+                            com.mkpro.events.MkProEvent.routingBelow("Coordinator", String.valueOf((int)(intentConfidence * 100))));
+                    }
+                }
+            } else if (context.getMarkovRouter() != null) {
+                if (context.getEventBus() != null) context.getEventBus().emit(
+                    com.mkpro.events.MkProEvent.routingInactive(String.valueOf(context.getMarkovRouter().getTotalObservations())));
+            }
+
+            // Maker: track goal
+            if (context.getMakerEnabled() != null && context.getMakerEnabled().get() && context.getMakerLoop() != null) {
+                context.getMakerLoop().onUserInput(text);
+            }
+
+            // Create message (use routed line, not original text)
             com.google.genai.types.Content message = com.google.genai.types.Content.fromParts(
-                new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(text)});
+                new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(line)});
 
             // Get agent info for display
             com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
@@ -234,20 +305,28 @@ public class MkPro {
                                     if (firstChunk.compareAndSet(false, true)) {
                                         // Check if delegation happened
                                         String delegated = com.mkpro.agents.AgentManager.lastDelegatedAgent;
-                                        web.broadcastStreamStart(
-                                            delegated != null ? delegated : agent, model);
+                                        if (context.getEventBus() != null) {
+                                            context.getEventBus().emit(com.mkpro.events.MkProEvent.streamStart(
+                                                delegated != null ? delegated : agent, model));
+                                        }
                                     }
                                     responseBuilder.append(t);
-                                    web.broadcastStreamChunk(t);
+                                    if (context.getEventBus() != null) {
+                                        context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk(t));
+                                    }
                                 });
                             }
                         });
                     });
                 }, error -> {
-                    web.broadcastStreamChunk("\n\n[Error: " + error.getMessage() + "]");
-                    web.broadcastStreamEnd();
+                    if (context.getEventBus() != null) {
+                        context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk("\n\n[Error: " + error.getMessage() + "]"));
+                        context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
+                    }
                 }, () -> {
-                    web.broadcastStreamEnd();
+                    if (context.getEventBus() != null) {
+                        context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
+                    }
                     
                     // Log response
                     if (responseBuilder.length() > 0) {

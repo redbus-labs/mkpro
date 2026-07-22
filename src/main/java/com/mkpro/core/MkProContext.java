@@ -70,6 +70,9 @@ public class MkProContext {
     private com.mkpro.knowledge.KnowledgeScheduler knowledgeScheduler;
     private boolean schedulerEnabled = false;
 
+    // Event bus
+    private com.mkpro.events.MkProEventBus eventBus;
+
     public MkProContext() {
     }
 
@@ -493,5 +496,13 @@ public class MkProContext {
 
     public void setSchedulerEnabled(boolean schedulerEnabled) {
         this.schedulerEnabled = schedulerEnabled;
+    }
+
+    public com.mkpro.events.MkProEventBus getEventBus() {
+        return eventBus;
+    }
+
+    public void setEventBus(com.mkpro.events.MkProEventBus eventBus) {
+        this.eventBus = eventBus;
     }
 }

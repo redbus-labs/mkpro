@@ -125,6 +125,8 @@ public class WebChatServer {
                 handleStatusApi(exchange);
             } else if ("/api/agents".equals(path)) {
                 handleAgentsApi(exchange);
+            } else if (path.startsWith("/api/history")) {
+                handleHistoryApi(exchange);
             } else {
                 exchange.sendResponseHeaders(404, -1);
                 exchange.close();
@@ -173,6 +175,13 @@ public class WebChatServer {
      */
     public void broadcastStreamEnd() {
         broadcast(createMessage("stream_end"));
+    }
+
+    /**
+     * Broadcast a system message.
+     */
+    public void broadcastSystem(String text) {
+        broadcast(createMessage("system").put("text", text));
     }
 
     /**
@@ -660,6 +669,97 @@ public class WebChatServer {
     // ========================================================================
     // JSON response helpers
     // ========================================================================
+
+    /**
+     * GET /api/history?offset=N&limit=M — paginated chat history from ActionLogger.
+     * Returns messages in reverse chronological order (newest first).
+     * Response: {"messages": [{role, text, timestamp}], "total": N, "hasMore": bool}
+     */
+    private void handleHistoryApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        try {
+            // Parse params
+            int offset = 0;
+            int limit = 20;
+            String rawQuery = exchange.getRequestURI().getQuery();
+            if (rawQuery != null) {
+                for (String param : rawQuery.split("&")) {
+                    if (param.startsWith("offset=")) {
+                        try { offset = Integer.parseInt(param.substring(7)); } catch (NumberFormatException ignored) {}
+                    } else if (param.startsWith("limit=")) {
+                        try { limit = Integer.parseInt(param.substring(6)); } catch (NumberFormatException ignored) {}
+                    }
+                }
+            }
+            limit = Math.min(limit, 50); // Cap at 50 per request
+
+            // Get all logs from ActionLogger
+            java.util.List<String> allLogs = com.mkpro.ActionLogger.getAllLogs();
+            int total = allLogs.size();
+
+            // Parse into structured messages (reverse order — newest first for scroll-up)
+            java.util.List<java.util.Map<String, String>> messages = new java.util.ArrayList<>();
+            
+            // We iterate from the end backwards
+            int startIdx = Math.max(0, total - offset - limit);
+            int endIdx = Math.max(0, total - offset);
+
+            for (int i = startIdx; i < endIdx; i++) {
+                String entry = allLogs.get(i);
+                java.util.Map<String, String> msg = parseLogEntry(entry);
+                if (msg != null) {
+                    messages.add(msg);
+                }
+            }
+
+            // Messages are in chronological order (oldest first) — correct for prepending
+            boolean hasMore = startIdx > 0;
+
+            java.util.Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("messages", messages);
+            response.put("total", total);
+            response.put("hasMore", hasMore);
+            response.put("offset", offset);
+
+            sendJsonResponse(exchange, 200, response);
+
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * Parse a log entry like "[2026-07-22T12:00:00.123] USER: hello world"
+     * into {role, text, timestamp}.
+     */
+    private java.util.Map<String, String> parseLogEntry(String entry) {
+        if (entry == null || entry.length() < 5) return null;
+
+        try {
+            // Format: [timestamp] ROLE: content
+            int closeBracket = entry.indexOf(']');
+            if (closeBracket < 0) return null;
+
+            String timestamp = entry.substring(1, closeBracket);
+            String rest = entry.substring(closeBracket + 2); // skip "] "
+
+            int colonIdx = rest.indexOf(':');
+            if (colonIdx < 0) return null;
+
+            String role = rest.substring(0, colonIdx).trim();
+            String text = rest.substring(colonIdx + 1).trim();
+
+            // Skip empty content
+            if (text.isEmpty()) return null;
+
+            java.util.Map<String, String> msg = new java.util.LinkedHashMap<>();
+            msg.put("role", role);
+            msg.put("text", text);
+            msg.put("timestamp", timestamp);
+            return msg;
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     private void sendJsonResponse(com.sun.net.httpserver.HttpExchange exchange, int code, Object data) throws IOException {
         String json = mapper.writeValueAsString(data);

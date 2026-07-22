@@ -90,8 +90,7 @@ public class TerminalUI {
                             // Try YAML-defined agent routing keywords (direct agent match)
                             String directAgent = intentClassifier.classifyToAgent(line);
                             if (directAgent != null && !markovRouted) {
-                                System.out.println("\u001b[36m[Fast-route → " + directAgent + 
-                                    " (YAML routing_keywords match)]\u001b[0m");
+                                if (context.getEventBus() != null) context.getEventBus().emit(com.mkpro.events.MkProEvent.routingKeywords(directAgent));
                                 line = "Delegate to " + directAgent + ": " + line;
                                 markovRouted = true;
                             }
@@ -104,21 +103,22 @@ public class TerminalUI {
                                     context.getMarkovRouter().route(category, null);
                                 
                                 if (decision.shouldRoute && !"Coordinator".equals(decision.agent)) {
-                                    System.out.println("\u001b[36m[Fast-route → " + decision.agent + 
-                                        " (" + (int)(decision.confidence * 100) + "% confidence, category: " + category + ")]\u001b[0m");
+                                    if (context.getEventBus() != null) context.getEventBus().emit(
+                                        com.mkpro.events.MkProEvent.routing(decision.agent, String.valueOf((int)(decision.confidence * 100)), category.name()));
                                     line = "Delegate to " + decision.agent + ": " + line;
                                     markovRouted = true;
                                     context.getMarkovRouter().recordTransition(category, null, decision.agent);
                                 } else {
-                                    System.out.println("\u001b[90m[Markov: " + decision.agent + 
-                                        " " + (int)(decision.confidence * 100) + "% — below threshold, using Coordinator]\u001b[0m");
+                                    if (context.getEventBus() != null) context.getEventBus().emit(
+                                        com.mkpro.events.MkProEvent.routingBelow(decision.agent, String.valueOf((int)(decision.confidence * 100))));
                                 }
                             } else {
-                                System.out.println("\u001b[90m[Markov: category=" + category + 
-                                    ", intent=" + (int)(intentConfidence * 100) + "% — not routable, using Coordinator]\u001b[0m");
+                                if (context.getEventBus() != null) context.getEventBus().emit(
+                                    com.mkpro.events.MkProEvent.routingBelow("Coordinator", String.valueOf((int)(intentConfidence * 100))));
                             }
                         } else if (!isAutoContinue && context.getMarkovRouter() != null) {
-                            System.out.println("\u001b[90m[Markov: inactive (" + context.getMarkovRouter().getTotalObservations() + " obs, need 20+). Run /train]\u001b[0m");
+                            if (context.getEventBus() != null) context.getEventBus().emit(
+                                com.mkpro.events.MkProEvent.routingInactive(String.valueOf(context.getMarkovRouter().getTotalObservations())));
                         }
 
                         // Maker: track goal and inject stimulus
@@ -255,17 +255,17 @@ public class TerminalUI {
                                                             System.out.flush();
                                                         }
                                                         System.out.print(ANSI_LIGHT_ORANGE);
-                                                        // Web: stream start
-                                                        if (context.getWebChatServer() != null) {
-                                                            context.getWebChatServer().broadcastStreamStart(finalDisplayAgent, finalDisplayModel);
+                                                        // Web: stream start via event bus
+                                                        if (context.getEventBus() != null) {
+                                                            context.getEventBus().emit(com.mkpro.events.MkProEvent.streamStart(finalDisplayAgent, finalDisplayModel));
                                                         }
                                                     }
                                                     responseBuilder.append(text);
                                                     System.out.print(text);
                                                     System.out.flush();
-                                                    // Web: stream chunk
-                                                    if (context.getWebChatServer() != null) {
-                                                        context.getWebChatServer().broadcastStreamChunk(text);
+                                                    // Web: stream chunk via event bus
+                                                    if (context.getEventBus() != null) {
+                                                        context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk(text));
                                                     }
                                                 });
                                             }
@@ -291,9 +291,9 @@ public class TerminalUI {
                                     // ON COMPLETE - Calculate stats
                                     long duration = System.currentTimeMillis() - startTime;
                                     
-                                    // Web: stream end
-                                    if (context.getWebChatServer() != null) {
-                                        context.getWebChatServer().broadcastStreamEnd();
+                                    // Web: stream end via event bus
+                                    if (context.getEventBus() != null) {
+                                        context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
                                     }
                                     
                                     String sessId = context.getCurrentSession() != null ? context.getCurrentSession().id() : "default-session";

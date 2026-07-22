@@ -30,6 +30,9 @@ public class MakerLoop {
     private final Map<String, MakerState> activeGoals = new ConcurrentHashMap<>();
     private MakerState currentGoal;
 
+    // Event bus (set after construction)
+    private volatile com.mkpro.events.MkProEventBus eventBus;
+
     // Configuration
     private double autoCompleteThreshold = 0.75;
     private double escalateThreshold = 0.40;
@@ -38,6 +41,10 @@ public class MakerLoop {
     public MakerLoop(MarkovRouter router) {
         this.router = router;
         this.classifier = new IntentClassifier();
+    }
+
+    public void setEventBus(com.mkpro.events.MkProEventBus eventBus) {
+        this.eventBus = eventBus;
     }
 
     /**
@@ -62,8 +69,8 @@ public class MakerLoop {
         // Create a new goal
         currentGoal = new MakerState(input, category, maxRetries);
         activeGoals.put(currentGoal.getGoalId(), currentGoal);
-        System.out.println(ANSI_PURPLE + "  [Maker] New goal: \"" + truncate(input, 60) + 
-            "\" (category: " + category + ")" + ANSI_RESET);
+        if (eventBus != null) eventBus.emit(com.mkpro.events.MkProEvent.makerGoal(truncate(input, 60) + " (category: " + category + ")"));
+        else System.out.println(ANSI_PURPLE + "  [Maker] New goal: \"" + truncate(input, 60) + "\" (category: " + category + ")" + ANSI_RESET);
 
         return currentGoal;
     }
@@ -164,9 +171,8 @@ public class MakerLoop {
         if (currentGoal.getPhase() == MakerState.GoalPhase.WRAPPING_UP) {
             currentGoal.setPhase(MakerState.GoalPhase.DONE);
             learnFromCompletion(true);
-            System.out.println(ANSI_GREEN + "  ✓ [Maker] Goal wrapped up: \"" + 
-                truncate(currentGoal.getGoalDescription(), 60) + "\" (" + 
-                currentGoal.getTurnCount() + " turns)" + ANSI_RESET);
+            if (eventBus != null) eventBus.emit(com.mkpro.events.MkProEvent.makerComplete(truncate(currentGoal.getGoalDescription(), 60) + " (" + currentGoal.getTurnCount() + " turns)"));
+            else System.out.println(ANSI_GREEN + "  ✓ [Maker] Goal wrapped up: \"" + truncate(currentGoal.getGoalDescription(), 60) + "\" (" + currentGoal.getTurnCount() + " turns)" + ANSI_RESET);
             return MarkovRouter.MakerAction.COMPLETE;
         }
 
@@ -189,6 +195,8 @@ public class MakerLoop {
             " | " + (success ? "✓" : "✗") +
             " | Completion: " + (int)(completionProb * 100) + "%" +
             (stalled ? " | ⚠ STALLED" : "") + ANSI_RESET);
+        if (eventBus != null) eventBus.emit(com.mkpro.events.MkProEvent.makerThought("Turn " + currentGoal.getTurnCount() + "/~" + avgTurns,
+            "Agent: " + agentUsed + " | " + (success ? "✓" : "✗") + " | Completion: " + (int)(completionProb * 100) + "%" + (stalled ? " | STALLED" : "")));
 
         // Show thought process
         StringBuilder thought = new StringBuilder();
@@ -272,6 +280,8 @@ public class MakerLoop {
                 System.out.println(ANSI_GREEN + "  ✓ [Maker] Goal complete: \"" + 
                     truncate(currentGoal.getGoalDescription(), 60) + "\" (" + 
                     currentGoal.getTurnCount() + " turns)" + ANSI_RESET);
+                if (eventBus != null) eventBus.emit(com.mkpro.events.MkProEvent.makerComplete(
+                    truncate(currentGoal.getGoalDescription(), 60) + " (" + currentGoal.getTurnCount() + " turns)"));
                 break;
 
             case RETRY:

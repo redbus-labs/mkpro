@@ -192,6 +192,12 @@ public class MkProTools {
 
                     try {
                         Path validated = com.mkpro.security.PathValidator.getInstance().validateForRead(pathStr);
+
+                        // Special format detection (PDF, DOCX, XLSX, PPTX, SVG, DXF, STL, OBJ)
+                        if (FileFormatReader.isSpecialFormat(pathStr)) {
+                            return FileFormatReader.read(validated, startLine, endLine);
+                        }
+
                         List<String> allLines = Files.readAllLines(validated);
                         int totalLines = allLines.size();
 

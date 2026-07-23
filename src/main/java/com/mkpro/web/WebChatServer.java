@@ -115,6 +115,8 @@ public class WebChatServer {
                 serveFilesApi(exchange);
             } else if (path.startsWith("/api/file-content")) {
                 serveFileContentApi(exchange);
+            } else if (path.startsWith("/api/file-raw")) {
+                serveFileRawApi(exchange);
             } else if ("/api/chat".equals(path)) {
                 handleChatApi(exchange);
             } else if ("/api/chat/stream".equals(path)) {
@@ -356,6 +358,73 @@ public class WebChatServer {
             exchange.sendResponseHeaders(500, err.length);
             try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
         }
+    }
+
+    private void serveFileRawApi(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        try {
+            String relativePath = "";
+            String rawQuery = exchange.getRequestURI().getQuery();
+            if (rawQuery != null) {
+                for (String param : rawQuery.split("&")) {
+                    if (param.startsWith("path=")) {
+                        relativePath = java.net.URLDecoder.decode(param.substring(5), StandardCharsets.UTF_8);
+                    }
+                }
+            }
+
+            if (relativePath.isEmpty()) {
+                exchange.sendResponseHeaders(400, -1); exchange.close(); return;
+            }
+
+            java.nio.file.Path projectRoot = java.nio.file.Paths.get("").toAbsolutePath();
+            java.nio.file.Path targetFile = projectRoot.resolve(relativePath).normalize();
+            if (!targetFile.startsWith(projectRoot)) {
+                exchange.sendResponseHeaders(403, -1); exchange.close(); return;
+            }
+            if (!java.nio.file.Files.isRegularFile(targetFile)) {
+                exchange.sendResponseHeaders(404, -1); exchange.close(); return;
+            }
+
+            // Determine MIME type
+            String name = targetFile.getFileName().toString().toLowerCase();
+            String mime = getMimeType(name);
+
+            // Cap at 20MB for raw serving
+            long size = java.nio.file.Files.size(targetFile);
+            if (size > 20 * 1024 * 1024) {
+                byte[] err = "File too large (>20MB)".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(413, err.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+                return;
+            }
+
+            byte[] content = java.nio.file.Files.readAllBytes(targetFile);
+            exchange.getResponseHeaders().set("Content-Type", mime);
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Content-Disposition", "inline; filename=\"" + targetFile.getFileName() + "\"");
+            exchange.sendResponseHeaders(200, content.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(content); }
+
+        } catch (Exception e) {
+            exchange.sendResponseHeaders(500, -1); exchange.close();
+        }
+    }
+
+    private String getMimeType(String filename) {
+        if (filename.endsWith(".pdf")) return "application/pdf";
+        if (filename.endsWith(".svg")) return "image/svg+xml";
+        if (filename.endsWith(".png")) return "image/png";
+        if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) return "image/jpeg";
+        if (filename.endsWith(".gif")) return "image/gif";
+        if (filename.endsWith(".webp")) return "image/webp";
+        if (filename.endsWith(".stl")) return "model/stl";
+        if (filename.endsWith(".obj")) return "text/plain";
+        if (filename.endsWith(".dxf")) return "text/plain";
+        if (filename.endsWith(".html")) return "text/html";
+        if (filename.endsWith(".json")) return "application/json";
+        if (filename.endsWith(".xml")) return "application/xml";
+        if (filename.endsWith(".csv")) return "text/csv";
+        return "application/octet-stream";
     }
 
     // ========================================================================

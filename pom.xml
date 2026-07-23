@@ -88,6 +88,20 @@
             <version>4.0.22</version>
         </dependency>
 
+        <!-- PDF Text Extraction -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
+        <!-- Office Document Extraction (DOCX, XLSX, PPTX) -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.3.0</version>
+        </dependency>
+
         <!-- MapDB -->
         <dependency>
             <groupId>org.mapdb</groupId>

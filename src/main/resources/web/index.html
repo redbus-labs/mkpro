@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>mkpro - AI Software Engineering Team</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="stylesheet" id="hljs-theme" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
-        :root {
+        :root, [data-theme="dark"] {
             --bg: #1a1b26;
             --surface: #24283b;
             --surface2: #2f3549;
@@ -21,6 +21,21 @@
             --purple: #bb9af7;
             --cyan: #7dcfff;
             --orange: #ff9e64;
+        }
+
+        [data-theme="light"] {
+            --bg: #f5f5f7;
+            --surface: #ffffff;
+            --surface2: #e8e8ec;
+            --text: #1d1d1f;
+            --text-dim: #86868b;
+            --accent: #0066cc;
+            --green: #248a3d;
+            --yellow: #a05d00;
+            --red: #d70015;
+            --purple: #7b2d8b;
+            --cyan: #0071a4;
+            --orange: #c93400;
         }
 
         body {
@@ -48,6 +63,17 @@
         .header .status { font-size: 12px; color: var(--text-dim); margin-left: auto; }
         .header .status.connected { color: var(--green); }
         .header .status.disconnected { color: var(--red); }
+        .theme-toggle {
+            background: var(--surface2);
+            border: 1px solid var(--surface2);
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-dim);
+            transition: all 0.2s;
+        }
+        .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
 
         /* Main layout: sidebar + chat */
         .main-container {
@@ -59,6 +85,8 @@
         /* File Browser Sidebar */
         .sidebar {
             width: 250px;
+            min-width: 150px;
+            max-width: 500px;
             background: var(--surface);
             border-right: 1px solid var(--surface2);
             display: flex;
@@ -66,7 +94,7 @@
             overflow: hidden;
             transition: width 0.2s;
         }
-        .sidebar.collapsed { width: 0; border-right: none; }
+        .sidebar.collapsed { width: 0; min-width: 0; border-right: none; }
         .sidebar-header {
             padding: 10px 12px;
             display: flex;
@@ -141,11 +169,110 @@
         /* Chat container (right side) */
         .chat-container {
             flex: 1;
+            min-width: 300px;
             display: flex;
             flex-direction: column;
             position: relative;
             overflow: hidden;
         }
+
+        /* Resizable Dividers */
+        .divider {
+            width: 5px;
+            cursor: col-resize;
+            background: transparent;
+            position: relative;
+            flex-shrink: 0;
+            z-index: 5;
+        }
+        .divider:hover, .divider.active {
+            background: var(--accent);
+            opacity: 0.5;
+        }
+        .divider::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 1px;
+            width: 3px;
+            height: 30px;
+            transform: translateY(-50%);
+            background: var(--text-dim);
+            border-radius: 2px;
+            opacity: 0;
+        }
+        .divider:hover::after { opacity: 1; }
+
+        /* Preview Panel (between sidebar and chat) */
+        .preview-panel {
+            width: 0;
+            min-width: 0;
+            max-width: 700px;
+            background: var(--surface);
+            border-right: 1px solid var(--surface2);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: width 0.2s;
+        }
+        .preview-panel.open { width: 400px; min-width: 200px; transition: none; }
+        .preview-tabs {
+            display: flex;
+            background: var(--bg);
+            border-bottom: 1px solid var(--surface2);
+            overflow-x: auto;
+            flex-shrink: 0;
+        }
+        .preview-tabs::-webkit-scrollbar { height: 3px; }
+        .preview-tabs::-webkit-scrollbar-thumb { background: var(--surface2); }
+        .preview-tab {
+            padding: 6px 12px;
+            font-size: 11px;
+            color: var(--text-dim);
+            cursor: pointer;
+            white-space: nowrap;
+            border-right: 1px solid var(--surface2);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .preview-tab:hover { background: var(--surface2); }
+        .preview-tab.active { background: var(--surface); color: var(--accent); border-bottom: 2px solid var(--accent); }
+        .preview-tab .close-tab { color: var(--text-dim); font-size: 12px; }
+        .preview-tab .close-tab:hover { color: var(--red); }
+        .preview-content {
+            flex: 1;
+            overflow: auto;
+            padding: 0;
+        }
+        .preview-content pre {
+            margin: 0;
+            padding: 12px;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .preview-content img { max-width: 100%; height: auto; display: block; }
+        .preview-content iframe { width: 100%; height: 100%; border: none; }
+        .preview-content canvas { width: 100%; height: 100%; }
+        .preview-actions {
+            padding: 8px 12px;
+            border-top: 1px solid var(--surface2);
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .preview-actions button {
+            padding: 5px 12px;
+            border-radius: 4px;
+            border: none;
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .preview-actions .btn-attach { background: var(--green); color: var(--bg); }
+        .preview-actions .btn-close-panel { background: var(--surface2); color: var(--text-dim); }
 
         /* Chat area */
         .chat {
@@ -437,6 +564,7 @@
             <a href="/knowledge">🧠 Knowledge</a>
             <a href="/db">📦 DB</a>
         </div>
+        <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
         <span class="status disconnected" id="status">● Disconnected</span>
     </div>
     <div class="main-container">
@@ -447,6 +575,16 @@
             </div>
             <div class="file-tree" id="fileTree"></div>
         </div>
+        <div class="divider" id="divider1"></div>
+        <div class="preview-panel" id="previewPanel">
+            <div class="preview-tabs" id="previewTabs"></div>
+            <div class="preview-content" id="previewContent"></div>
+            <div class="preview-actions">
+                <button class="btn-attach" onclick="attachPreviewFile()">📎 Attach to Chat</button>
+                <button class="btn-close-panel" onclick="closePreviewPanel()">Close Panel</button>
+            </div>
+        </div>
+        <div class="divider" id="divider2"></div>
         <div class="chat-container">
             <button class="sidebar-toggle-external" onclick="toggleSidebar()" title="Show file browser">📁</button>
             <div class="chat" id="chat"></div>
@@ -464,7 +602,32 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
+        // ========== Theme Toggle ==========
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('mkpro-theme', next);
+            document.getElementById('themeToggle').textContent = next === 'dark' ? '🌙' : '☀️';
+            // Switch highlight.js theme
+            document.getElementById('hljs-theme').href = next === 'dark'
+                ? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css'
+                : 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+        }
+
+        // Load saved theme
+        (function() {
+            const saved = localStorage.getItem('mkpro-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', saved);
+            const btn = document.getElementById('themeToggle');
+            if (btn) btn.textContent = saved === 'dark' ? '🌙' : '☀️';
+            if (saved === 'light') {
+                document.getElementById('hljs-theme').href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+            }
+        })();
+
         // Configure marked for markdown rendering
         marked.setOptions({
             highlight: (code, lang) => {
@@ -917,6 +1080,259 @@
             }
         }
 
+        // ========== Resizable Dividers ==========
+        function initDividers() {
+            setupDivider('divider1', 'sidebar', 'left');
+            setupDivider('divider2', 'previewPanel', 'left');
+        }
+
+        function setupDivider(dividerId, targetId, side) {
+            const divider = document.getElementById(dividerId);
+            const target = document.getElementById(targetId);
+            if (!divider || !target) return;
+
+            let startX, startWidth;
+
+            divider.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                startX = e.clientX;
+                startWidth = target.offsetWidth;
+                divider.classList.add('active');
+                // Remove transition during drag
+                target.style.transition = 'none';
+
+                const onMouseMove = (e) => {
+                    const dx = e.clientX - startX;
+                    const newWidth = side === 'left' ? startWidth + dx : startWidth - dx;
+                    const min = parseInt(getComputedStyle(target).minWidth) || 100;
+                    const max = parseInt(getComputedStyle(target).maxWidth) || 800;
+                    target.style.width = Math.max(min, Math.min(max, newWidth)) + 'px';
+                };
+
+                const onMouseUp = () => {
+                    divider.classList.remove('active');
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+        }
+
+        initDividers();
+
+        // ========== Preview Panel (Tabbed File Viewer) ==========
+        const previewPanel = document.getElementById('previewPanel');
+        const previewTabs = document.getElementById('previewTabs');
+        const previewContent = document.getElementById('previewContent');
+        const MAX_PREVIEW_TABS = 5;
+
+        let openPreviews = []; // [{path, name, type}]
+        let activePreviewPath = null;
+
+        function openPreview(path, name) {
+            // If already open, just switch to it
+            const existing = openPreviews.find(p => p.path === path);
+            if (existing) {
+                activatePreviewTab(path);
+                return;
+            }
+
+            // Max tabs — close oldest
+            if (openPreviews.length >= MAX_PREVIEW_TABS) {
+                openPreviews.shift();
+            }
+
+            const ext = name.split('.').pop().toLowerCase();
+            openPreviews.push({ path, name, ext });
+            previewPanel.classList.add('open');
+            renderPreviewTabs();
+            activatePreviewTab(path);
+        }
+
+        function closePreviewTab(path, event) {
+            if (event) event.stopPropagation();
+            openPreviews = openPreviews.filter(p => p.path !== path);
+            if (openPreviews.length === 0) {
+                closePreviewPanel();
+            } else {
+                if (activePreviewPath === path) {
+                    activatePreviewTab(openPreviews[openPreviews.length - 1].path);
+                }
+                renderPreviewTabs();
+            }
+        }
+
+        function closePreviewPanel() {
+            previewPanel.classList.remove('open');
+            openPreviews = [];
+            activePreviewPath = null;
+            previewTabs.innerHTML = '';
+            previewContent.innerHTML = '';
+        }
+
+        function renderPreviewTabs() {
+            previewTabs.innerHTML = openPreviews.map(p =>
+                `<div class="preview-tab ${p.path === activePreviewPath ? 'active' : ''}" onclick="activatePreviewTab('${p.path}')">
+                    ${getFileIcon(p.name)} ${p.name}
+                    <span class="close-tab" onclick="closePreviewTab('${p.path}', event)">✕</span>
+                </div>`
+            ).join('');
+        }
+
+        async function activatePreviewTab(path) {
+            activePreviewPath = path;
+            renderPreviewTabs();
+
+            const preview = openPreviews.find(p => p.path === path);
+            if (!preview) return;
+
+            previewContent.innerHTML = '<div style="padding:20px;color:var(--text-dim)">Loading...</div>';
+
+            const ext = preview.ext;
+            const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+            const codeExts = ['java', 'py', 'js', 'ts', 'json', 'yaml', 'yml', 'xml', 'html', 'css', 'sh', 'bat', 'sql', 'groovy', 'kt', 'swift', 'rs', 'go', 'c', 'cpp', 'h', 'md', 'txt', 'log', 'csv', 'toml', 'properties'];
+
+            if (ext === 'pdf') {
+                // PDF: embed via iframe
+                previewContent.innerHTML = `<iframe src="/api/file-raw?path=${encodeURIComponent(path)}"></iframe>`;
+            } else if (imageExts.includes(ext)) {
+                // Images/SVG: inline
+                previewContent.innerHTML = `<img src="/api/file-raw?path=${encodeURIComponent(path)}" alt="${preview.name}" />`;
+            } else if (ext === 'stl' || ext === 'obj') {
+                // 3D: three.js viewer
+                render3DPreview(path, ext);
+            } else if (codeExts.includes(ext)) {
+                // Code: syntax highlighted
+                try {
+                    const resp = await fetch('/api/file-content?path=' + encodeURIComponent(path));
+                    const data = await resp.json();
+                    const lang = getHighlightLang(ext);
+                    let highlighted;
+                    if (lang && hljs.getLanguage(lang)) {
+                        highlighted = hljs.highlight(data.content || '', { language: lang }).value;
+                    } else {
+                        highlighted = hljs.highlightAuto(data.content || '').value;
+                    }
+                    previewContent.innerHTML = `<pre><code class="hljs">${highlighted}</code></pre>`;
+                } catch (err) {
+                    previewContent.innerHTML = `<div style="padding:20px;color:var(--red)">Error: ${err.message}</div>`;
+                }
+            } else {
+                // Fallback: raw text
+                try {
+                    const resp = await fetch('/api/file-content?path=' + encodeURIComponent(path));
+                    const data = await resp.json();
+                    previewContent.innerHTML = `<pre>${escapeHtml(data.content || 'Empty file')}</pre>`;
+                } catch (err) {
+                    previewContent.innerHTML = `<div style="padding:20px;color:var(--red)">Cannot preview this file type</div>`;
+                }
+            }
+        }
+
+        function render3DPreview(path, ext) {
+            if (typeof THREE === 'undefined') {
+                previewContent.innerHTML = '<div style="padding:20px;color:var(--yellow)">three.js not loaded. Cannot render 3D.</div>';
+                return;
+            }
+
+            previewContent.innerHTML = '<canvas id="threeCanvas"></canvas>';
+            const canvas = document.getElementById('threeCanvas');
+            const width = previewContent.clientWidth || 400;
+            const height = previewContent.clientHeight || 300;
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1b26);
+            const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(width, height);
+
+            // Lights
+            scene.add(new THREE.AmbientLight(0x404040));
+            const light = new THREE.DirectionalLight(0xffffff, 1);
+            light.position.set(5, 5, 5);
+            scene.add(light);
+
+            // Load STL
+            fetch('/api/file-raw?path=' + encodeURIComponent(path))
+                .then(r => r.arrayBuffer())
+                .then(buffer => {
+                    let geometry;
+                    if (ext === 'stl') {
+                        geometry = parseSTL(buffer);
+                    } else {
+                        // OBJ — simplified (render bounding box placeholder)
+                        geometry = new THREE.BoxGeometry(1, 1, 1);
+                    }
+
+                    const material = new THREE.MeshPhongMaterial({ color: 0x7aa2f7, flatShading: true });
+                    const mesh = new THREE.Mesh(geometry, material);
+
+                    // Center and fit
+                    geometry.computeBoundingBox();
+                    const box = geometry.boundingBox;
+                    const center = box.getCenter(new THREE.Vector3());
+                    mesh.position.sub(center);
+
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    camera.position.set(0, 0, maxDim * 2);
+
+                    scene.add(mesh);
+
+                    // Animate (slow rotation)
+                    function animate() {
+                        requestAnimationFrame(animate);
+                        mesh.rotation.y += 0.005;
+                        renderer.render(scene, camera);
+                    }
+                    animate();
+                })
+                .catch(err => {
+                    previewContent.innerHTML = `<div style="padding:20px;color:var(--red)">3D load error: ${err.message}</div>`;
+                });
+        }
+
+        function parseSTL(buffer) {
+            // Binary STL parser
+            const dv = new DataView(buffer);
+            const triangles = dv.getUint32(80, true);
+            const positions = new Float32Array(triangles * 9);
+
+            let offset = 84;
+            for (let i = 0; i < triangles; i++) {
+                offset += 12; // skip normal
+                for (let j = 0; j < 9; j++) {
+                    positions[i * 9 + j] = dv.getFloat32(offset, true);
+                    offset += 4;
+                }
+                offset += 2; // attribute byte count
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.computeVertexNormals();
+            return geometry;
+        }
+
+        function attachPreviewFile() {
+            if (activePreviewPath) {
+                const preview = openPreviews.find(p => p.path === activePreviewPath);
+                if (preview) {
+                    attachFilePath(activePreviewPath, preview.name);
+                }
+            }
+        }
+
+        function getHighlightLang(ext) {
+            const map = { java:'java', py:'python', js:'javascript', ts:'typescript', json:'json',
+                yaml:'yaml', yml:'yaml', xml:'xml', html:'html', css:'css', sh:'bash', bat:'dos',
+                sql:'sql', groovy:'groovy', kt:'kotlin', swift:'swift', rs:'rust', go:'go',
+                c:'c', cpp:'cpp', h:'c', md:'markdown', toml:'ini', properties:'properties' };
+            return map[ext] || null;
+        }
+
         // ========== File Browser ==========
         const fileTree = document.getElementById('fileTree');
         const sidebar = document.getElementById('sidebar');
@@ -982,18 +1398,18 @@
                         itemDiv.className = 'tree-item';
                         itemDiv.innerHTML = `<span class="arrow" style="visibility:hidden">▶</span><span class="icon">${getFileIcon(entry.name)}</span><span class="name file">${entry.name}</span>`;
 
-                        // Single click: select file (attach path only)
+                        // Single click: open in preview panel
                         itemDiv.onclick = (e) => {
                             e.stopPropagation();
                             document.querySelectorAll('.tree-item.active').forEach(el => el.classList.remove('active'));
                             itemDiv.classList.add('active');
-                            attachFilePath(fullPath, entry.name);
+                            openPreview(fullPath, entry.name);
                         };
 
-                        // Double-click: attach full file content (legacy behavior)
+                        // Double-click: attach path to chat
                         itemDiv.ondblclick = async (e) => {
                             e.stopPropagation();
-                            await attachFileContent(fullPath, entry.name);
+                            attachFilePath(fullPath, entry.name);
                         };
 
                         container.appendChild(itemDiv);

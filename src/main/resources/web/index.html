@@ -581,6 +581,7 @@
             <div class="preview-content" id="previewContent"></div>
             <div class="preview-actions">
                 <button class="btn-attach" onclick="attachPreviewFile()">📎 Attach to Chat</button>
+                <button class="btn-attach" onclick="screenshotPreview()" style="background:var(--accent);color:var(--bg)">📸 Screenshot to Chat</button>
                 <button class="btn-close-panel" onclick="closePreviewPanel()">Close Panel</button>
             </div>
         </div>
@@ -603,6 +604,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script>
         // ========== Theme Toggle ==========
         function toggleTheme() {
@@ -1322,6 +1324,36 @@
                 if (preview) {
                     attachFilePath(activePreviewPath, preview.name);
                 }
+            }
+        }
+
+        async function screenshotPreview() {
+            if (!previewContent || typeof html2canvas === 'undefined') {
+                alert('Screenshot not available');
+                return;
+            }
+
+            try {
+                const canvas = await html2canvas(previewContent, {
+                    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),
+                    scale: 2,
+                    useCORS: true
+                });
+
+                const dataUrl = canvas.toDataURL('image/png');
+                const preview = openPreviews.find(p => p.path === activePreviewPath);
+                const name = preview ? 'screenshot_' + preview.name + '.png' : 'screenshot.png';
+
+                pendingAttachments.push({
+                    name: name,
+                    content: dataUrl,
+                    type: 'image/png',
+                    isImage: true,
+                    isPathOnly: false
+                });
+                renderAttachments();
+            } catch (err) {
+                console.error('Screenshot failed:', err);
             }
         }
 

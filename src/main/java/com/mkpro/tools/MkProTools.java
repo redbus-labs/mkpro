@@ -173,7 +173,7 @@ public class MkProTools {
     }
 
     public static BaseTool createReadFileTool() {
-        return new BaseTool("read_file", "Reads the content of a file. Supports reading specific line ranges for large files.") {
+        return new BaseTool("read_file", "Reads the content of a file. Supports text files, PDFs, DOCX, XLSX, PPTX, SVG, DXF, STL, and OBJ. For PDFs and Office docs, text is automatically extracted. Image-based PDF pages are rendered as PNG for vision analysis. Use start_line/end_line as page numbers for PDFs.") {
             @Override public Optional<FunctionDeclaration> declaration() {
                 return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
                     .parameters(Schema.builder().type("OBJECT")

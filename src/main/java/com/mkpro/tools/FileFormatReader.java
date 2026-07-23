@@ -55,10 +55,42 @@ public class FileFormatReader {
             int sp = Math.max(1, startPage);
             int ep = endPage > 0 ? Math.min(endPage, totalPages) : Math.min(sp + 9, totalPages);
 
-            stripper.setStartPage(sp);
-            stripper.setEndPage(ep);
-            String text = stripper.getText(document);
+            StringBuilder fullText = new StringBuilder();
+            List<String> renderedImages = new ArrayList<>();
 
+            // Process each page — if text is sparse, render as image for vision
+            org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
+
+            for (int page = sp; page <= ep; page++) {
+                stripper.setStartPage(page);
+                stripper.setEndPage(page);
+                String pageText = stripper.getText(document).trim();
+
+                if (pageText.length() >= 50) {
+                    // Sufficient text — use extracted content
+                    fullText.append("--- Page ").append(page).append(" ---\n");
+                    fullText.append(pageText).append("\n\n");
+                } else {
+                    // Sparse/no text — render page as image for vision analysis
+                    try {
+                        java.awt.image.BufferedImage image = renderer.renderImageWithDPI(page - 1, 150);
+                        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory("mkpro-pdf-");
+                        java.nio.file.Path imgPath = tempDir.resolve("page_" + page + ".png");
+                        javax.imageio.ImageIO.write(image, "PNG", imgPath.toFile());
+
+                        renderedImages.add(imgPath.toAbsolutePath().toString());
+                        fullText.append("--- Page ").append(page).append(" ---\n");
+                        fullText.append("[IMAGE-BASED PAGE] Text extraction returned minimal content. ");
+                        fullText.append("Page rendered to: ").append(imgPath.toAbsolutePath()).append("\n");
+                        fullText.append("Use the vision/image tool to analyze this page visually.\n\n");
+                    } catch (Exception renderErr) {
+                        fullText.append("--- Page ").append(page).append(" ---\n");
+                        fullText.append("[IMAGE-BASED PAGE] Could not render: ").append(renderErr.getMessage()).append("\n\n");
+                    }
+                }
+            }
+
+            String text = fullText.toString();
             if (text.length() > 50000) {
                 text = text.substring(0, 50000) + "\n... [truncated at 50KB]";
             }
@@ -68,6 +100,10 @@ public class FileFormatReader {
             result.put("format", "pdf");
             result.put("total_pages", totalPages);
             result.put("showing_pages", sp + "-" + ep);
+            if (!renderedImages.isEmpty()) {
+                result.put("rendered_images", renderedImages);
+                result.put("note", renderedImages.size() + " page(s) are image-based and were rendered as PNG. Use the vision tool to read them.");
+            }
             if (ep < totalPages) {
                 result.put("has_more", true);
                 result.put("next_start_line", ep + 1);

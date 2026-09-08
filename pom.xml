@@ -6,13 +6,31 @@
 
     <groupId>com.mkpro</groupId>
     <artifactId>mkpro</artifactId>
-    <version>2.0</version>
+    <version>4.5.1</version>
     <packaging>jar</packaging>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <jackson.version>2.18.2</jackson.version>
+        <jline.version>3.26.3</jline.version>
+        <slf4j.version>2.0.12</slf4j.version>
+        <selenium.version>4.21.0</selenium.version>
+        <webdrivermanager.version>5.8.0</webdrivermanager.version>
+        <junit.version>5.11.0</junit.version>
+        <mockito.version>5.12.0</mockito.version>
+        <mapdb.version>3.1.0</mapdb.version>
+        <javaparser.version>3.26.2</javaparser.version>
+        <jgrapht.version>1.5.2</jgrapht.version>
+        <picocli.version>4.7.5</picocli.version>
+        <jocl.version>2.0.4</jocl.version>
+        <!-- ADK: locally installed from source. No remote SNAPSHOT repo configured,
+             so this version is effectively pinned to the local build.
+             To update: rebuild ADK from source and mvn install. -->
+        <adk.version>1.6.1-SNAPSHOT</adk.version>
+        <rxjava.version>3.1.8</rxjava.version>
+        <jsch.version>0.2.16</jsch.version>
     </properties>
 
     <dependencyManagement>
@@ -25,33 +43,19 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-stdlib</artifactId>
-                <version>1.9.22</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-stdlib-common</artifactId>
-                <version>1.9.22</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-stdlib-jdk8</artifactId>
-                <version>1.9.22</version>
-            </dependency>
-            <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter-api</artifactId>
-                <version>5.10.1</version>
+                <version>${junit.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter-engine</artifactId>
-                <version>5.10.1</version>
+                <version>${junit.version}</version>
                 <scope>test</scope>
             </dependency>
-        </dependencies>
+
+    </dependencies>
     </dependencyManagement>
 
     <dependencies>
@@ -59,83 +63,127 @@
         <dependency>
             <groupId>com.google.adk</groupId>
             <artifactId>google-adk</artifactId>
-            <version>1.1.0</version>
+            <version>${adk.version}</version>
         </dependency>
         <dependency>
             <groupId>com.google.adk</groupId>
             <artifactId>google-adk-sarvam-ai</artifactId>
-            <version>1.1.0</version>
+            <version>${adk.version}</version>
         </dependency>
 
         <!-- Logging -->
         <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>1.4.14</version>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
         </dependency>
         
+        <!-- Groovy Script Engine -->
         <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-stdlib</artifactId>
-            <version>1.9.22</version>
+            <groupId>org.apache.groovy</groupId>
+            <artifactId>groovy</artifactId>
+            <version>4.0.22</version>
         </dependency>
-        <!-- MapDB for Logging -->
+
+        <!-- Jlama: Pure Java LLM Inference -->
+        <dependency>
+            <groupId>com.github.tjake</groupId>
+            <artifactId>jlama-core</artifactId>
+            <version>0.9.0-beta</version>
+        </dependency>
+
+        <!-- PDF Text Extraction -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
+        <!-- Office Document Extraction (DOCX, XLSX, PPTX) -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.3.0</version>
+        </dependency>
+
+        <!-- MapDB -->
         <dependency>
             <groupId>org.mapdb</groupId>
             <artifactId>mapdb</artifactId>
-            <version>3.0.9</version>
+            <version>${mapdb.version}</version>
         </dependency>
 
-        <!-- WebSockets -->
+        <!-- Modern SSH / JSch Fork -->
+        <dependency>
+            <groupId>com.github.mwiede</groupId>
+            <artifactId>jsch</artifactId>
+            <version>${jsch.version}</version>
+        </dependency>
+
+        <!-- Networking -->
         <dependency>
             <groupId>org.java-websocket</groupId>
             <artifactId>Java-WebSocket</artifactId>
             <version>1.5.7</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmdns</groupId>
+            <artifactId>jmdns</artifactId>
+            <version>3.5.8</version>
+        </dependency>
+
+        <!-- Reactive Programming -->
+        <dependency>
+            <groupId>io.reactivex.rxjava3</groupId>
+            <artifactId>rxjava</artifactId>
+            <version>3.1.8</version>
         </dependency>
 
         <!-- Selenium -->
         <dependency>
             <groupId>org.seleniumhq.selenium</groupId>
             <artifactId>selenium-java</artifactId>
-            <version>4.16.1</version>
+            <version>${selenium.version}</version>
         </dependency>
         <dependency>
             <groupId>io.github.bonigarcia</groupId>
             <artifactId>webdrivermanager</artifactId>
-            <version>5.6.3</version>
+            <version>${webdrivermanager.version}</version>
         </dependency>
         
-        <!-- JLine for better CLI handling -->
+        <!-- CLI Handling -->
         <dependency>
             <groupId>org.jline</groupId>
             <artifactId>jline</artifactId>
-            <version>3.25.1</version>
+            <version>${jline.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
+            <version>${picocli.version}</version>
         </dependency>
 
-        <!-- Jackson YAML -->
+        <!-- Serialization & JSON -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-yaml</artifactId>
-            <version>2.19.0</version>
+            <version>${jackson.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
-            <version>2.19.0</version>
+            <version>${jackson.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.19.0</version>
+            <version>${jackson.version}</version>
         </dependency>
-
-        <!-- GSON -->
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-            <version>2.10.1</version>
-        </dependency>
-
         <!-- HTML Generation -->
         <dependency>
             <groupId>com.j2html</groupId>
@@ -143,27 +191,71 @@
             <version>1.6.0</version>
         </dependency>
 
+        <!-- Java Analysis & Graphing -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>${javaparser.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-symbol-solver-core</artifactId>
+            <version>${javaparser.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jgrapht</groupId>
+            <artifactId>jgrapht-core</artifactId>
+            <version>${jgrapht.version}</version>
+        </dependency>
+
+        <!-- OpenCL -->
+        <dependency>
+            <groupId>org.jocl</groupId>
+            <artifactId>jocl</artifactId>
+            <version>${jocl.version}</version>
+        </dependency>
+
+        <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
-            <version>5.10.1</version>
-            <scope>test</scope>
+            <version>${junit.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
-            <version>5.10.1</version>
-            <scope>test</scope>
+            <version>${junit.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <version>${junit.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>${mockito.version}</version>
         </dependency>
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Default resources -->
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- Auto-pack teams/ folder into JAR as /teams/ -->
+            <resource>
+                <directory>teams</directory>
+                <targetPath>teams</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <!-- Build Fat JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.1</version>
+                <version>3.6.0</version>
                 <executions>
                     <execution>
                         <phase>package</phase>
@@ -186,46 +278,6 @@
                                     </excludes>
                                 </filter>
                             </filters>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <!-- Launch4j Plugin -->
-            <plugin>
-                <groupId>com.akathist.maven.plugins.launch4j</groupId>
-                <artifactId>launch4j-maven-plugin</artifactId>
-                <version>2.5.2</version>
-                <executions>
-                    <execution>
-                        <id>l4j-clui</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>launch4j</goal>
-                        </goals>
-                        <configuration>
-                            <headerType>console</headerType>
-                            <outfile>target/mkpro.exe</outfile>
-                            <jar>target/${project.artifactId}-${project.version}.jar</jar>
-                            <errTitle>mkpro</errTitle>
-                            <classPath>
-                                <mainClass>com.mkpro.MkPro</mainClass>
-                            </classPath>
-                            <jre>
-                                <minVersion>17</minVersion>
-                                <path>%JAVA_HOME%</path>
-                                <runtimeBits>64</runtimeBits>
-                            </jre>
-                            <versionInfo>
-                                <fileVersion>1.0.0.0</fileVersion>
-                                <txtFileVersion>${project.version}</txtFileVersion>
-                                <fileDescription>mkpro AI Assistant</fileDescription>
-                                <copyright>mkpro</copyright>
-                                <productVersion>1.0.0.0</productVersion>
-                                <txtProductVersion>${project.version}</txtProductVersion>
-                                <productName>mkpro</productName>
-                                <internalName>mkpro</internalName>
-                                <originalFilename>mkpro.exe</originalFilename>
-                            </versionInfo>
                         </configuration>
                     </execution>
                 </executions>

@@ -1,9 +1,13 @@
 package com.mkpro.models;
 
-public enum Provider {
+import java.io.Serializable;
+
+public enum Provider implements Serializable {
     OLLAMA,
     GEMINI,
     BEDROCK,
     SARVAM,
     AZURE,
+    NVIDIA,
+    JLAMA,
 }

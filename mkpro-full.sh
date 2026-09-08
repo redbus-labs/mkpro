@@ -10,7 +10,9 @@ done
 SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" &> /dev/null && pwd )"
 
 # Define the path to the shaded JAR
-JAR_PATH="$SCRIPT_DIR/target/mkpro-2.0.jar"
+
+export JDK_JAVA_OPTIONS="--add-modules jdk.incubator.vector --enable-preview"
+JAR_PATH="$SCRIPT_DIR/target/mkpro-4.5.0.jar"
 
 # Check if the JAR exists
 if [ ! -f "$JAR_PATH" ]; then
@@ -20,4 +22,4 @@ if [ ! -f "$JAR_PATH" ]; then
 fi
 
 # Run the application with registry enabled
-java -jar "$JAR_PATH" --enable-registry "$@"
+java -Dmkpro.db.name=$(basename "$0" .sh) -jar "$JAR_PATH" --enable-registry "$@"

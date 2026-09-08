@@ -1,0 +1,51 @@
+# mkpro Knowledge Scheduler Configuration
+# Place in: .mkpro/schedules.yaml (project-local) or ~/Documents/mkpro/schedules.yaml (global)
+# Start with: java -jar mkpro-4.1.0.jar --scheduler
+#
+# Each topic defines:
+#   name:                   Unique identifier for the topic
+#   title:                  Human-readable title
+#   sources:                List of URLs to fetch data from
+#   refreshIntervalMinutes: How often to refresh (default: 60)
+#   agent:                  Which agent analyzes the data (default: Coordinator)
+#   instruction:            What to analyze / look for in the fetched data
+
+topics:
+  - name: kubernetes-security
+    title: "Kubernetes Security Best Practices"
+    sources:
+      - "https://kubernetes.io/docs/concepts/security/"
+      - "https://raw.githubusercontent.com/OWASP/CheatSheetSeries/master/cheatsheets/Kubernetes_Security_Cheat_Sheet.md"
+    refreshIntervalMinutes: 120
+    agent: SecurityAuditor
+    instruction: >
+      Analyze the fetched content about Kubernetes security. Focus on:
+      - New CVEs or vulnerabilities mentioned
+      - Best practices for pod security
+      - Network policies and RBAC recommendations
+      - Container image security
+      Merge with existing knowledge, note any changes from previous version.
+
+  - name: java-performance
+    title: "Java Performance & JVM Tuning"
+    sources:
+      - "https://docs.oracle.com/en/java/javase/21/gctuning/"
+    refreshIntervalMinutes: 240
+    agent: Architect
+    instruction: >
+      Extract and summarize Java 21 GC tuning best practices.
+      Focus on G1GC and ZGC recommendations, heap sizing,
+      and common performance pitfalls. Track changes between versions.
+
+  - name: spring-boot-releases
+    title: "Spring Boot Release Notes"
+    sources:
+      - "https://spring.io/blog/category/releases"
+    refreshIntervalMinutes: 60
+    agent: Coordinator
+    instruction: >
+      Monitor Spring Boot releases. Summarize:
+      - Latest version numbers
+      - Breaking changes
+      - New features worth adopting
+      - Security patches

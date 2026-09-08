@@ -1,0 +1,188 @@
+# mkpro 4.0.0 Release Notes
+
+## Major Release — Self-Adaptive Multi-Agent Framework
+
+mkpro 4.0.0 is a transformative release that introduces self-learning routing, cross-instance collaboration, multimodal AI, and a fully hardened architecture. The system now adapts to your workflow, communicates across machines, and handles failures autonomously.
+
+---
+
+## Markov Chain Router (NEW)
+
+A zero-latency, self-improving probabilistic model that routes requests directly to agents without LLM calls.
+
+- 14 intent categories with keyword/regex classification (typo-tolerant)
+- Transition matrix learns P(agent | task_category) from your usage
+- 65% confidence threshold — routes instantly when confident, falls through to Coordinator when uncertain
+- Self-improving lifecycle: trains on startup, learns live, auto-exports on exit, better next session
+- Bundled default model (9964 observations) — works out of the box for new users
+- /train, /train status, /train reset commands for manual control
+- Transparent: always shows routing confidence and decision in console
+
+---
+
+## Cross-Instance Agent Communication (NEW)
+
+Agents can now talk to agents on other mkpro instances over the P2P mesh.
+
+- ask_peer_agent tool: Architect on Instance A can query Architect on Instance B
+- list_peers tool: dynamic discovery of connected peers and their projects
+- PEER_HELLO handshake: instances exchange project name, type, description, agents, and model on connection
+- Target by project: ask_peer_agent(agent="Architect", peer="payment-service", question="...")
+- Read-only security: remote agents can only read files, search codebase, recall memory — no writes or shell
+- HMAC-SHA256 signed messages across the wire
+
+---
+
+## Self-Adaptive Model Resilience (NEW)
+
+Agents automatically recover from model failures without user intervention.
+
+- Option B — YAML-defined fallback: fallback_model: gemini-2.0-flash per agent
+- Option C — Health-based routing: connection failures auto-reroute to alternate Ollama endpoints
+- ConfigRecommender: when fallback succeeds, prompts user to upgrade primary model (y/N)
+- /config fallback <agent> <model@provider> command for runtime assignment
+- Global fallback: /config fallback default <model@provider> for all agents
+- Cross-provider: Ollama to Gemini fallback, Gemini to Ollama fallback, any combination
+
+---
+
+## Multimodal Support (NEW)
+
+- Vision (analyze_image): send images to Gemini for UI description, OCR, diagram analysis
+- Audio (transcribe_audio): transcribe, summarize, or extract key points from audio files
+- Supports: JPG, PNG, WebP, GIF, BMP (images) / MP3, WAV, OGG, FLAC, M4A, WEBM, AAC (audio)
+- Given to: Architect, Coder, Tester (vision) / Tester, DataAnalyst (audio)
+
+---
+
+## Multi-Ollama Endpoints (NEW)
+
+- Multiple servers active simultaneously — GPU boxes, local machines, remote servers
+- Per-agent routing: /config Coder codestral@gpu4090
+- /ollama command: add, remove, list, status, models per endpoint
+- Model aggregation: fetches /api/tags from all endpoints, prefixes remote models
+- Provider selection shows OLLAMA [gpu4090], OLLAMA [local] etc.
+- /status displays all endpoints and per-agent assignments
+
+---
+
+## Architecture Consolidation (Phase 1-5)
+
+Phase 1: CentralMemory Hot/Shared Split
+- Stats (hot path): always-open per-instance local DB — zero contention
+- Configs/goals/servers: brief-lock shared DB with in-memory cache
+- 10-100x faster stats writes, multi-instance safe
+
+Phase 2: Safety Net Tests (150+ tests)
+- CommandPolicy, PathValidator, ShellExecutor, GoalStimulus fully tested
+- Fixed Windows 8.3 path name bug in PathValidator
+
+Phase 3: Declarative Tool Assignment
+- ToolRegistry: 13+ tool names to BaseTool instances
+- AgentFactory: builds agents from YAML definitions
+- Tools defined per-agent in YAML — no code changes to reconfigure
+
+Phase 4: Dependency Consolidation
+- Removed Gson + org.json — single JSON library (Jackson)
+- P2PMessageBus/SyncEngine migrated to Jackson ObjectNode
+
+Phase 5: McpServerConnectTools Split
+- McpProtocolClient: JSON-RPC transport, session, retry
+- McpProjectScanner: project detection, output paths
+- Original 64K file split into 3 focused classes
+
+---
+
+## Network Security (NEW)
+
+- P2P Audit Log: all connection events logged to ~/.mkpro/p2p_audit.log
+- Connection Whitelist: ~/.mkpro/p2p_whitelist.txt — IP/prefix filtering
+- Console Alerts: red bold alerts on auth failures, yellow on whitelist rejections
+- --network / --no-network flags (default: disabled, opt-in)
+
+---
+
+## P2P Mesh Networking (Overhauled)
+
+- Auto-connect on discovery: mDNS to immediate WebSocket connection
+- Feedback loop fixed: AtomicBoolean syncing guard prevents echo storms
+- Reconnection with backoff: 2s, 4s, 8s, 16s, 32s (5 attempts)
+- Connection deduplication: won't double-connect to same peer
+- Proper deserialization: Jackson treeToValue for complex sync objects
+- /network connect <ip:port> for manual peer connection
+
+---
+
+## Coordinator Intelligence (Enhanced)
+
+- Autonomy directive: "Act, don't ask" — never asks user for context it can discover by delegating
+- Session state injection: Goals, project memory, MCP context, connected peers loaded at startup
+- commit_to_memory / recall_project_memory tools — agents autonomously remember insights
+- list_peers — Coordinator dynamically discovers connected instances
+
+---
+
+## Training Data Pipeline (NEW)
+
+- /export command: exports real chat sessions as JSONL training data
+- Auto-export on exit: session logs saved as datajsonl/session_auto_*.jsonl
+- Synthetic generators: 10K coordinator + 10K goaltracker + 10K decisiveness examples
+- Standard format: {"messages": [{role, content}, ...]} — ready for SLM fine-tuning
+
+---
+
+## File Tools (Enhanced)
+
+- read_file: line-range pagination (start_line, end_line, has_more, next_start_line)
+- list_dir: recursive with depth control, pagination (limit/offset), auto-excludes noise dirs
+- index_codebase: Architect can trigger vector indexing for semantic search
+
+---
+
+## New Commands
+
+| Command                                    | Description                              |
+|--------------------------------------------|------------------------------------------|
+| /ollama                                    | Manage multiple Ollama endpoints         |
+| /train                                     | Train/inspect Markov Router              |
+| /export                                    | Export chat as JSONL training data        |
+| /config fallback                           | Set fallback models per-agent or global  |
+| /network connect                           | Manual peer connection                   |
+| /exit, /quit                               | Exit the application                     |
+
+---
+
+## By the Numbers
+
+| Metric                | Value           |
+|-----------------------|-----------------|
+| Tests                 | 204 (all pass)  |
+| New files             | 40+             |
+| Lines added           | ~15,000+        |
+| Dependencies removed  | 2 (Gson, org.json) |
+| Agents                | 15              |
+| Tool categories       | 16              |
+
+---
+
+## Upgrade Notes
+
+- Java 21+ required
+- ADK updated to 1.6.1-SNAPSHOT
+- AgentConfig.serialVersionUID remains at 1 — backward compatible with existing .mkpro/ data
+- Network disabled by default — use --network flag to enable P2P mesh
+- Existing central_memory.db works without migration
+- Run /train reset after upgrading for optimal Markov routing
+
+---
+
+## Getting Started
+
+    git clone https://github.com/redbus-labs/mkpro.git
+    cd mkpro
+    mvn clean package
+    java -jar target/mkpro-4.0.0.jar
+
+With networking:
+
+    java -jar target/mkpro-4.0.0.jar --network

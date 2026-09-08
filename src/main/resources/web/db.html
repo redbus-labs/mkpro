@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>mkpro — MapDB Browser</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #1a1b26;
+            --surface: #24283b;
+            --surface2: #2f3549;
+            --text: #c0caf5;
+            --text-dim: #565f89;
+            --accent: #7aa2f7;
+            --green: #9ece6a;
+            --yellow: #e0af68;
+            --red: #f7768e;
+            --purple: #bb9af7;
+            --cyan: #7dcfff;
+        }
+        body {
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            background: var(--bg);
+            color: var(--text);
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .header h1 { color: var(--accent); font-size: 20px; }
+        .header a { color: var(--cyan); text-decoration: none; font-size: 13px; }
+        .header a:hover { text-decoration: underline; }
+        .refresh-btn {
+            background: var(--surface2);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        .refresh-btn:hover { background: var(--accent); color: var(--bg); }
+        .stats {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-left: auto;
+        }
+        .store {
+            margin-bottom: 24px;
+            background: var(--surface);
+            border-radius: 8px;
+            border: 1px solid var(--surface2);
+            overflow: hidden;
+        }
+        .store-header {
+            padding: 12px 16px;
+            background: var(--surface2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .store-header:hover { background: #363b54; }
+        .store-header h2 { font-size: 14px; color: var(--cyan); }
+        .store-header .count {
+            font-size: 11px;
+            background: var(--accent);
+            color: var(--bg);
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        .store-header .toggle { margin-left: auto; color: var(--text-dim); }
+        .store-body { display: none; }
+        .store-body.open { display: block; }
+        .entry {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--surface2);
+            display: flex;
+            gap: 16px;
+        }
+        .entry:last-child { border-bottom: none; }
+        .entry-key {
+            min-width: 200px;
+            max-width: 300px;
+            color: var(--green);
+            font-size: 12px;
+            word-break: break-all;
+            flex-shrink: 0;
+        }
+        .entry-value {
+            font-size: 12px;
+            color: var(--text);
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .entry-value.json {
+            background: var(--bg);
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        .empty { padding: 16px; color: var(--text-dim); font-style: italic; font-size: 12px; }
+        .error { padding: 20px; color: var(--red); text-align: center; }
+        .loading { padding: 20px; color: var(--text-dim); text-align: center; }
+
+        /* Search */
+        .search-bar {
+            margin-bottom: 16px;
+            display: flex;
+            gap: 8px;
+        }
+        .search-bar input {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--surface2);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 13px;
+            outline: none;
+        }
+        .search-bar input:focus { border-color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🗄️ MapDB Browser</h1>
+        <a href="/">← Chat</a>
+        <button class="refresh-btn" onclick="loadData()">⟳ Refresh</button>
+        <span class="stats" id="stats"></span>
+    </div>
+    <div class="search-bar">
+        <input type="text" id="search" placeholder="Filter keys or values..." oninput="filterEntries()" />
+    </div>
+    <div id="content"><div class="loading">Loading stores...</div></div>
+
+    <script>
+        let allData = {};
+
+        async function loadData() {
+            const content = document.getElementById('content');
+            content.innerHTML = '<div class="loading">Loading stores...</div>';
+            
+            try {
+                const resp = await fetch('/api/db');
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                allData = await resp.json();
+                renderStores(allData);
+            } catch (err) {
+                content.innerHTML = `<div class="error">Error loading data: ${err.message}</div>`;
+            }
+        }
+
+        function renderStores(data) {
+            const content = document.getElementById('content');
+            const filter = document.getElementById('search').value.toLowerCase();
+            let totalKeys = 0;
+            let html = '';
+
+            for (const [storeName, entries] of Object.entries(data)) {
+                const keys = Object.keys(entries).filter(k => {
+                    if (!filter) return true;
+                    const v = entries[k] || '';
+                    return k.toLowerCase().includes(filter) || v.toLowerCase().includes(filter);
+                });
+                
+                totalKeys += keys.length;
+
+                html += `<div class="store">
+                    <div class="store-header" onclick="toggleStore(this)">
+                        <h2>${storeName}</h2>
+                        <span class="count">${keys.length} entries</span>
+                        <span class="toggle">▼</span>
+                    </div>
+                    <div class="store-body open">`;
+
+                if (keys.length === 0) {
+                    html += '<div class="empty">No entries' + (filter ? ' matching filter' : '') + '</div>';
+                } else {
+                    for (const key of keys.sort()) {
+                        const value = entries[key];
+                        const isJson = value && (value.startsWith('{') || value.startsWith('['));
+                        let displayValue = value;
+                        
+                        if (isJson) {
+                            try {
+                                displayValue = JSON.stringify(JSON.parse(value), null, 2);
+                            } catch(e) {
+                                displayValue = value;
+                            }
+                        }
+                        
+                        // Truncate very long values
+                        const truncated = displayValue && displayValue.length > 2000 
+                            ? displayValue.substring(0, 2000) + '\n... (' + displayValue.length + ' chars total)'
+                            : displayValue;
+
+                        html += `<div class="entry">
+                            <div class="entry-key">${escapeHtml(key)}</div>
+                            <div class="entry-value ${isJson ? 'json' : ''}">${escapeHtml(truncated || '(empty)')}</div>
+                        </div>`;
+                    }
+                }
+                html += '</div></div>';
+            }
+
+            content.innerHTML = html;
+            document.getElementById('stats').textContent = 
+                `${Object.keys(data).length} stores, ${totalKeys} total entries`;
+        }
+
+        function toggleStore(header) {
+            const body = header.nextElementSibling;
+            body.classList.toggle('open');
+            const toggle = header.querySelector('.toggle');
+            toggle.textContent = body.classList.contains('open') ? '▼' : '▶';
+        }
+
+        function filterEntries() {
+            renderStores(allData);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // Load on page open (no auto-refresh)
+        loadData();
+    </script>
+</body>
+</html>

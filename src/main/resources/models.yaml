@@ -1,0 +1,47 @@
+gemini:
+  # Flash Series (Speed, Agents & Coding)
+  - gemini-3.7-flash                        # Latest flagship — coding agents, agentic workflows (Aug 2026)
+  - gemini-3.6-flash                        # Production-grade stable Flash (GA, Jul 2026)
+  - gemini-3.5-flash-lite                   # Ultra-low cost, high-speed lightweight model
+
+  # Pro Series (Advanced Reasoning & Multi-modal)
+  - gemini-3.1-pro-preview                  # Frontier-class Pro preview with MCP support
+
+bedrock:
+  # Anthropic Claude 5 Series
+  - anthropic.claude-opus-5                  # Most capable — long-running agents, deep reasoning
+  - anthropic.claude-sonnet-5                # Best for coding, agents, and professional work at scale
+  - anthropic.claude-fable-5                 # Creative writing, storytelling, nuanced tasks
+
+  # Anthropic Claude 4.x (Current generation)
+  - anthropic.claude-opus-4-8                # Advanced reasoning, long-horizon agentic model
+  - anthropic.claude-opus-4-7                # Previous Opus generation, still highly capable
+  - anthropic.claude-sonnet-4-6             # Balanced speed, coding, and reasoning
+  - anthropic.claude-haiku-4-5              # Fastest Claude — optimized for speed and cost
+
+  # Meta Llama 4 (MoE Multimodal)
+  - meta.llama-4-maverick-17b-instruct      # Llama 4 Mixture-of-Experts multimodal model
+  - meta.llama-4-scout-17b-instruct         # Lightweight Llama 4 MoE variant
+
+  # Amazon Nova
+  - amazon.nova-pro-v1:0                    # Advanced multimodal, high-context utility model
+  - amazon.nova-lite-v1:0                   # Speed-optimized multimodal model
+  - amazon.nova-micro-v1:0                  # Ultra-fast, low-cost text-only model
+  - amazon.nova-2-lite-v1:0                 # Nova 2 generation lightweight agent model
+
+  # OpenAI on Bedrock
+  - openai.daybreak-red                     # OpenAI Daybreak Red on Bedrock
+  - openai.daybreak-blue                    # OpenAI Daybreak Blue on Bedrock
+
+azure:
+  # GPT-5 Series (Frontier)
+  - gpt-5.6                                 # Latest flagship — available in Microsoft Foundry (Aug 2026)
+  - gpt-5.4                                 # 1M context, advanced tool search, agentic workflows
+  - gpt-5.1                                 # Advanced adaptive reasoning model
+  - gpt-5.1-mini                            # Fast, reasoning-capable lightweight variant
+  - gpt-5                                   # Base GPT-5 unified reasoning + code + dialogue
+  - gpt-5-mini                              # Mid-tier GPT-5 standard efficiency model
+
+  # Reasoning / o-Series (Deep Think)
+  - o4-mini                                 # Latest generation optimized reasoning mini model
+  - o3-mini                                 # High-efficiency, low-latency reasoning model

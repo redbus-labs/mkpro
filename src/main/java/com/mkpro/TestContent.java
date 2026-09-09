@@ -1,0 +1,1 @@
+package com.mkpro; import com.google.genai.types.Content; public class TestContent { public static void main(String[] args) { System.out.println("Methods: " + java.util.Arrays.toString(Content.class.getMethods())); } }  

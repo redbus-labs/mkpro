@@ -10,7 +10,6 @@ public class AgentRequest {
     private Provider provider;
     private String userPrompt;
     private List<BaseTool> tools;
-    private String serverUrl; // Ollama endpoint URL (null = use default)
 
     public AgentRequest(String agentName, String instruction, String modelName, Provider provider, String userPrompt, List<BaseTool> tools) {
         this.agentName = agentName;
@@ -19,21 +18,6 @@ public class AgentRequest {
         this.provider = provider;
         this.userPrompt = userPrompt;
         this.tools = tools;
-        this.serverUrl = null;
-    }
-
-    public AgentRequest(String agentName, String instruction, String modelName, Provider provider, String userPrompt, List<BaseTool> tools, String serverUrl) {
-        this.agentName = agentName;
-        this.instruction = instruction;
-        this.modelName = modelName;
-        this.provider = provider;
-        this.userPrompt = userPrompt;
-        this.tools = tools;
-        this.serverUrl = serverUrl;
-    }
-
-    public AgentRequest(String userPrompt) {
-        this.userPrompt = userPrompt;
     }
 
     public String getAgentName() { return agentName; }
@@ -42,5 +26,4 @@ public class AgentRequest {
     public Provider getProvider() { return provider; }
     public String getUserPrompt() { return userPrompt; }
     public List<BaseTool> getTools() { return tools; }
-    public String getServerUrl() { return serverUrl; }
 }

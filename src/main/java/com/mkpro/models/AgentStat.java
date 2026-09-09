@@ -14,14 +14,8 @@ public class AgentStat implements Serializable {
     private boolean success;
     private int inputLength;
     private int outputLength;
-    private long inputTokens;
-    private long outputTokens;
-    private long totalTokens;
-    private String sessionId;
 
-    public AgentStat(String agentName, String provider, String model, long durationMs, boolean success, 
-                     int inputLength, int outputLength, long inputTokens, long outputTokens, 
-                     long totalTokens, String sessionId) {
+    public AgentStat(String agentName, String provider, String model, long durationMs, boolean success, int inputLength, int outputLength) {
         this.timestamp = Instant.now();
         this.agentName = agentName;
         this.provider = provider;
@@ -30,10 +24,6 @@ public class AgentStat implements Serializable {
         this.success = success;
         this.inputLength = inputLength;
         this.outputLength = outputLength;
-        this.inputTokens = inputTokens;
-        this.outputTokens = outputTokens;
-        this.totalTokens = totalTokens;
-        this.sessionId = sessionId;
     }
 
     public Instant getTimestamp() { return timestamp; }
@@ -44,14 +34,9 @@ public class AgentStat implements Serializable {
     public boolean isSuccess() { return success; }
     public int getInputLength() { return inputLength; }
     public int getOutputLength() { return outputLength; }
-    public long getInputTokens() { return inputTokens; }
-    public long getOutputTokens() { return outputTokens; }
-    public long getTotalTokens() { return totalTokens; }
-    public String getSessionId() { return sessionId; }
     
     @Override
     public String toString() {
-        return String.format("[%s] %s (%s/%s) - %dms - %s - Tokens: %d", 
-                timestamp, agentName, provider, model, durationMs, success ? "OK" : "FAIL", totalTokens);
+        return String.format("[%s] %s (%s/%s) - %dms - %s", timestamp, agentName, provider, model, durationMs, success ? "OK" : "FAIL");
     }
 }

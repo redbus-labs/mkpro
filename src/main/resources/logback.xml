@@ -5,12 +5,6 @@
         </encoder>
     </appender>
 
-    <!-- Suppress noisy libraries -->
-    <logger name="io.opentelemetry" level="OFF" />
-    <logger name="org.mapdb" level="OFF" />
-    <logger name="io.grpc" level="OFF" />
-    <logger name="com.google.auth" level="OFF" />
-
     <root level="WARN">
         <appender-ref ref="STDOUT" />
     </root>

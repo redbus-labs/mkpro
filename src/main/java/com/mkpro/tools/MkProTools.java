@@ -30,7 +30,6 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.Scanner;
 import java.util.Arrays;
-import java.util.stream.Collectors;
 
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
@@ -38,12 +37,13 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.Transferable;
 import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
+import java.io.File;
 
 import com.google.adk.memory.EmbeddingService;
 import com.google.adk.memory.MapDBVectorStore;
 import com.google.adk.memory.Vector;
 
-import com.mkpro.utils.IndexingHelper;
+import com.mkpro.IndexingHelper;
 
 public class MkProTools {
 
@@ -83,7 +83,10 @@ public class MkProTools {
                 
                 return embeddingService.generateEmbedding(query)
                     .map(embedding -> {
-                        List<Vector> results = vectorStore.searchTopNVectors( embedding, 0.0, 5); // Top 5, threshold 0.0
+                        // Ensure embedding is float[] if ADK expects it, or double[]. 
+                        // Checking ADK docs/source previously: generateEmbedding returns Single<double[]>.n                        // VectorStore.searchVectors likely takes double[].
+                        
+                        List<Vector> results = vectorStore.searchTopNVectors( embedding, 0.0, 5); // Top 5, threshold 0.6
                         
                         if (results.isEmpty()) {
                             return Collections.singletonMap("result", "No relevant code found for query: " + query);
@@ -94,12 +97,17 @@ public class MkProTools {
                         
                         for (int i = 0; i < results.size(); i++) {
                             Vector res = results.get(i);
+                         
+                            // Assuming MemoryEntry content format "FilePath: ... \n Content" or just Content.
+                            // We can format it nicely.
+                            //sb.append("--- Match ").append(i + 1).append(" (Score: ").append(String.format("%.2f", res.)).append(") ---\n");
                             sb.append(res.getContent()); 
                             sb.append("\n\n");
                         }
                         
                         return Collections.<String, Object>singletonMap("result", sb.toString());
                     });
+                  //  .onErrorReturn(e -> Collections.singletonMap("error", "Vector search failed: " + e.getMessage()));
             }
         };
     }
@@ -126,6 +134,7 @@ public class MkProTools {
                 System.out.println(ANSI_BLUE + "[System] Reading clipboard..." + ANSI_RESET);
                 return Single.fromCallable(() -> {
                     try {
+                        // Check for headless mode, though on many servers this might just fail or return empty
                         if (java.awt.GraphicsEnvironment.isHeadless()) {
                              return Collections.singletonMap("error", "Cannot access clipboard in headless mode.");
                         }
@@ -139,6 +148,7 @@ public class MkProTools {
 
                         if (contents.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                             String text = (String) contents.getTransferData(DataFlavor.stringFlavor);
+                            // Truncate if too long? For now, let's keep it reasonable.
                             if (text.length() > 20000) {
                                 text = text.substring(0, 20000) + "\n...[truncated]";
                             }
@@ -149,6 +159,7 @@ public class MkProTools {
                         } else if (contents.isDataFlavorSupported(DataFlavor.imageFlavor)) {
                             BufferedImage image = (BufferedImage) contents.getTransferData(DataFlavor.imageFlavor);
                             
+                            // Save to temp file
                             String tempDir = System.getProperty("java.io.tmpdir");
                             String fileName = "clipboard_" + System.currentTimeMillis() + ".png";
                             File outputFile = new File(tempDir, fileName);
@@ -172,227 +183,67 @@ public class MkProTools {
         };
     }
 
-    public static BaseTool createReadFileTool() {
-        return new BaseTool("read_file", "Reads the content of a file. Supports text files, PDFs, DOCX, XLSX, PPTX, SVG, DXF, STL, and OBJ. For PDFs and Office docs, text is automatically extracted. Image-based PDF pages are rendered as PNG for vision analysis. Use start_line/end_line as page numbers for PDFs.") {
-            @Override public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
-                    .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of(
-                            "path", Schema.builder().type("STRING").description("Path to the file").build(),
-                            "start_line", Schema.builder().type("INTEGER").description("Optional: start reading from this line (1-indexed). Default: 1.").build(),
-                            "end_line", Schema.builder().type("INTEGER").description("Optional: stop reading at this line. Default: reads all or up to 500 lines.").build()
-                        ))
-                        .required(ImmutableList.of("path")).build()).build());
+    public static BaseTool createImageCropTool() {
+        return new BaseTool(
+                "image_crop",
+                "Crops an image to the specified dimensions. Useful for focusing on specific UI elements or regions."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "image_path", Schema.builder().type("STRING").description("Path to the image file.").build(),
+                                        "x", Schema.builder().type("INTEGER").description("Starting X coordinate.").build(),
+                                        "y", Schema.builder().type("INTEGER").description("Starting Y coordinate.").build(),
+                                        "width", Schema.builder().type("INTEGER").description("Width of the cropped area.").build(),
+                                        "height", Schema.builder().type("INTEGER").description("Height of the cropped area.").build()
+                                ))
+                                .required(ImmutableList.of("image_path", "x", "y", "width", "height"))
+                                .build())
+                        .build());
             }
-            @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String imagePath = (String) args.get("image_path");
+                int x = ((Double) args.get("x")).intValue();
+                int y = ((Double) args.get("y")).intValue();
+                int width = ((Double) args.get("width")).intValue();
+                int height = ((Double) args.get("height")).intValue();
+
+                System.out.println(ANSI_BLUE + "[System] Cropping image: " + imagePath + " [" + x + "," + y + " " + width + "x" + height + "]" + ANSI_RESET);
+
                 return Single.fromCallable(() -> {
-                    String pathStr = (String) args.get("path");
-                    int startLine = args.get("start_line") != null ? ((Number) args.get("start_line")).intValue() : 1;
-                    int endLine = args.get("end_line") != null ? ((Number) args.get("end_line")).intValue() : -1;
-
                     try {
-                        Path validated = com.mkpro.security.PathValidator.getInstance().validateForRead(pathStr);
-
-                        // Special format detection (PDF, DOCX, XLSX, PPTX, SVG, DXF, STL, OBJ)
-                        if (FileFormatReader.isSpecialFormat(pathStr)) {
-                            return FileFormatReader.read(validated, startLine, endLine);
+                        File inputFile = new File(imagePath);
+                        if (!inputFile.exists()) {
+                            return Collections.singletonMap("error", "Image file not found: " + imagePath);
                         }
 
-                        List<String> allLines = Files.readAllLines(validated);
-                        int totalLines = allLines.size();
-
-                        // Clamp start
-                        startLine = Math.max(1, startLine);
-                        // Default end: start + 500 or total
-                        if (endLine < 0) {
-                            endLine = Math.min(startLine + 499, totalLines);
-                        }
-                        endLine = Math.min(endLine, totalLines);
-
-                        // Extract range
-                        List<String> lines = allLines.subList(startLine - 1, endLine);
-                        String content = String.join("\n", lines);
-
-                        Map<String, Object> result = new java.util.HashMap<>();
-                        result.put("content", content);
-                        result.put("total_lines", totalLines);
-                        result.put("showing_lines", startLine + "-" + endLine);
-                        if (endLine < totalLines) {
-                            result.put("has_more", true);
-                            result.put("next_start_line", endLine + 1);
-                        }
-                        return result;
-                    } catch (SecurityException e) {
-                        return Collections.singletonMap("error", (Object) e.getMessage());
-                    } catch (java.nio.charset.MalformedInputException e) {
-                        // Binary file — return size info instead
-                        try {
-                            long size = Files.size(Path.of(pathStr));
-                            return Map.of("error", "Binary file (not readable as text)", "size_bytes", size);
-                        } catch (Exception ex) {
-                            return Collections.singletonMap("error", (Object) "Binary file, cannot read as text");
-                        }
-                    }
-                });
-            }
-        };
-    }
-
-    public static BaseTool createListDirTool() {
-        return new BaseTool("list_dir", "Lists files and directories. Supports recursive listing with depth control and pagination for large directories.") {
-            @Override public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
-                    .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of(
-                            "path", Schema.builder().type("STRING").description("Path to the directory (default: project root)").build(),
-                            "recursive", Schema.builder().type("BOOLEAN").description("If true, list recursively. Default: false.").build(),
-                            "depth", Schema.builder().type("INTEGER").description("Max depth for recursive listing (1-10). Default: 3.").build(),
-                            "limit", Schema.builder().type("INTEGER").description("Max number of entries to return (for pagination). Default: 100.").build(),
-                            "offset", Schema.builder().type("INTEGER").description("Skip this many entries (for pagination). Default: 0.").build()
-                        ))
-                        .required(ImmutableList.of("path")).build()).build());
-            }
-            @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                return Single.fromCallable(() -> {
-                    String pathStr = args.get("path") != null ? (String) args.get("path") : ".";
-                    boolean recursive = args.get("recursive") != null && Boolean.TRUE.equals(args.get("recursive"));
-                    int depth = args.get("depth") != null ? ((Number) args.get("depth")).intValue() : 3;
-                    int limit = args.get("limit") != null ? ((Number) args.get("limit")).intValue() : 100;
-                    int offset = args.get("offset") != null ? ((Number) args.get("offset")).intValue() : 0;
-
-                    depth = Math.max(1, Math.min(depth, 10)); // Clamp 1-10
-                    limit = Math.max(1, Math.min(limit, 500)); // Clamp 1-500
-
-                    try {
-                        Path validated = com.mkpro.security.PathValidator.getInstance().validateForRead(pathStr);
-                        if (!Files.isDirectory(validated)) {
-                            return Collections.<String, Object>singletonMap("error", "Not a directory: " + pathStr);
+                        BufferedImage originalImage = ImageIO.read(inputFile);
+                        
+                        // Bounds check
+                        if (x < 0 || y < 0 || x + width > originalImage.getWidth() || y + height > originalImage.getHeight()) {
+                             return Collections.singletonMap("error", String.format("Crop coordinates out of bounds. Image size: %dx%d", originalImage.getWidth(), originalImage.getHeight()));
                         }
 
-                        List<String> entries = new java.util.ArrayList<>();
-                        int maxDepth = recursive ? depth : 1;
-                        Path root = validated;
+                        BufferedImage croppedImage = originalImage.getSubimage(x, y, width, height);
+                        
+                        // Save back to same file
+                        String format = imagePath.toLowerCase().endsWith(".png") ? "png" : "jpg";
+                        ImageIO.write(croppedImage, format, inputFile);
 
-                        try (var stream = Files.walk(validated, maxDepth)) {
-                            stream.filter(p -> !p.equals(validated))
-                                .filter(p -> {
-                                    // Exclude common noise directories and their contents
-                                    String rel = root.relativize(p).toString().replace('\\', '/');
-                                    String first = rel.contains("/") ? rel.substring(0, rel.indexOf('/')) : rel;
-                                    return !first.equals("node_modules") && !first.equals(".git") &&
-                                           !first.equals("target") && !first.equals("build") &&
-                                           !first.equals(".mkpro") && !first.equals("dist");
-                                })
-                                .sorted()
-                                .skip(offset)
-                                .limit(limit)
-                                .forEach(p -> {
-                                    String rel = root.relativize(p).toString().replace('\\', '/');
-                                    String marker = Files.isDirectory(p) ? "/" : "";
-                                    entries.add(rel + marker);
-                                });
-                        }
-
-                        // Count total for pagination info
-                        long total;
-                        try (var countStream = Files.walk(validated, maxDepth)) {
-                            total = countStream.filter(p -> !p.equals(validated))
-                                .filter(p -> {
-                                    String rel = root.relativize(p).toString().replace('\\', '/');
-                                    String first = rel.contains("/") ? rel.substring(0, rel.indexOf('/')) : rel;
-                                    return !first.equals("node_modules") && !first.equals(".git") &&
-                                           !first.equals("target") && !first.equals("build") &&
-                                           !first.equals(".mkpro") && !first.equals("dist");
-                                })
-                                .count();
-                        }
-
-                        Map<String, Object> result = new java.util.HashMap<>();
-                        result.put("files", entries);
-                        result.put("total", total);
-                        result.put("showing", entries.size());
-                        result.put("offset", offset);
-                        if (offset + entries.size() < total) {
-                            result.put("has_more", true);
-                            result.put("next_offset", offset + limit);
-                        }
-                        return result;
-                    } catch (SecurityException e) {
-                        return Collections.<String, Object>singletonMap("error", e.getMessage());
-                    }
-                });
-            }
-        };
-    }
-
-    public static BaseTool createWriteFileTool() {
-        return new BaseTool("write_file", "Writes content to a file. Shows a diff preview and requires approval before writing. Path must be within the project directory.") {
-            @Override public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
-                    .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of(
-                            "path", Schema.builder().type("STRING").description("Path to the file.").build(),
-                            "content", Schema.builder().type("STRING").description("Content to write.").build()))
-                        .required(ImmutableList.of("path", "content")).build()).build());
-            }
-            @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                return Single.fromCallable(() -> {
-                    String pathStr = (String) args.get("path");
-                    String content = (String) args.get("content");
-                    try {
-                        Path validated = com.mkpro.security.PathValidator.getInstance().validate(pathStr);
-                        String oldContent = "";
-                        if (Files.exists(validated)) {
-                            oldContent = Files.readString(validated);
-                        }
-
-                        // Route through approval service
-                        com.mkpro.events.EditApprovalService approvalService = com.mkpro.events.EditApprovalService.INSTANCE;
-                        com.mkpro.events.MkProEventBus eventBus = com.mkpro.events.MkProEventBus.INSTANCE;
-
-                        if (approvalService == null || eventBus == null) {
-                            // Fallback: no approval service, write directly
-                            if (validated.getParent() != null) Files.createDirectories(validated.getParent());
-                            Files.writeString(validated, content);
-                            return Collections.<String, Object>singletonMap("status", "Success (no approval service)");
-                        }
-
-                        String proposalId = "edit-" + System.currentTimeMillis();
-                        com.mkpro.events.EditProposal proposal = new com.mkpro.events.EditProposal(
-                            proposalId, pathStr, oldContent, content);
-
-                        java.util.concurrent.CompletableFuture<Boolean> future = approvalService.submitProposal(proposal);
-                        eventBus.emit(com.mkpro.events.MkProEvent.editProposal(proposal));
-
-                        boolean approved;
-                        try {
-                            // In web mode, auto-approve after 5s (user sees diff post-hoc, can revert via git)
-                            // In CLI mode, TerminalSink has its own 7s countdown with reject option
-                            int timeoutSec = (com.mkpro.events.MkProEventBus.INSTANCE != null 
-                                && com.mkpro.events.MkProEventBus.INSTANCE.hasWebSink()) ? 5 : 30;
-                            approved = future.get(timeoutSec, java.util.concurrent.TimeUnit.SECONDS);
-                        } catch (java.util.concurrent.TimeoutException e) {
-                            approved = true;
-                            approvalService.approve(proposalId);
-                        }
-
-                        if (approved) {
-                            eventBus.emit(com.mkpro.events.MkProEvent.editApproved(proposalId, pathStr));
-                            if (validated.getParent() != null) Files.createDirectories(validated.getParent());
-                            if (Files.exists(validated)) Maker.backItUp(validated.toFile());
-                            Files.writeString(validated, content,
-                                java.nio.file.StandardOpenOption.CREATE,
-                                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                            return Collections.<String, Object>singletonMap("status", "File written successfully: " + pathStr);
-                        } else {
-                            eventBus.emit(com.mkpro.events.MkProEvent.editRejected(proposalId, pathStr));
-                            return Collections.<String, Object>singletonMap("status", "User rejected changes for: " + pathStr);
-                        }
-
-                    } catch (SecurityException e) {
-                        return Collections.<String, Object>singletonMap("error", e.getMessage());
+                        return ImmutableMap.of(
+                            "status", "Image cropped successfully.",
+                            "image_path", imagePath,
+                            "new_size", width + "x" + height
+                        );
                     } catch (Exception e) {
-                        return Collections.<String, Object>singletonMap("error", "Write failed: " + e.getMessage());
+                        return Collections.singletonMap("error", "Failed to crop image: " + e.getMessage());
                     }
                 });
             }
@@ -412,7 +263,7 @@ public class MkProTools {
                         .parameters(Schema.builder()
                                 .type("OBJECT")
                                 .properties(ImmutableMap.of(
-                                        "path", Schema.builder()
+                                        "file_path", Schema.builder()
                                                 .type("STRING")
                                                 .description("The path to the file.")
                                                 .build(),
@@ -421,197 +272,959 @@ public class MkProTools {
                                                 .description("The content to write.")
                                                 .build()
                                 ))
-                                .required(ImmutableList.of("path", "content"))
+                                .required(ImmutableList.of("file_path", "content"))
                                 .build())
                         .build());
             }
 
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String filePath = (String) args.get("path");
-                if (filePath == null) {
-                    filePath = (String) args.get("file_path");
-                }
-                final String finalFilePath = filePath;
-                final String newContent = (String) args.get("content");
+                String filePath = (String) args.get("file_path");
+                String newContent = (String) args.get("content");
                 
                 return Single.fromCallable(() -> {
                     try {
-                        // Validate path before any operation
-                        Path path = com.mkpro.security.PathValidator.getInstance().validate(finalFilePath);
+                        Path path = Paths.get(filePath);
                         String oldContent = "";
                         if (Files.exists(path)) {
                             oldContent = Files.readString(path);
-                        }
-
-                        // Create edit proposal
-                        String proposalId = "edit-" + System.currentTimeMillis();
-                        com.mkpro.events.EditProposal proposal = new com.mkpro.events.EditProposal(
-                            proposalId, finalFilePath, oldContent, newContent);
-
-                        // Get approval service and event bus
-                        com.mkpro.events.EditApprovalService approvalService = com.mkpro.events.EditApprovalService.INSTANCE;
-                        com.mkpro.events.MkProEventBus eventBus = com.mkpro.events.MkProEventBus.INSTANCE;
-
-                        if (approvalService == null || eventBus == null) {
-                            // Fallback: no event bus available, auto-approve
-                            writeFile(path, newContent, finalFilePath);
-                            return Collections.singletonMap("status", "File written (no approval service): " + finalFilePath);
-                        }
-
-                        // Submit proposal and emit event
-                        java.util.concurrent.CompletableFuture<Boolean> future = approvalService.submitProposal(proposal);
-                        eventBus.emit(com.mkpro.events.MkProEvent.editProposal(proposal));
-
-                        // Wait for approval (web: 5s auto-approve, CLI: TerminalSink has 7s countdown)
-                        boolean approved;
-                        try {
-                            int timeoutSec = (com.mkpro.events.MkProEventBus.INSTANCE != null 
-                                && com.mkpro.events.MkProEventBus.INSTANCE.hasWebSink()) ? 5 : 30;
-                            approved = future.get(timeoutSec, java.util.concurrent.TimeUnit.SECONDS);
-                        } catch (java.util.concurrent.TimeoutException e) {
-                            // Timeout = auto-approve (headless safety)
-                            approved = true;
-                            approvalService.approve(proposalId);
-                        }
-
-                        if (approved) {
-                            eventBus.emit(com.mkpro.events.MkProEvent.editApproved(proposalId, finalFilePath));
-                            writeFile(path, newContent, finalFilePath);
-                            return Collections.singletonMap("status", "File written successfully: " + finalFilePath);
                         } else {
-                            eventBus.emit(com.mkpro.events.MkProEvent.editRejected(proposalId, finalFilePath));
-                            return Collections.singletonMap("status", "User rejected changes for: " + finalFilePath);
+                             System.out.println(ANSI_BLUE + "[CodeEditor] Creating NEW file: " + filePath + ANSI_RESET);
                         }
 
-                    } catch (Exception e) {
-                        return Collections.singletonMap("error", "Write failed: " + e.getMessage());
+                        System.out.println(ANSI_BLUE + "\n--- PROPOSED CHANGES FOR: " + filePath + " ---" + ANSI_RESET);
+                        
+                        // Simple Diff Preview
+                        String[] oldLines = oldContent.split("\n");
+                        String[] newLines = newContent.split("\n");
+                        
+                        // Heuristic: If file is huge, just show head/tail or size diff
+                        if (newLines.length > 50 && oldLines.length > 50) {
+                            System.out.println(ANSI_YELLOW + "File is large (" + newLines.length + " lines). Showing first 10 and last 10 lines." + ANSI_RESET);
+                             for (int i = 0; i < Math.min(10, newLines.length); i++) {
+                                System.out.println(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
+                            }
+                            System.out.println("...");
+                            for (int i = Math.max(0, newLines.length - 10); i < newLines.length; i++) {
+                                System.out.println(ANSI_GREEN + "+ " + newLines[i] + ANSI_RESET);
+                            }
+                        } else {
+                            // Show full content for smaller files (simplified view)
+                            // Ideally we would do a line-by-line diff, but for now just showing the new content is safer than a bad diff.
+                            // Or better: Show side-by-side or just "Replacing X lines with Y lines".
+                            
+                            // Let's try a very basic diff logic:
+                            int maxLen = Math.max(oldLines.length, newLines.length);
+                            boolean hasChanges = false;
+                            
+                            for (int i = 0; i < maxLen; i++) {
+                                String oldL = (i < oldLines.length) ? oldLines[i] : null;
+                                String newL = (i < newLines.length) ? newLines[i] : null;
+                                
+                                if (oldL == null && newL != null) {
+                                    System.out.println(ANSI_GREEN + "+ " + newL + ANSI_RESET);
+                                    hasChanges = true;
+                                } else if (oldL != null && newL == null) {
+                                    System.out.println(ANSI_RED + "- " + oldL + ANSI_RESET);
+                                    hasChanges = true;
+                                } else if (!oldL.equals(newL)) {
+                                    System.out.println(ANSI_RED + "- " + oldL + ANSI_RESET);
+                                    System.out.println(ANSI_GREEN + "+ " + newL + ANSI_RESET);
+                                    hasChanges = true;
+                                } else {
+                                    // Context lines (optional, maybe skip for brevity if unchanged)
+                                    // System.out.println("  " + oldL);
+                                }
+                            }
+                            
+                            if (!hasChanges) {
+                                System.out.println(ANSI_YELLOW + "No textual changes detected." + ANSI_RESET);
+                            }
+                        }
+
+                        System.out.println(ANSI_BLUE + "---------------------------------------------" + ANSI_RESET);
+                        
+                        // Auto-approve logic
+                        System.out.print(ANSI_YELLOW + "Auto-approving in 7s... (Press Enter to pause/reject) " + ANSI_RESET);
+                        
+                        boolean interrupted = false;
+                        for (int i = 7; i > 0; i--) {
+                            System.out.print("\r" + ANSI_YELLOW + "Auto-approving in " + i + "s... (Press Enter to pause/reject)   " + ANSI_RESET);
+                            // Check if input is available (non-blocking check)
+                            try {
+                                if (System.in.available() > 0) {
+                                    interrupted = true;
+                                    break;
+                                }
+                                Thread.sleep(1000);
+                            } catch (Exception e) {
+                                // Ignore
+                            }
+                        }
+                        System.out.println(); // Newline
+
+                        if (!interrupted) {
+                            System.out.println(ANSI_GREEN + "Time's up! Auto-approving changes." + ANSI_RESET);
+                            if (path.getParent() != null) {
+                                Files.createDirectories(path.getParent());
+                            }
+                            if (Files.exists(path)) {
+                                System.out.println(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
+                                Maker.backItUp(path.toFile());
+                            }
+                            Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                            return Collections.singletonMap("status", "File written successfully (Auto-approved): " + filePath);
+                        }
+
+                        // Fallback to manual confirmation if interrupted
+                        System.out.print(ANSI_YELLOW + "Apply these changes? [y/N]: " + ANSI_RESET);
+                        Scanner scanner = new Scanner(System.in);
+                        if (scanner.hasNextLine()) {
+                            String input = scanner.nextLine().trim();
+                            if ("y".equalsIgnoreCase(input) || "yes".equalsIgnoreCase(input)) {
+                                if (path.getParent() != null) {
+                                    Files.createDirectories(path.getParent());
+                                }
+                                if (Files.exists(path)) {
+                                    System.out.println(ANSI_BLUE + "Creating backup..." + ANSI_RESET);
+                                    Maker.backItUp(path.toFile());
+                                }
+                                Files.writeString(path, newContent, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                                System.out.println(ANSI_GREEN + "File written successfully." + ANSI_RESET);
+                                return Collections.singletonMap("status", "File written successfully: " + filePath);
+                            } else {
+                                System.out.println(ANSI_RED + "Changes rejected by user." + ANSI_RESET);
+                                return Collections.singletonMap("status", "User rejected changes for: " + filePath);
+                            }
+                        }
+                        
+                        return Collections.singletonMap("status", "No input received. Changes rejected.");
+
+                    } catch (IOException e) {
+                        return Collections.singletonMap("error", "Error processing safe write: " + e.getMessage());
                     }
                 });
             }
+        };
+    }
 
-            private void writeFile(Path path, String content, String filePath) throws java.io.IOException {
-                if (path.getParent() != null) {
-                    Files.createDirectories(path.getParent());
+    public static BaseTool createReadFileTool() {
+        return new BaseTool(
+                "read_file",
+                "Reads the content of a file from the local filesystem."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "file_path", Schema.builder() 
+                                                .type("STRING")
+                                                .description("The path to the file to read.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("file_path"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String filePath = (String) args.get("file_path");
+                System.out.println(ANSI_BLUE + "[Coder] Reading file: " + filePath + ANSI_RESET);
+                try {
+                    Path path = Paths.get(filePath);
+                    if (!Files.exists(path)) {
+                         return Single.just(Collections.singletonMap("error", "File not found: " + filePath));
+                    }
+                    String content = Files.readString(path);
+                    if (content.length() > 10000) {
+                        content = content.substring(0, 10000) + "\n...[truncated]";
+                    }
+                    return Single.just(Collections.singletonMap("content", content));
+                } catch (IOException e) {
+                    return Single.just(Collections.singletonMap("error", "Error reading file: " + e.getMessage()));
                 }
-                if (Files.exists(path)) {
-                    Maker.backItUp(path.toFile());
+            }
+        };
+    }
+
+    public static BaseTool createListDirTool() {
+        return new BaseTool(
+                "list_directory",
+                "Lists the files and directories in a given path. Can be recursive."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "dir_path", Schema.builder()
+                                                .type("STRING")
+                                                .description("The path to the directory to list.")
+                                                .build(),
+                                        "recursive", Schema.builder()
+                                                .type("BOOLEAN")
+                                                .description("Whether to list files recursively.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("dir_path"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String dirPath = (String) args.get("dir_path");
+                Boolean recursive = (Boolean) args.get("recursive");
+                if (recursive == null) recursive = false;
+
+                System.out.println(ANSI_BLUE + "[Coder] Listing directory " + (recursive ? "(recursive)" : "") + ": " + dirPath + ANSI_RESET);
+                try {
+                    Path startPath = Paths.get(dirPath);
+                    if (!Files.exists(startPath) || !Files.isDirectory(startPath)) {
+                        return Single.just(Collections.singletonMap("error", "Directory not found: " + dirPath));
+                    }
+
+                    StringBuilder listing = new StringBuilder();
+                    List<String> ignoredDirs = Arrays.asList(".git", "target", "node_modules", ".idea", ".vscode", ".venv", "bin", "obj");
+
+                    if (recursive) {
+                        java.util.concurrent.atomic.AtomicInteger count = new java.util.concurrent.atomic.AtomicInteger(0);
+                        Files.walk(startPath)
+                             .filter(p -> {
+                                 // Simple ignore logic
+                                 String pathStr = p.toString().toLowerCase();
+                                 if (pathStr.endsWith(".db") || pathStr.endsWith(".db-shm") || pathStr.endsWith(".db-wal")) {
+                                     return false;
+                                 }
+
+                                 for (String ignored : ignoredDirs) {
+                                     if (p.toString().contains(java.io.File.separator + ignored + java.io.File.separator) || 
+                                         p.toString().endsWith(java.io.File.separator + ignored)) {
+                                         return false;
+                                     }
+                                 }
+                                 return true;
+                             })
+                             .limit(1001) // Limit to 1000 items
+                             .forEach(p -> {
+                                 if (count.incrementAndGet() > 1000) return;
+                                 
+                                 Path relative = startPath.relativize(p);
+                                 if (relative.toString().isEmpty()) return;
+                                 
+                                 listing.append(relative.toString().replace("\\", "/"));
+                                 if (Files.isDirectory(p)) {
+                                     listing.append("/");
+                                 }
+                                 listing.append("\n");
+                             });
+                        
+                        if (count.get() > 1000) {
+                            listing.append("... [truncated after 1000 items]");
+                        }
+                    } else {
+                        Files.list(startPath).forEach(p -> {
+                            listing.append(p.getFileName().toString());
+                            if (Files.isDirectory(p)) {
+                                listing.append("/");
+                            }
+                            listing.append("\n");
+                        });
+                    }
+
+                    return Single.just(Collections.singletonMap("listing", listing.toString()));
+                } catch (IOException e) {
+                    return Single.just(Collections.singletonMap("error", "Error listing directory: " + e.getMessage()));
                 }
-                Files.writeString(path, content,
-                    java.nio.file.StandardOpenOption.CREATE,
-                    java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+            }
+        };
+    }
+
+    public static BaseTool createUrlFetchTool() {
+        return new BaseTool(
+                "fetch_url",
+                "Fetches and extracts text content from a given URL."
+        ) {
+            private final HttpClient client = HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "url", Schema.builder()
+                                                .type("STRING")
+                                                .description("The full URL to fetch content from.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("url"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String url = (String) args.get("url");
+                System.out.println(ANSI_BLUE + "[Coordinator] Fetching URL: " + url + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        HttpRequest request = HttpRequest.newBuilder()
+                                .uri(URI.create(url))
+                                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                                .timeout(Duration.ofSeconds(20))
+                                .GET()
+                                .build();
+
+                        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                        
+                        if (response.statusCode() >= 400) {
+                            return Collections.singletonMap("error", "HTTP Error: " + response.statusCode());
+                        }
+
+                        String html = response.body();
+                        String text = html.replaceAll("(?s)<style.*?>.*?</style>", "")
+                                          .replaceAll("(?s)<script.*?>.*?</script>", "")
+                                          .replaceAll("<[^>]+>", " ")
+                                          .replaceAll("\\s+", " ")
+                                          .trim();
+                        
+                        if (text.length() > 20000) {
+                            text = text.substring(0, 20000) + "\n...[truncated]";
+                        }
+                        
+                        return Collections.singletonMap("content", text);
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Failed to fetch URL: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
+
+    public static BaseTool createGoogleSearchTool() {
+        return new BaseTool(
+                "google_search",
+                "Performs a Google search for the given query and returns the results as text."
+        ) {
+            private final HttpClient client = HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "query", Schema.builder()
+                                                .type("STRING")
+                                                .description("The search query.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("query"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String query = (String) args.get("query");
+                System.out.println(ANSI_BLUE + "[Search] Googling: " + query + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        String encodedQuery = java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8);
+                        String url = "https://www.google.com/search?q=" + encodedQuery;
+                        
+                        HttpRequest request = HttpRequest.newBuilder()
+                                .uri(URI.create(url))
+                                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                                .timeout(Duration.ofSeconds(20))
+                                .GET()
+                                .build();
+
+                        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                        
+                        if (response.statusCode() >= 400) {
+                            return Collections.singletonMap("error", "HTTP Error: " + response.statusCode());
+                        }
+
+                        String html = response.body();
+                        // Basic cleanup to extract readable text
+                        String text = html.replaceAll("(?s)<style.*?>.*?</style>", "")
+                                          .replaceAll("(?s)<script.*?>.*?</script>", "")
+                                          .replaceAll("<[^>]+>", " ")
+                                          .replaceAll("\\s+", " ")
+                                          .trim();
+                        
+                        if (text.length() > 20000) {
+                            text = text.substring(0, 20000) + "\n...[truncated]";
+                        }
+                        
+                        return Collections.singletonMap("results", text);
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Search failed: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
+
+    public static BaseTool createMultiProjectSearchTool(EmbeddingService embeddingService) {
+        return new BaseTool(
+                "search_multi_project",
+                "Semantically searches across multiple project vector stores. Use this to find code or information from other indexed projects."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "query", Schema.builder()
+                                                .type("STRING")
+                                                .description("The search query.")
+                                                .build(),
+                                        "projects", Schema.builder()
+                                                .type("ARRAY")
+                                                .items(Schema.builder().type("STRING").build())
+                                                .description("Optional list of project names (folder names) to search. If omitted, searches all.")
+                                                .build(),
+                                        "limit", Schema.builder()
+                                                .type("INTEGER")
+                                                .description("Max results per project (default 5).")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("query"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String query = (String) args.get("query");
+                List<String> projects = (List<String>) args.get("projects");
+                Double limitD = (Double) args.get("limit"); // JSON numbers often come as Double
+                int limit = limitD != null ? limitD.intValue() : 5;
+
+                System.out.println(ANSI_BLUE + "[MultiVectorSearch] Searching for: " + query + ANSI_RESET);
+                
+                return Single.fromCallable(() -> {
+                    String result = IndexingHelper.searchMultipleProjects(query, projects, embeddingService, limit);
+                    return Collections.singletonMap("result", result);
+                });
             }
         };
     }
 
     public static BaseTool createReadImageTool() {
-        return new BaseTool("read_image", "Reads metadata from an image file.") {
-            @Override public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
-                    .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of("path", Schema.builder().type("STRING").build()))
-                        .required(ImmutableList.of("path")).build()).build());
+        return new BaseTool(
+                "read_image",
+                "Reads an image file and returns its Base64 encoded content. Use this to analyze images."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "file_path", Schema.builder()
+                                                .type("STRING")
+                                                .description("The path to the image file.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("file_path"))
+                                .build())
+                        .build());
             }
-            @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String filePath = (String) args.get("file_path");
+                System.out.println(ANSI_BLUE + "[Coder] Analyzing image: " + filePath + ANSI_RESET);
                 return Single.fromCallable(() -> {
-                    String pathStr = (String) args.get("path");
-                    BufferedImage img = ImageIO.read(new File(pathStr));
-                    return ImmutableMap.of("width", img.getWidth(), "height", img.getHeight(), "format", "unknown");
+                    try {
+                        Path path = Paths.get(filePath);
+                        if (!Files.exists(path)) {
+                            return Collections.singletonMap("error", "File not found: " + filePath);
+                        }
+                        byte[] bytes = Files.readAllBytes(path);
+                        String base64 = java.util.Base64.getEncoder().encodeToString(bytes);
+                        String mimeType = "image/jpeg";
+                        if (filePath.toLowerCase().endsWith(".png")) mimeType = "image/png";
+                        else if (filePath.toLowerCase().endsWith(".webp")) mimeType = "image/webp";
+
+                        return ImmutableMap.of(
+                            "mime_type", mimeType,
+                            "data", base64
+                        );
+                    } catch (IOException e) {
+                        return Collections.singletonMap("error", "Error reading image: " + e.getMessage());
+                    }
                 });
             }
         };
     }
 
-    public static BaseTool createImageCropTool() {
-        return new BaseTool("image_crop", "Crops an image.") {
-            @Override public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
-                    .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of(
-                            "path", Schema.builder().type("STRING").build(),
-                            "x", Schema.builder().type("INTEGER").build(),
-                            "y", Schema.builder().type("INTEGER").build(),
-                            "width", Schema.builder().type("INTEGER").build(),
-                            "height", Schema.builder().type("INTEGER").build()))
-                        .required(ImmutableList.of("path", "x", "y", "width", "height")).build()).build());
+    public static BaseTool createWriteFileTool() {
+        return new BaseTool(
+                "write_file",
+                "Writes content to a file, overwriting it."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                 return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "file_path", Schema.builder()
+                                                .type("STRING")
+                                                .description("The path to the file.")
+                                                .build(),
+                                        "content", Schema.builder()
+                                                .type("STRING")
+                                                .description("The content to write.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("file_path", "content"))
+                                .build())
+                        .build());
             }
-            @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String filePath = (String) args.get("file_path");
+                System.out.println(ANSI_BLUE + "[Coder] Writing file: " + filePath + ANSI_RESET);
+                String content = (String) args.get("content");
                 return Single.fromCallable(() -> {
-                    String pathStr = (String) args.get("path");
-                    int x = (int) args.get("x");
-                    int y = (int) args.get("y");
-                    int w = (int) args.get("width");
-                    int h = (int) args.get("height");
-                    BufferedImage img = ImageIO.read(new File(pathStr));
-                    BufferedImage cropped = img.getSubimage(x, y, w, h);
-                    File output = new File(pathStr + ".cropped.png");
-                    ImageIO.write(cropped, "png", output);
-                    return Collections.singletonMap("cropped_path", output.getAbsolutePath());
+                    try {
+                        Path path = Paths.get(filePath);
+                        if (path.getParent() != null) {
+                            Files.createDirectories(path.getParent());
+                        }
+                        Files.writeString(path, content, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                        return Collections.singletonMap("status", "File written successfully: " + filePath);
+                    } catch (IOException e) {
+                        return Collections.singletonMap("error", "Error writing file: " + e.getMessage());
+                    }
                 });
             }
         };
     }
 
     public static BaseTool createRunShellTool() {
-        return new BaseTool("run_shell", "Executes a shell command with timeout and output limits. Commands are checked against an allowlist policy.") {
-            @Override public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
-                    .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of(
-                            "command", Schema.builder().type("STRING").description("The shell command to execute.").build(),
-                            "working_dir", Schema.builder().type("STRING").description("Optional working directory for command execution.").build(),
-                            "timeout_seconds", Schema.builder().type("INTEGER").description("Optional timeout in seconds (default 120).").build()
-                        ))
-                        .required(ImmutableList.of("command")).build()).build());
+        return new BaseTool(
+                "run_shell",
+                "Executes a shell command. Supports background execution via 'background' parameter."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "command", Schema.builder()
+                                                .type("STRING")
+                                                .description("The command to execute.")
+                                                .build(),
+                                        "background", Schema.builder()
+                                                .type("BOOLEAN")
+                                                .description("If true, runs in background and returns Job ID.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("command"))
+                                .build())
+                        .build());
             }
-            @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String command = (String) args.get("command");
+                Boolean background = (Boolean) args.getOrDefault("background", false);
+
+                // Security Check
+                if (!Maker.isAllowed(command)) {
+                    System.out.println(ANSI_RED + "[SysAdmin] BLOCKED: " + command + ANSI_RESET);
+                    return Single.just(Collections.singletonMap("error", "Command blocked by security policy: " + command));
+                }
+
+                System.out.println(ANSI_BLUE + "[SysAdmin] Executing: " + command + (Boolean.TRUE.equals(background) ? " (Background)" : "") + ANSI_RESET);
                 return Single.fromCallable(() -> {
-                    String command = (String) args.get("command");
-                    String workingDir = (String) args.get("working_dir");
-                    Object timeoutObj = args.get("timeout_seconds");
-                    int timeout = 120;
-                    if (timeoutObj instanceof Number) {
-                        timeout = Math.min(((Number) timeoutObj).intValue(), 600); // Cap at 10 minutes
+                    try {
+                        ProcessBuilder pb;
+                        String os = System.getProperty("os.name").toLowerCase();
+                        if (os.contains("win")) {
+                            pb = new ProcessBuilder("cmd.exe", "/c", command);
+                        } else {
+                            pb = new ProcessBuilder("sh", "-c", command);
+                        }
+                        
+                        // Prevent hanging on interactive input
+                        pb.environment().put("PYTHONUNBUFFERED", "1");
+                        pb.environment().put("CI", "true"); 
+                        
+                        if (Boolean.TRUE.equals(background)) {
+                             File logFile = File.createTempFile("job_" + System.currentTimeMillis(), ".log");
+                             pb.redirectOutput(logFile);
+                             pb.redirectError(logFile);
+                             Process process = pb.start();
+                             String jobId = ProcessManager.startJob(process, command, logFile);
+                             return ImmutableMap.of(
+                                 "result", "Job started in background.",
+                                 "job_id", jobId,
+                                 "log_file", logFile.getAbsolutePath()
+                             );
+                        } else {
+                            pb.redirectErrorStream(true);
+                            Process process = pb.start();
+                            process.getOutputStream().close();
+                            
+                            // Capture output
+                            StringBuilder output = new StringBuilder();
+                            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                                String line;
+                                while ((line = reader.readLine()) != null) {
+                                    output.append(line).append("\n");
+                                }
+                            }
+                            
+                            boolean exited = process.waitFor(10, TimeUnit.MINUTES);
+                            if (!exited) {
+                                 process.destroy();
+                                 output.append("\n[Timeout - process killed]");
+                            }
+                            int exitCode = exited ? process.exitValue() : -1;
+
+                            return ImmutableMap.of(
+                                "exit_code", exitCode,
+                                "output", output.toString()
+                            );
+                        }
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Command failed: " + e.getMessage());
                     }
-
-                    System.out.println(ANSI_BLUE + "[Shell] $ " + command + ANSI_RESET);
-
-                    com.mkpro.security.ShellExecutor executor = new com.mkpro.security.ShellExecutor(timeout, 100 * 1024);
-                    com.mkpro.security.ShellExecutor.ExecutionResult result = executor.execute(command, workingDir);
-
-                    if (result.isTimedOut()) {
-                        System.out.println(ANSI_RED + "[Shell] Command timed out after " + timeout + "s" + ANSI_RESET);
-                    } else if (result.getExitCode() != 0 && result.getExitCode() != -1) {
-                        System.out.println(ANSI_YELLOW + "[Shell] Exit code: " + result.getExitCode() + ANSI_RESET);
-                    }
-
-                    Map<String, Object> response = new java.util.HashMap<>();
-                    response.put("output", result.toAgentResponse());
-                    response.put("exit_code", result.getExitCode());
-                    response.put("timed_out", result.isTimedOut());
-                    response.put("truncated", result.isOutputTruncated());
-                    response.put("duration_ms", result.getDurationMs());
-                    return response;
                 });
             }
         };
     }
 
-    public static BaseTool createMultiProjectSearchTool(EmbeddingService embeddingService, MapDBVectorStore vectorStore) {
-        return new BaseTool("multi_project_search", "Semantically searches across multiple projects.") {
-            @Override public Optional<FunctionDeclaration> declaration() {
-                return Optional.of(FunctionDeclaration.builder().name(name()).description(description())
-                    .parameters(Schema.builder().type("OBJECT")
-                        .properties(ImmutableMap.of("query", Schema.builder().type("STRING").build()))
-                        .required(ImmutableList.of("query")).build()).build());
+    public static BaseTool createGetActionLogsTool(ActionLogger logger) {
+        return new BaseTool(
+                "get_action_logs",
+                "Retrieves the history of user actions and agent responses."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Collections.emptyMap()) // No parameters needed
+                                .build())
+                        .build());
             }
-            @Override public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
-                String query = (String) args.get("query");
-                return embeddingService.generateEmbedding(query).map(embedding -> {
-                    List<Vector> results = vectorStore.searchTopNVectors(embedding, 0.0, 10);
-                    return Collections.singletonMap("results", results.stream().map(Vector::getContent).collect(Collectors.toList()));
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                return Single.fromCallable(() -> {
+                    try {
+                        StringBuilder logsBuilder = new StringBuilder();
+                        for (String log : logger.getLogs()) {
+                            logsBuilder.append(log).append("\n");
+                        }
+                        return Collections.singletonMap("logs", logsBuilder.toString());
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Error retrieving logs: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
+
+    public static BaseTool createSaveMemoryTool(CentralMemory centralMemory) {
+        return new BaseTool(
+                "save_central_memory",
+                "Saves a summary or memory of the current project to the user's central database."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "content", Schema.builder()
+                                                .type("STRING")
+                                                .description("The summary content to save.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("content"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String content = (String) args.get("content");
+                String currentPath = Paths.get("").toAbsolutePath().toString();
+                System.out.println(ANSI_BLUE + "[Coordinator] Saving to central memory for: " + currentPath + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        centralMemory.saveMemory(currentPath, content);
+                        return Collections.singletonMap("status", "Memory saved successfully for " + currentPath);
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Error saving memory: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
+
+    public static BaseTool createReadMemoryTool(CentralMemory centralMemory) {
+        return new BaseTool(
+                "read_central_memory",
+                "Reads the stored memory for a project. If no path is provided, reads the current project's memory."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "project_path", Schema.builder()
+                                                .type("STRING")
+                                                .description("Optional absolute path to the project. Defaults to current directory.")
+                                                .build()
+                                ))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String pathArg = (String) args.get("project_path");
+                String currentPath = (pathArg != null && !pathArg.isBlank()) ? pathArg : Paths.get("").toAbsolutePath().toString();
+                
+                System.out.println(ANSI_BLUE + "[Coordinator] Reading central memory for: " + currentPath + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        String memory = centralMemory.getMemory(currentPath);
+                        if (memory == null) {
+                            return Collections.singletonMap("memory", "No memory found for this project.");
+                        }
+                        return Collections.singletonMap("memory", memory);
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Error reading memory: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
+
+    public static BaseTool createListProjectsTool(CentralMemory centralMemory) {
+        return new BaseTool(
+                "list_central_memory_projects",
+                "Lists all project paths that have data stored in the central memory database."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Collections.emptyMap())
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                System.out.println(ANSI_BLUE + "[Coordinator] Listing central memory projects..." + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        Map<String, String> memories = centralMemory.getAllMemories();
+                        if (memories.isEmpty()) {
+                             return Collections.singletonMap("projects", "No projects found in central memory.");
+                        }
+                        return Collections.singletonMap("projects", String.join("\n", memories.keySet()));
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Error listing projects: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
+
+    public static BaseTool createAddGoalTool(CentralMemory centralMemory) {
+        return new BaseTool(
+                "add_goal",
+                "Adds a new goal to the current project's tracking list."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "description", Schema.builder()
+                                                .type("STRING")
+                                                .description("Description of the goal.")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("description"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String description = (String) args.get("description");
+                String currentPath = Paths.get("").toAbsolutePath().toString();
+                System.out.println(ANSI_BLUE + "[GoalTracker] Adding goal: " + description + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        com.mkpro.models.Goal goal = new com.mkpro.models.Goal(description);
+                        centralMemory.addGoal(currentPath, goal);
+                        return Collections.singletonMap("status", "Goal added with ID: " + goal.getId());
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Error adding goal: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
+
+    public static BaseTool createListGoalsTool(CentralMemory centralMemory) {
+        return new BaseTool(
+                "list_goals",
+                "Lists all goals for the current project."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Collections.emptyMap())
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String currentPath = Paths.get("").toAbsolutePath().toString();
+                System.out.println(ANSI_BLUE + "[GoalTracker] Listing goals..." + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        List<com.mkpro.models.Goal> goals = centralMemory.getGoals(currentPath);
+                        if (goals.isEmpty()) {
+                            return Collections.singletonMap("goals", "No goals found.");
+                        }
+                        StringBuilder sb = new StringBuilder();
+                        for (com.mkpro.models.Goal goal : goals) {
+                            sb.append(goal.toString()).append("\n");
+                        }
+                        return Collections.singletonMap("goals", sb.toString());
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Error listing goals: " + e.getMessage());
+                    }
+                });
+            }
+        };
+    }
+
+    public static BaseTool createUpdateGoalTool(CentralMemory centralMemory) {
+        return new BaseTool(
+                "update_goal_status",
+                "Updates the status of an existing goal."
+        ) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                return Optional.of(FunctionDeclaration.builder()
+                        .name(name())
+                        .description(description())
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(ImmutableMap.of(
+                                        "goal_id", Schema.builder()
+                                                .type("STRING")
+                                                .description("The ID of the goal to update.")
+                                                .build(),
+                                        "status", Schema.builder()
+                                                .type("STRING")
+                                                .description("New status (PENDING, IN_PROGRESS, COMPLETED, FAILED).")
+                                                .build()
+                                ))
+                                .required(ImmutableList.of("goal_id", "status"))
+                                .build())
+                        .build());
+            }
+
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                String goalId = (String) args.get("goal_id");
+                String statusStr = (String) args.get("status");
+                String currentPath = Paths.get("").toAbsolutePath().toString();
+                
+                System.out.println(ANSI_BLUE + "[GoalTracker] Updating goal " + goalId + " to " + statusStr + ANSI_RESET);
+                return Single.fromCallable(() -> {
+                    try {
+                        List<com.mkpro.models.Goal> goals = centralMemory.getGoals(currentPath);
+                        com.mkpro.models.Goal target = null;
+                        for (com.mkpro.models.Goal g : goals) {
+                            if (g.getId().equals(goalId)) {
+                                target = g;
+                                break;
+                            }
+                        }
+                        
+                        if (target == null) {
+                            return Collections.singletonMap("error", "Goal not found with ID: " + goalId);
+                        }
+
+                        target.setStatus(com.mkpro.models.Goal.Status.valueOf(statusStr.toUpperCase()));
+                        centralMemory.updateGoal(currentPath, target);
+                        return Collections.singletonMap("status", "Goal updated successfully.");
+                    } catch (IllegalArgumentException e) {
+                        return Collections.singletonMap("error", "Invalid status. Use PENDING, IN_PROGRESS, COMPLETED, or FAILED.");
+                    } catch (Exception e) {
+                        return Collections.singletonMap("error", "Error updating goal: " + e.getMessage());
+                    }
                 });
             }
         };
     }
 }
+

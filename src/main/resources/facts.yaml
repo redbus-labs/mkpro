@@ -1,0 +1,809 @@
+# mkpro Verified Facts Database
+# Math formulas with Groovy verification scripts + Relationship triples
+
+stop_words:
+  - the
+  - and
+  - for
+  - are
+  - was
+  - were
+  - been
+  - being
+  - have
+  - has
+  - had
+  - does
+  - did
+  - will
+  - would
+  - could
+  - should
+  - may
+  - might
+  - shall
+  - can
+  - need
+  - with
+  - from
+  - this
+  - that
+  - these
+  - those
+  - where
+  - when
+  - what
+  - which
+  - who
+  - how
+  - all
+  - any
+  - some
+  - not
+  - but
+  - also
+  - about
+  - into
+  - than
+  - then
+  - just
+  - only
+  - delegate
+  - please
+  - help
+  - tell
+  - show
+  - find
+  - get
+  - use
+
+math:
+  geometry:
+    circle_area:
+      formula: "A = π × r²"
+      keywords: ["circle", "area", "radius"]
+      variables: {input: [r], output: A}
+      constraints: ["r > 0"]
+      script: |
+        def verify(Map v) { def r=v.r as double; [result: Math.PI*r*r, unit: "sq_units"] }
+        def validate(Map v) { def r=v.r as double; def c=v.A as double; def e=Math.PI*r*r; [correct: Math.abs(c-e)<0.01, expected: e, got: c] }
+
+    circle_circumference:
+      formula: "C = 2πr"
+      keywords: ["circle", "circumference", "perimeter"]
+      variables: {input: [r], output: C}
+      script: |
+        def verify(Map v) { def r=v.r as double; [result: 2*Math.PI*r, unit: "units"] }
+        def validate(Map v) { def r=v.r as double; def c=v.C as double; def e=2*Math.PI*r; [correct: Math.abs(c-e)<0.01, expected: e, got: c] }
+
+    sphere_volume:
+      formula: "V = (4/3)πr³"
+      keywords: ["sphere", "volume"]
+      variables: {input: [r], output: V}
+      script: |
+        def verify(Map v) { def r=v.r as double; [result: (4.0/3.0)*Math.PI*r*r*r, unit: "cubic_units"] }
+        def validate(Map v) { def r=v.r as double; def c=v.V as double; def e=(4.0/3.0)*Math.PI*r*r*r; [correct: Math.abs(c-e)/e<0.001, expected: e, got: c] }
+
+    sphere_surface_area:
+      formula: "A = 4πr²"
+      keywords: ["sphere", "surface area"]
+      variables: {input: [r], output: A}
+      script: |
+        def verify(Map v) { def r=v.r as double; [result: 4*Math.PI*r*r, unit: "sq_units"] }
+
+    triangle_area:
+      formula: "A = ½ × base × height"
+      keywords: ["triangle", "area", "base", "height"]
+      variables: {input: [base, height], output: A}
+      script: |
+        def verify(Map v) { def b=v.base as double; def h=v.height as double; [result: 0.5*b*h, unit: "sq_units"] }
+
+    pythagorean:
+      formula: "c = √(a² + b²)"
+      keywords: ["pythagor", "hypotenuse", "right triangle"]
+      variables: {input: [a, b], output: c}
+      constraints: ["right_triangle"]
+      script: |
+        def verify(Map v) { def a=v.a as double; def b=v.b as double; [result: Math.sqrt(a*a+b*b)] }
+        def validate(Map v) { def a=v.a as double; def b=v.b as double; def c=v.c as double; def e=Math.sqrt(a*a+b*b); [correct: Math.abs(c-e)<0.001, expected: e, got: c] }
+
+    rectangle_area:
+      formula: "A = length × width"
+      keywords: ["rectangle", "area", "length", "width"]
+      variables: {input: [length, width], output: A}
+      script: |
+        def verify(Map v) { [result: (v.length as double)*(v.width as double), unit: "sq_units"] }
+
+    cylinder_volume:
+      formula: "V = πr²h"
+      keywords: ["cylinder", "volume"]
+      variables: {input: [r, h], output: V}
+      script: |
+        def verify(Map v) { def r=v.r as double; def h=v.h as double; [result: Math.PI*r*r*h, unit: "cubic_units"] }
+
+    cone_volume:
+      formula: "V = (1/3)πr²h"
+      keywords: ["cone", "volume"]
+      variables: {input: [r, h], output: V}
+      script: |
+        def verify(Map v) { def r=v.r as double; def h=v.h as double; [result: (1.0/3.0)*Math.PI*r*r*h, unit: "cubic_units"] }
+
+    distance_2d:
+      formula: "d = √((x2-x1)² + (y2-y1)²)"
+      keywords: ["distance", "point", "2d", "euclidean"]
+      variables: {input: [x1, y1, x2, y2], output: d}
+      script: |
+        def verify(Map v) { def dx=(v.x2 as double)-(v.x1 as double); def dy=(v.y2 as double)-(v.y1 as double); [result: Math.sqrt(dx*dx+dy*dy)] }
+
+    distance_3d:
+      formula: "d = √((x2-x1)² + (y2-y1)² + (z2-z1)²)"
+      keywords: ["distance", "3d", "point", "euclidean"]
+      variables: {input: [x1, y1, z1, x2, y2, z2], output: d}
+      script: |
+        def verify(Map v) { def dx=(v.x2 as double)-(v.x1 as double); def dy=(v.y2 as double)-(v.y1 as double); def dz=(v.z2 as double)-(v.z1 as double); [result: Math.sqrt(dx*dx+dy*dy+dz*dz)] }
+
+    triangle_angles_sum:
+      formula: "α + β + γ = 180°"
+      keywords: ["triangle", "angle", "sum", "180"]
+      variables: {input: [alpha, beta], output: gamma}
+      constraints: ["euclidean_plane"]
+      script: |
+        def verify(Map v) { [result: 180.0 - (v.alpha as double) - (v.beta as double), unit: "degrees"] }
+
+  trigonometry:
+    sin_cos_identity:
+      formula: "sin²θ + cos²θ = 1"
+      keywords: ["sin", "cos", "identity", "trigonometric"]
+      variables: {input: [theta], output: result}
+      script: |
+        def verify(Map v) { def t=Math.toRadians(v.theta as double); [result: Math.sin(t)*Math.sin(t)+Math.cos(t)*Math.cos(t)] }
+
+    law_of_cosines:
+      formula: "c² = a² + b² - 2ab×cos(C)"
+      keywords: ["law of cosines", "cosine rule", "triangle sides"]
+      variables: {input: [a, b, C_deg], output: c}
+      script: |
+        def verify(Map v) { def a=v.a as double; def b=v.b as double; def C=Math.toRadians(v.C_deg as double); [result: Math.sqrt(a*a+b*b-2*a*b*Math.cos(C))] }
+
+    radians_to_degrees:
+      formula: "degrees = radians × (180/π)"
+      keywords: ["radian", "degree", "convert", "angle"]
+      variables: {input: [radians], output: degrees}
+      script: |
+        def verify(Map v) { [result: Math.toDegrees(v.radians as double), unit: "degrees"] }
+
+  algebra:
+    quadratic_formula:
+      formula: "x = (-b ± √(b²-4ac)) / 2a"
+      keywords: ["quadratic", "roots", "discriminant", "ax²+bx+c"]
+      variables: {input: [a, b, c], output: [x1, x2]}
+      script: |
+        def verify(Map v) { def a=v.a as double; def b=v.b as double; def c=v.c as double; def d=b*b-4*a*c; if(d<0) return [result:"complex"]; def sq=Math.sqrt(d); [result: [(-b+sq)/(2*a), (-b-sq)/(2*a)]] }
+
+    compound_interest:
+      formula: "A = P(1 + r/n)^(nt)"
+      keywords: ["compound interest", "principal", "rate", "investment"]
+      variables: {input: [P, r, n, t], output: A}
+      script: |
+        def verify(Map v) { def P=v.P as double; def r=v.r as double; def n=v.n as double; def t=v.t as double; [result: P*Math.pow(1+r/n, n*t), unit: "currency"] }
+
+    simple_interest:
+      formula: "I = P × r × t"
+      keywords: ["simple interest"]
+      variables: {input: [P, r, t], output: I}
+      script: |
+        def verify(Map v) { [result: (v.P as double)*(v.r as double)*(v.t as double), unit: "currency"] }
+
+    percentage:
+      formula: "result = value × (percentage / 100)"
+      keywords: ["percentage", "percent", "% of"]
+      variables: {input: [value, percentage], output: result}
+      script: |
+        def verify(Map v) { [result: (v.value as double)*(v.percentage as double)/100.0] }
+
+    logarithm_base_change:
+      formula: "log_b(x) = ln(x) / ln(b)"
+      keywords: ["logarithm", "log base", "change of base"]
+      variables: {input: [x, b], output: result}
+      script: |
+        def verify(Map v) { [result: Math.log(v.x as double)/Math.log(v.b as double)] }
+
+  statistics:
+    mean:
+      formula: "μ = Σx / n"
+      keywords: ["mean", "average", "arithmetic mean"]
+      variables: {input: [values], output: mean}
+      script: |
+        def verify(Map v) { def vals=v.values as List; [result: vals.sum()/vals.size()] }
+
+    standard_deviation:
+      formula: "σ = √(Σ(x-μ)²/n)"
+      keywords: ["standard deviation", "std dev", "sigma", "variance"]
+      variables: {input: [values], output: stddev}
+      script: |
+        def verify(Map v) { def vals=v.values.collect{it as double}; def mean=vals.sum()/vals.size(); def variance=vals.collect{(it-mean)*(it-mean)}.sum()/vals.size(); [result: Math.sqrt(variance)] }
+
+    median:
+      formula: "median = middle value of sorted list"
+      keywords: ["median", "middle value"]
+      variables: {input: [values], output: median}
+      script: |
+        def verify(Map v) { def s=v.values.collect{it as double}.sort(); def n=s.size(); [result: n%2==1 ? s[n/2] : (s[n/2-1]+s[n/2])/2.0] }
+
+    percentile:
+      formula: "P_k = value at position k×(n+1)/100"
+      keywords: ["percentile", "p50", "p95", "p99"]
+      variables: {input: [values, k], output: percentile}
+      script: |
+        def verify(Map v) { def s=v.values.collect{it as double}.sort(); def k=v.k as double; def idx=(k/100.0)*(s.size()-1); def lo=s[(int)idx]; def hi=s[Math.min((int)idx+1,s.size()-1)]; [result: lo+(hi-lo)*(idx-(int)idx)] }
+
+    exponential_growth:
+      formula: "N(t) = N₀ × e^(rt)"
+      keywords: ["exponential growth", "growth rate", "doubling"]
+      variables: {input: [N0, r, t], output: Nt}
+      script: |
+        def verify(Map v) { [result: (v.N0 as double)*Math.exp((v.r as double)*(v.t as double))] }
+
+    normal_distribution_68_95_99:
+      formula: "68% within 1σ, 95% within 2σ, 99.7% within 3σ"
+      keywords: ["normal distribution", "bell curve", "68-95-99", "sigma rule"]
+      variables: {input: [mean, stddev, value], output: sigmas}
+      script: |
+        def verify(Map v) { def m=v.mean as double; def s=v.stddev as double; def x=v.value as double; [result: Math.abs(x-m)/s, unit: "standard deviations from mean"] }
+
+  finance:
+    compound_interest:
+      formula: "A = P(1 + r/n)^(nt)"
+      keywords: ["compound interest", "principal", "rate", "investment"]
+      variables: {input: [P, r, n, t], output: A}
+      script: |
+        def verify(Map v) { def P=v.P as double; def r=v.r as double; def n=v.n as double; def t=v.t as double; [result: P*Math.pow(1+r/n, n*t), unit: "currency"] }
+
+    simple_interest:
+      formula: "I = P × r × t"
+      keywords: ["simple interest"]
+      variables: {input: [P, r, t], output: I}
+      script: |
+        def verify(Map v) { [result: (v.P as double)*(v.r as double)*(v.t as double), unit: "currency"] }
+
+    percentage:
+      formula: "result = value × (percentage / 100)"
+      keywords: ["percentage", "percent", "% of"]
+      variables: {input: [value, percentage], output: result}
+      script: |
+        def verify(Map v) { [result: (v.value as double)*(v.percentage as double)/100.0] }
+
+    roi:
+      formula: "ROI = (gain - cost) / cost × 100"
+      keywords: ["ROI", "return on investment"]
+      variables: {input: [gain, cost], output: roi_percent}
+      script: |
+        def verify(Map v) { def g=v.gain as double; def c=v.cost as double; [result: (g-c)/c*100, unit: "%"] }
+
+    present_value:
+      formula: "PV = FV / (1 + r)^n"
+      keywords: ["present value", "discount", "NPV", "time value of money"]
+      variables: {input: [FV, r, n], output: PV}
+      script: |
+        def verify(Map v) { [result: (v.FV as double)/Math.pow(1+(v.r as double), v.n as double), unit: "currency"] }
+
+    break_even:
+      formula: "units = fixed_costs / (price - variable_cost)"
+      keywords: ["break even", "break-even point"]
+      variables: {input: [fixed_costs, price, variable_cost], output: units}
+      script: |
+        def verify(Map v) { [result: (v.fixed_costs as double)/((v.price as double)-(v.variable_cost as double)), unit: "units"] }
+
+    cagr:
+      formula: "CAGR = (end/start)^(1/years) - 1"
+      keywords: ["CAGR", "compound annual growth"]
+      variables: {input: [start_value, end_value, years], output: cagr}
+      script: |
+        def verify(Map v) { [result: Math.pow((v.end_value as double)/(v.start_value as double), 1.0/(v.years as double))-1, unit: "rate"] }
+
+  conversions:
+    bytes_to_human:
+      formula: "KB=B/1024, MB=KB/1024, GB=MB/1024, TB=GB/1024"
+      keywords: ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes", "KB", "MB", "GB", "TB"]
+      variables: {input: [bytes], output: human}
+      script: |
+        def verify(Map v) { def b=v.bytes as double; if(b>=1099511627776) return [result:b/1099511627776,unit:"TB"]; if(b>=1073741824) return [result:b/1073741824,unit:"GB"]; if(b>=1048576) return [result:b/1048576,unit:"MB"]; if(b>=1024) return [result:b/1024,unit:"KB"]; [result:b,unit:"B"] }
+
+    bits_bytes:
+      formula: "bytes = bits / 8"
+      keywords: ["bits to bytes", "bytes to bits", "Mbps to MBps"]
+      variables: {input: [bits], output: bytes}
+      script: |
+        def verify(Map v) { [result: (v.bits as double)/8.0, unit: "bytes"] }
+
+    km_miles:
+      formula: "miles = km × 0.621371"
+      keywords: ["kilometers to miles", "miles to km", "km to miles"]
+      variables: {input: [km], output: miles}
+      script: |
+        def verify(Map v) { [result: (v.km as double)*0.621371, unit: "miles"] }
+
+    epoch_to_date:
+      formula: "date = epoch_seconds since 1970-01-01T00:00:00Z"
+      keywords: ["epoch", "unix timestamp", "epoch to date"]
+      variables: {input: [epoch_seconds], output: date}
+      script: |
+        def verify(Map v) { def d=new Date((long)(v.epoch_seconds as double)*1000); [result: d.toString()] }
+
+physics:
+  mechanics:
+    newton_second:
+      formula: "F = m × a"
+      keywords: ["force", "mass", "acceleration", "newton", "F=ma"]
+      variables: {input: [m, a], output: F}
+      units: {F: "N", m: "kg", a: "m/s²"}
+      script: |
+        def verify(Map v) { [result: (v.m as double)*(v.a as double), unit: "N"] }
+
+    kinetic_energy:
+      formula: "KE = ½mv²"
+      keywords: ["kinetic energy", "velocity", "KE"]
+      variables: {input: [m, v], output: KE}
+      units: {KE: "J", m: "kg", v: "m/s"}
+      script: |
+        def verify(Map v) { [result: 0.5*(v.m as double)*(v.v as double)*(v.v as double), unit: "J"] }
+
+    potential_energy:
+      formula: "PE = mgh"
+      keywords: ["potential energy", "gravity", "height", "PE"]
+      variables: {input: [m, g, h], output: PE}
+      units: {PE: "J", m: "kg", h: "m"}
+      script: |
+        def verify(Map v) { [result: (v.m as double)*(v.g as double)*(v.h as double), unit: "J"] }
+
+    work:
+      formula: "W = F × d × cos(θ)"
+      keywords: ["work", "force", "displacement"]
+      variables: {input: [F, d, theta_deg], output: W}
+      units: {W: "J", F: "N", d: "m"}
+      script: |
+        def verify(Map v) { [result: (v.F as double)*(v.d as double)*Math.cos(Math.toRadians(v.theta_deg as double)), unit: "J"] }
+
+    momentum:
+      formula: "p = m × v"
+      keywords: ["momentum", "mass velocity"]
+      variables: {input: [m, v], output: p}
+      units: {p: "kg⋅m/s"}
+      script: |
+        def verify(Map v) { [result: (v.m as double)*(v.v as double), unit: "kg⋅m/s"] }
+
+    gravitational_force:
+      formula: "F = G × m1 × m2 / r²"
+      keywords: ["gravitational", "gravity force", "Newton gravity"]
+      variables: {input: [m1, m2, r], output: F}
+      script: |
+        def verify(Map v) { def G=6.674e-11; [result: G*(v.m1 as double)*(v.m2 as double)/((v.r as double)*(v.r as double)), unit: "N"] }
+
+    velocity:
+      formula: "v = d / t"
+      keywords: ["velocity", "speed", "distance time"]
+      variables: {input: [d, t], output: v}
+      script: |
+        def verify(Map v) { [result: (v.d as double)/(v.t as double)] }
+
+  electricity:
+    ohms_law:
+      formula: "V = I × R"
+      keywords: ["voltage", "current", "resistance", "ohm"]
+      variables: {input: [I, R], output: V}
+      units: {V: "V", I: "A", R: "Ω"}
+      script: |
+        def verify(Map v) { [result: (v.I as double)*(v.R as double), unit: "V"] }
+
+    power_electrical:
+      formula: "P = V × I"
+      keywords: ["power", "watt", "electrical power"]
+      variables: {input: [V, I], output: P}
+      units: {P: "W", V: "V", I: "A"}
+      script: |
+        def verify(Map v) { [result: (v.V as double)*(v.I as double), unit: "W"] }
+
+    energy_consumption:
+      formula: "E = P × t"
+      keywords: ["energy consumption", "kilowatt hour", "kWh"]
+      variables: {input: [P_watts, t_hours], output: E_kWh}
+      script: |
+        def verify(Map v) { [result: (v.P_watts as double)*(v.t_hours as double)/1000.0, unit: "kWh"] }
+
+  thermodynamics:
+    celsius_to_fahrenheit:
+      formula: "F = C × 9/5 + 32"
+      keywords: ["celsius", "fahrenheit", "temperature convert"]
+      variables: {input: [C], output: F}
+      script: |
+        def verify(Map v) { [result: (v.C as double)*9.0/5.0+32.0, unit: "°F"] }
+
+    fahrenheit_to_celsius:
+      formula: "C = (F - 32) × 5/9"
+      keywords: ["fahrenheit to celsius"]
+      variables: {input: [F], output: C}
+      script: |
+        def verify(Map v) { [result: ((v.F as double)-32.0)*5.0/9.0, unit: "°C"] }
+
+    ideal_gas:
+      formula: "PV = nRT"
+      keywords: ["ideal gas", "pressure volume", "PV=nRT"]
+      variables: {input: [n, R, T], output: PV}
+      script: |
+        def verify(Map v) { [result: (v.n as double)*(v.R as double)*(v.T as double), unit: "Pa⋅m³"] }
+
+    heat_transfer:
+      formula: "Q = mcΔT"
+      keywords: ["heat transfer", "specific heat", "thermal energy"]
+      variables: {input: [m, c, deltaT], output: Q}
+      script: |
+        def verify(Map v) { [result: (v.m as double)*(v.c as double)*(v.deltaT as double), unit: "J"] }
+
+  waves:
+    wave_speed:
+      formula: "v = f × λ"
+      keywords: ["wave speed", "frequency", "wavelength"]
+      variables: {input: [frequency, wavelength], output: speed}
+      script: |
+        def verify(Map v) { [result: (v.frequency as double)*(v.wavelength as double), unit: "m/s"] }
+
+    decibels:
+      formula: "dB = 10 × log₁₀(P₁/P₂)"
+      keywords: ["decibel", "dB", "sound level", "signal strength"]
+      variables: {input: [P1, P2], output: dB}
+      script: |
+        def verify(Map v) { [result: 10*Math.log10((v.P1 as double)/(v.P2 as double)), unit: "dB"] }
+
+cs:
+  complexity:
+    binary_search:
+      formula: "T(n) = O(log₂ n)"
+      keywords: ["binary search", "log n", "sorted array search"]
+      variables: {input: [n], output: max_comparisons}
+      script: |
+        def verify(Map v) { [result: Math.ceil(Math.log(v.n as double)/Math.log(2)), unit: "comparisons"] }
+
+    linear_search:
+      formula: "T(n) = O(n)"
+      keywords: ["linear search", "sequential search"]
+      variables: {input: [n], output: max_comparisons}
+      script: |
+        def verify(Map v) { [result: v.n as int, unit: "comparisons"] }
+
+    hash_table_lookup:
+      formula: "T(n) = O(1) average"
+      keywords: ["hash table", "hash map", "O(1) lookup"]
+      variables: {input: [n], output: avg_time}
+      script: |
+        def verify(Map v) { [result: 1, unit: "operations"] }
+
+  networking:
+    throughput:
+      formula: "effective_throughput = bandwidth × (1 - packet_loss)"
+      keywords: ["throughput", "bandwidth", "packet loss"]
+      variables: {input: [bandwidth, packet_loss], output: throughput}
+      script: |
+        def verify(Map v) { [result: (v.bandwidth as double)*(1.0-(v.packet_loss as double)), unit: "bps"] }
+
+    propagation_delay:
+      formula: "delay = distance_km / (c × 0.67)"
+      keywords: ["propagation delay", "fiber latency", "speed of light"]
+      variables: {input: [distance_km], output: delay_ms}
+      script: |
+        def verify(Map v) { [result: (v.distance_km as double)/(299792.458*0.67)*1000, unit: "ms"] }
+
+    bandwidth_delay_product:
+      formula: "BDP = bandwidth × RTT"
+      keywords: ["bandwidth delay product", "BDP", "TCP window"]
+      variables: {input: [bandwidth_bps, rtt_seconds], output: BDP_bits}
+      script: |
+        def verify(Map v) { [result: (v.bandwidth_bps as double)*(v.rtt_seconds as double), unit: "bits"] }
+
+    transfer_time:
+      formula: "time = file_size / bandwidth"
+      keywords: ["transfer time", "download time", "upload time"]
+      variables: {input: [file_size_bytes, bandwidth_bps], output: time_seconds}
+      script: |
+        def verify(Map v) { [result: (v.file_size_bytes as double)*8/(v.bandwidth_bps as double), unit: "seconds"] }
+
+  data_structures:
+    array_access:
+      formula: "T = O(1)"
+      keywords: ["array access", "random access", "index"]
+      variables: {input: [n], output: time}
+      script: |
+        def verify(Map v) { [result: 1, unit: "O(1)"] }
+
+    bst_search:
+      formula: "T(n) = O(log n) balanced, O(n) worst"
+      keywords: ["BST search", "binary search tree", "balanced tree"]
+      variables: {input: [n, balanced], output: comparisons}
+      script: |
+        def verify(Map v) { def n=v.n as int; def bal=v.balanced ?: true; [result: bal ? Math.ceil(Math.log(n)/Math.log(2)) : n, unit: "comparisons"] }
+
+    sort_comparison:
+      formula: "T(n) = O(n log n) optimal comparison sort"
+      keywords: ["sort", "comparison sort", "merge sort", "quicksort"]
+      variables: {input: [n], output: comparisons}
+      script: |
+        def verify(Map v) { def n=v.n as double; [result: n*Math.log(n)/Math.log(2), unit: "comparisons"] }
+
+    hashtable_load_factor:
+      formula: "load_factor = entries / capacity"
+      keywords: ["hash table", "load factor", "resize threshold"]
+      variables: {input: [entries, capacity], output: load_factor}
+      script: |
+        def verify(Map v) { [result: (v.entries as double)/(v.capacity as double)] }
+
+  distributed_systems:
+    cap_theorem:
+      formula: "Can only guarantee 2 of 3: Consistency, Availability, Partition tolerance"
+      keywords: ["CAP theorem", "consistency availability", "partition tolerance"]
+      variables: {input: [], output: info}
+      script: |
+        def verify(Map v) { [result: "Choose 2: CP (consistent+partition-tolerant), AP (available+partition-tolerant), CA (only without partitions)"] }
+
+    replication_factor:
+      formula: "fault_tolerance = replication_factor - 1"
+      keywords: ["replication factor", "fault tolerance", "replicas"]
+      variables: {input: [replication_factor], output: faults_tolerated}
+      script: |
+        def verify(Map v) { [result: (v.replication_factor as int)-1, unit: "node failures tolerated"] }
+
+    quorum:
+      formula: "quorum = floor(n/2) + 1"
+      keywords: ["quorum", "consensus", "majority"]
+      variables: {input: [nodes], output: quorum}
+      script: |
+        def verify(Map v) { [result: (int)((v.nodes as int)/2)+1, unit: "nodes needed for consensus"] }
+
+    littles_law:
+      formula: "L = λ × W (items_in_system = arrival_rate × wait_time)"
+      keywords: ["Little's law", "queue", "arrival rate", "wait time", "throughput"]
+      variables: {input: [arrival_rate, wait_time], output: items_in_system}
+      script: |
+        def verify(Map v) { [result: (v.arrival_rate as double)*(v.wait_time as double), unit: "items"] }
+
+    amdahls_law:
+      formula: "speedup = 1 / ((1-p) + p/n)"
+      keywords: ["Amdahl's law", "parallelization", "speedup", "parallel fraction"]
+      variables: {input: [parallel_fraction, num_processors], output: speedup}
+      script: |
+        def verify(Map v) { def p=v.parallel_fraction as double; def n=v.num_processors as double; [result: 1.0/((1-p)+p/n), unit: "x speedup"] }
+
+    consistent_hashing:
+      formula: "keys_moved = K/n (on node addition/removal)"
+      keywords: ["consistent hashing", "keys moved", "ring"]
+      variables: {input: [total_keys, num_nodes], output: keys_moved}
+      script: |
+        def verify(Map v) { [result: (v.total_keys as double)/(v.num_nodes as double), unit: "keys redistributed"] }
+
+  performance:
+    requests_per_second:
+      formula: "RPS = concurrent_users / avg_response_time"
+      keywords: ["requests per second", "RPS", "concurrent users", "response time"]
+      variables: {input: [concurrent_users, avg_response_seconds], output: rps}
+      script: |
+        def verify(Map v) { [result: (v.concurrent_users as double)/(v.avg_response_seconds as double), unit: "req/s"] }
+
+    connection_pool_size:
+      formula: "pool_size = threads × (wait_time / (wait_time + compute_time))"
+      keywords: ["connection pool", "pool size", "database connections"]
+      variables: {input: [threads, wait_time_ms, compute_time_ms], output: pool_size}
+      script: |
+        def verify(Map v) { def t=v.threads as double; def w=v.wait_time_ms as double; def c=v.compute_time_ms as double; [result: Math.ceil(t*(w/(w+c))), unit: "connections"] }
+
+    memory_usage:
+      formula: "heap = base + (per_request × concurrent_requests)"
+      keywords: ["memory usage", "heap size", "JVM memory"]
+      variables: {input: [base_mb, per_request_mb, concurrent], output: total_mb}
+      script: |
+        def verify(Map v) { [result: (v.base_mb as double)+(v.per_request_mb as double)*(v.concurrent as double), unit: "MB"] }
+
+    disk_iops:
+      formula: "time_per_io = seek_time + rotational_latency + transfer_time"
+      keywords: ["IOPS", "disk performance", "seek time", "rotational latency"]
+      variables: {input: [seek_ms, rotation_ms, transfer_ms], output: iops}
+      script: |
+        def verify(Map v) { def total=(v.seek_ms as double)+(v.rotation_ms as double)+(v.transfer_ms as double); [result: 1000.0/total, unit: "IOPS"] }
+
+    cache_hit_ratio:
+      formula: "effective_latency = hit_ratio × cache_latency + (1-hit_ratio) × db_latency"
+      keywords: ["cache hit ratio", "cache miss", "effective latency"]
+      variables: {input: [hit_ratio, cache_latency_ms, db_latency_ms], output: effective_ms}
+      script: |
+        def verify(Map v) { def h=v.hit_ratio as double; def cl=v.cache_latency_ms as double; def dl=v.db_latency_ms as double; [result: h*cl+(1-h)*dl, unit: "ms"] }
+
+    sla_availability:
+      formula: "downtime = (1 - availability) × period"
+      keywords: ["SLA", "availability", "uptime", "nine", "99.9", "99.99"]
+      variables: {input: [nines, period_hours], output: downtime_minutes}
+      script: |
+        def verify(Map v) { def avail=1.0-Math.pow(10, -(v.nines as double)); [result: (1-avail)*(v.period_hours as double)*60, unit: "minutes downtime"] }
+
+    tcp_window_throughput:
+      formula: "max_throughput = window_size / RTT"
+      keywords: ["TCP window", "TCP throughput", "window size", "RTT"]
+      variables: {input: [window_bytes, rtt_ms], output: throughput_bps}
+      script: |
+        def verify(Map v) { [result: (v.window_bytes as double)*8/((v.rtt_ms as double)/1000.0), unit: "bps"] }
+
+# ═══════════════════════════════════════════════════════════
+# RELATIONSHIPS — Subject-Predicate-Object triples
+# ═══════════════════════════════════════════════════════════
+
+relationships:
+  kubernetes:
+    - {subject: "HPA", predicate: "requires", object: "metrics-server"}
+    - {subject: "HPA", predicate: "configures", object: "Deployment"}
+    - {subject: "HPA", predicate: "alternative_to", object: "VPA"}
+    - {subject: "VPA", predicate: "configures", object: "Pod resources"}
+    - {subject: "metrics-server", predicate: "requires", object: "Kubernetes 1.8+"}
+    - {subject: "Ingress", predicate: "requires", object: "Ingress Controller"}
+    - {subject: "Ingress Controller", predicate: "example", object: "nginx-ingress"}
+    - {subject: "Pod", predicate: "managed_by", object: "Deployment"}
+    - {subject: "Deployment", predicate: "managed_by", object: "ReplicaSet"}
+    - {subject: "StatefulSet", predicate: "requires", object: "PersistentVolume"}
+    - {subject: "Helm", predicate: "manages", object: "Kubernetes manifests"}
+    - {subject: "kubectl", predicate: "interacts_with", object: "Kubernetes API"}
+    - {subject: "Service Mesh", predicate: "example", object: "Istio"}
+    - {subject: "Istio", predicate: "requires", object: "sidecar proxy"}
+
+  java:
+    - {subject: "Spring Boot 3", predicate: "requires", object: "Java 17+"}
+    - {subject: "Spring Boot 2", predicate: "requires", object: "Java 8+"}
+    - {subject: "Spring Boot 3", predicate: "replaces", object: "Spring Boot 2"}
+    - {subject: "Spring Data JPA", predicate: "part_of", object: "Spring Boot"}
+    - {subject: "Spring Data JPA", predicate: "requires", object: "Hibernate"}
+    - {subject: "Hibernate", predicate: "implements", object: "JPA"}
+    - {subject: "Maven", predicate: "alternative_to", object: "Gradle"}
+    - {subject: "JUnit 5", predicate: "replaces", object: "JUnit 4"}
+    - {subject: "JUnit 5", predicate: "requires", object: "Java 8+"}
+    - {subject: "Lombok", predicate: "requires", object: "annotation processing"}
+    - {subject: "Java 21", predicate: "includes", object: "virtual threads"}
+    - {subject: "Java 17", predicate: "includes", object: "sealed classes"}
+    - {subject: "GraalVM", predicate: "provides", object: "native compilation"}
+    - {subject: "Jakarta EE", predicate: "replaces", object: "Java EE"}
+
+  networking:
+    - {subject: "HTTPS", predicate: "requires", object: "TLS certificate"}
+    - {subject: "TLS 1.3", predicate: "replaces", object: "TLS 1.2"}
+    - {subject: "mTLS", predicate: "extends", object: "TLS"}
+    - {subject: "mTLS", predicate: "requires", object: "client certificate"}
+    - {subject: "HTTP/2", predicate: "requires", object: "TLS"}
+    - {subject: "HTTP/3", predicate: "uses", object: "QUIC"}
+    - {subject: "QUIC", predicate: "replaces", object: "TCP"}
+    - {subject: "WebSocket", predicate: "upgrades_from", object: "HTTP"}
+    - {subject: "gRPC", predicate: "uses", object: "HTTP/2"}
+    - {subject: "gRPC", predicate: "uses", object: "Protocol Buffers"}
+    - {subject: "REST", predicate: "uses", object: "HTTP"}
+    - {subject: "GraphQL", predicate: "alternative_to", object: "REST"}
+    - {subject: "DNS", predicate: "resolves", object: "domain to IP"}
+    - {subject: "CDN", predicate: "caches", object: "static assets"}
+    - {subject: "Load Balancer", predicate: "distributes", object: "traffic"}
+
+  databases:
+    - {subject: "PostgreSQL", predicate: "type", object: "relational database"}
+    - {subject: "MongoDB", predicate: "type", object: "document database"}
+    - {subject: "Redis", predicate: "type", object: "in-memory store"}
+    - {subject: "Redis", predicate: "used_for", object: "caching"}
+    - {subject: "Elasticsearch", predicate: "type", object: "search engine"}
+    - {subject: "SQL", predicate: "used_by", object: "relational database"}
+    - {subject: "ACID", predicate: "property_of", object: "relational database"}
+    - {subject: "BASE", predicate: "property_of", object: "NoSQL database"}
+    - {subject: "index", predicate: "improves", object: "query performance"}
+    - {subject: "B-tree index", predicate: "type_of", object: "index"}
+    - {subject: "connection pool", predicate: "optimizes", object: "database connections"}
+    - {subject: "ORM", predicate: "abstracts", object: "SQL"}
+    - {subject: "migration", predicate: "manages", object: "schema changes"}
+
+  devops:
+    - {subject: "Docker", predicate: "provides", object: "containerization"}
+    - {subject: "Docker Compose", predicate: "orchestrates", object: "multi-container apps"}
+    - {subject: "Kubernetes", predicate: "orchestrates", object: "containers"}
+    - {subject: "Terraform", predicate: "manages", object: "infrastructure as code"}
+    - {subject: "Ansible", predicate: "manages", object: "configuration"}
+    - {subject: "CI/CD", predicate: "automates", object: "build and deploy"}
+    - {subject: "GitHub Actions", predicate: "provides", object: "CI/CD"}
+    - {subject: "Jenkins", predicate: "provides", object: "CI/CD"}
+    - {subject: "Prometheus", predicate: "provides", object: "metrics collection"}
+    - {subject: "Grafana", predicate: "visualizes", object: "metrics"}
+    - {subject: "ELK Stack", predicate: "provides", object: "log aggregation"}
+    - {subject: "Nginx", predicate: "type", object: "reverse proxy"}
+    - {subject: "Nginx", predicate: "type", object: "web server"}
+
+  security:
+    - {subject: "OAuth2", predicate: "provides", object: "authorization"}
+    - {subject: "JWT", predicate: "used_for", object: "token authentication"}
+    - {subject: "JWT", predicate: "part_of", object: "OAuth2"}
+    - {subject: "RBAC", predicate: "type_of", object: "access control"}
+    - {subject: "CORS", predicate: "controls", object: "cross-origin requests"}
+    - {subject: "XSS", predicate: "type_of", object: "injection attack"}
+    - {subject: "SQL injection", predicate: "type_of", object: "injection attack"}
+    - {subject: "CSRF", predicate: "type_of", object: "web attack"}
+    - {subject: "bcrypt", predicate: "used_for", object: "password hashing"}
+    - {subject: "AES", predicate: "type_of", object: "symmetric encryption"}
+    - {subject: "RSA", predicate: "type_of", object: "asymmetric encryption"}
+    - {subject: "HTTPS", predicate: "prevents", object: "man-in-the-middle"}
+
+  mobile:
+    - {subject: "Jetpack Compose", predicate: "replaces", object: "XML layouts"}
+    - {subject: "Jetpack Compose", predicate: "requires", object: "Kotlin"}
+    - {subject: "SwiftUI", predicate: "replaces", object: "UIKit"}
+    - {subject: "SwiftUI", predicate: "requires", object: "iOS 13+"}
+    - {subject: "React Native", predicate: "alternative_to", object: "Flutter"}
+    - {subject: "Flutter", predicate: "uses", object: "Dart"}
+    - {subject: "Kotlin", predicate: "replaces", object: "Java (Android)"}
+    - {subject: "Swift", predicate: "replaces", object: "Objective-C"}
+
+  architecture:
+    - {subject: "microservices", predicate: "requires", object: "service discovery"}
+    - {subject: "microservices", predicate: "requires", object: "API gateway"}
+    - {subject: "microservices", predicate: "benefits_from", object: "circuit breaker"}
+    - {subject: "event sourcing", predicate: "requires", object: "event store"}
+    - {subject: "event sourcing", predicate: "pairs_with", object: "CQRS"}
+    - {subject: "CQRS", predicate: "separates", object: "read and write models"}
+    - {subject: "saga pattern", predicate: "manages", object: "distributed transactions"}
+    - {subject: "API gateway", predicate: "provides", object: "rate limiting"}
+    - {subject: "API gateway", predicate: "provides", object: "authentication"}
+    - {subject: "circuit breaker", predicate: "prevents", object: "cascading failures"}
+    - {subject: "bulkhead pattern", predicate: "isolates", object: "failure domains"}
+    - {subject: "sidecar pattern", predicate: "used_by", object: "service mesh"}
+    - {subject: "strangler fig", predicate: "enables", object: "incremental migration"}
+    - {subject: "12-factor app", predicate: "requires", object: "config in environment"}
+    - {subject: "12-factor app", predicate: "requires", object: "stateless processes"}
+
+  cloud:
+    - {subject: "AWS Lambda", predicate: "type", object: "serverless function"}
+    - {subject: "AWS Lambda", predicate: "max_timeout", object: "15 minutes"}
+    - {subject: "AWS S3", predicate: "type", object: "object storage"}
+    - {subject: "AWS RDS", predicate: "type", object: "managed database"}
+    - {subject: "AWS ECS", predicate: "orchestrates", object: "Docker containers"}
+    - {subject: "AWS EKS", predicate: "manages", object: "Kubernetes"}
+    - {subject: "AWS CloudFront", predicate: "type", object: "CDN"}
+    - {subject: "AWS SQS", predicate: "type", object: "message queue"}
+    - {subject: "AWS SNS", predicate: "type", object: "pub/sub messaging"}
+    - {subject: "AWS DynamoDB", predicate: "type", object: "NoSQL database"}
+    - {subject: "AWS IAM", predicate: "manages", object: "access control"}
+    - {subject: "GCP Cloud Run", predicate: "type", object: "serverless containers"}
+    - {subject: "GCP BigQuery", predicate: "type", object: "data warehouse"}
+    - {subject: "Azure Functions", predicate: "type", object: "serverless function"}
+    - {subject: "Azure Cosmos DB", predicate: "type", object: "multi-model database"}
+
+  messaging:
+    - {subject: "Kafka", predicate: "type", object: "distributed event streaming"}
+    - {subject: "Kafka", predicate: "guarantees", object: "ordered within partition"}
+    - {subject: "Kafka", predicate: "requires", object: "Zookeeper or KRaft"}
+    - {subject: "RabbitMQ", predicate: "type", object: "message broker"}
+    - {subject: "RabbitMQ", predicate: "implements", object: "AMQP"}
+    - {subject: "Redis Pub/Sub", predicate: "provides", object: "fire-and-forget messaging"}
+    - {subject: "Redis Streams", predicate: "provides", object: "persistent messaging"}
+    - {subject: "gRPC streaming", predicate: "uses", object: "HTTP/2"}
+    - {subject: "WebSocket", predicate: "provides", object: "full-duplex communication"}
+    - {subject: "SSE", predicate: "provides", object: "server-to-client push"}
+    - {subject: "SSE", predicate: "uses", object: "HTTP"}
+
+  observability:
+    - {subject: "OpenTelemetry", predicate: "provides", object: "traces, metrics, logs"}
+    - {subject: "OpenTelemetry", predicate: "replaces", object: "OpenTracing"}
+    - {subject: "Prometheus", predicate: "uses", object: "pull-based metrics"}
+    - {subject: "Grafana", predicate: "visualizes", object: "Prometheus metrics"}
+    - {subject: "Jaeger", predicate: "provides", object: "distributed tracing"}
+    - {subject: "ELK Stack", predicate: "consists_of", object: "Elasticsearch, Logstash, Kibana"}
+    - {subject: "structured logging", predicate: "requires", object: "JSON format"}
+    - {subject: "health check", predicate: "types", object: "liveness, readiness, startup"}
+    - {subject: "SLI", predicate: "measures", object: "service level indicator"}
+    - {subject: "SLO", predicate: "defines", object: "target for SLI"}
+    - {subject: "SLA", predicate: "contract_for", object: "SLO"}
+
+  testing:
+    - {subject: "unit test", predicate: "tests", object: "single component in isolation"}
+    - {subject: "integration test", predicate: "tests", object: "component interactions"}
+    - {subject: "e2e test", predicate: "tests", object: "full user workflow"}
+    - {subject: "contract test", predicate: "verifies", object: "API compatibility"}
+    - {subject: "load test", predicate: "measures", object: "performance under load"}
+    - {subject: "chaos engineering", predicate: "validates", object: "fault tolerance"}
+    - {subject: "test pyramid", predicate: "recommends", object: "many unit, few e2e"}
+    - {subject: "mocking", predicate: "isolates", object: "external dependencies"}
+    - {subject: "TDD", predicate: "requires", object: "test before implementation"}
+    - {subject: "BDD", predicate: "uses", object: "Given-When-Then format"}

@@ -8,6 +8,7 @@ import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import com.mkpro.models.AgentConfig;
 import com.mkpro.agents.AgentManager;
+import com.mkpro.infra.network.discovery.NetworkPeerRegistry;
 
 import javax.swing.*;
 import javax.swing.text.DefaultCaret;
@@ -15,6 +16,7 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.util.Collections;
 import java.util.Map;
+import javax.swing.Timer;
 
 public class SwingCompanion {
 
@@ -39,7 +41,7 @@ public class SwingCompanion {
     private void initializeUI() {
         // Main Frame
         frame = new JFrame("mkpro Companion - " );
-        frame.setSize(600, 800);
+        frame.setSize(800, 800); // Increased width to accommodate the peer list
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout(10, 10));
 
@@ -58,6 +60,25 @@ public class SwingCompanion {
         JScrollPane scrollPane = new JScrollPane(chatHistory);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         frame.add(scrollPane, BorderLayout.CENTER);
+
+        // Network Mesh Panel (EAST)
+        DefaultListModel<String> peerListModel = new DefaultListModel<>();
+        JList<String> peerList = new JList<>(peerListModel);
+        peerList.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        
+        JScrollPane peerScrollPane = new JScrollPane(peerList);
+        peerScrollPane.setPreferredSize(new Dimension(250, 0));
+        peerScrollPane.setBorder(BorderFactory.createTitledBorder("Network Mesh"));
+        frame.add(peerScrollPane, BorderLayout.EAST);
+
+        // Timer to update peers every 5 seconds
+        Timer peerTimer = new Timer(5000, e -> {
+            peerListModel.clear();
+            NetworkPeerRegistry.getInstance().listPeers().forEach(peer -> {
+                peerListModel.addElement(peer.getPeerId() + " (" + peer.getIp() + ")");
+            });
+        });
+        peerTimer.start();
 
         // Input Panel
         JPanel inputPanel = new JPanel(new BorderLayout(5, 5));

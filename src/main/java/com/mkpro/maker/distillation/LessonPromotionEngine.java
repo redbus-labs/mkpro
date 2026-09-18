@@ -3,6 +3,7 @@ package com.mkpro.maker.distillation;
 import com.mkpro.CentralMemory;
 import com.mkpro.facts.Fact;
 import com.mkpro.facts.FactEngine;
+import com.mkpro.facts.RelationshipTriple;
 
 import java.util.Collections;
 import java.util.Map;
@@ -22,6 +23,8 @@ public class LessonPromotionEngine {
     private final Map<String, DistilledLesson> lessonCache = new ConcurrentHashMap<>();
     private final Set<String> promotedSignatures = ConcurrentHashMap.newKeySet();
     private int promotionThreshold = 2;
+    private FactEngine factEngine;
+    private CentralMemory memory;
 
     public LessonPromotionEngine() {
         this(2);
@@ -29,6 +32,44 @@ public class LessonPromotionEngine {
 
     public LessonPromotionEngine(int promotionThreshold) {
         this.promotionThreshold = Math.max(1, promotionThreshold);
+    }
+
+    public LessonPromotionEngine(FactEngine factEngine) {
+        this(2);
+        this.factEngine = factEngine;
+    }
+
+    public LessonPromotionEngine(FactEngine factEngine, CentralMemory memory) {
+        this.promotionThreshold = 2;
+        this.factEngine = factEngine;
+        this.memory = memory;
+    }
+
+    public LessonPromotionEngine(int promotionThreshold, FactEngine factEngine) {
+        this.promotionThreshold = promotionThreshold;
+        this.factEngine = factEngine;
+    }
+
+    public LessonPromotionEngine(int promotionThreshold, FactEngine factEngine, CentralMemory memory) {
+        this.promotionThreshold = promotionThreshold;
+        this.factEngine = factEngine;
+        this.memory = memory;
+    }
+
+    public void setFactEngine(FactEngine factEngine) {
+        this.factEngine = factEngine;
+    }
+
+    public FactEngine getFactEngine() {
+        return this.factEngine;
+    }
+
+    public void setMemory(CentralMemory memory) {
+        this.memory = memory;
+    }
+
+    public CentralMemory getMemory() {
+        return this.memory;
     }
 
     /**
@@ -54,6 +95,43 @@ public class LessonPromotionEngine {
     }
 
     /**
+     * Promotes a lesson directly, registering relationship triple and adding fact.
+     *
+     * @param lesson The distilled lesson to promote
+     */
+    public synchronized void promoteLesson(DistilledLesson lesson) {
+        if (lesson == null || this.factEngine == null) return;
+        String signature = computeNormalizedSignature(lesson);
+        lessonCache.put(signature, lesson);
+        promotedSignatures.add(signature);
+
+        String category = lesson.getCategory() != null ? lesson.getCategory().name() : "GENERAL";
+        String constraint = lesson.getNegativeConstraint() != null ? lesson.getNegativeConstraint() : "";
+        String pivot = lesson.getSuggestedPivot() != null ? lesson.getSuggestedPivot() : "";
+        double conf = lesson.getConfidence();
+
+        this.factEngine.addFact(new Fact(category, constraint, constraint + " -> " + pivot, conf));
+        this.factEngine.addFact(new Fact(category, pivot, constraint + " -> " + pivot, conf));
+        this.factEngine.addFact(new Fact("NEGATIVE_CONSTRAINT", category, constraint + " -> " + pivot, conf));
+        this.factEngine.addFact(new Fact(category, category, constraint + " -> " + pivot, conf));
+
+        if (this.factEngine.getRelationshipGraph() != null) {
+            this.factEngine.getRelationshipGraph().addTriple(
+                new RelationshipTriple(category, constraint, pivot, "lesson_promotion", conf)
+            );
+        }
+
+        if (this.memory != null) {
+            try {
+                String memKey = "facts:negative_constraint:" + signature;
+                this.memory.saveMemory(memKey, lesson.toPromptEnvelope());
+            } catch (Exception e) {
+                System.err.println("[LessonPromotionEngine] Failed to persist lesson in CentralMemory: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
      * Records a distilled lesson occurrence and evaluates whether it should be promoted to
      * persistent knowledge in FactEngine and CentralMemory.
      *
@@ -73,43 +151,47 @@ public class LessonPromotionEngine {
 
         if (count >= promotionThreshold && !promotedSignatures.contains(signature)) {
             promotedSignatures.add(signature);
-
-            // Construct persistent Fact
-            String subject = (lesson.getCategory() != null) ? lesson.getCategory().name() : "UNKNOWN";
-            String negativeConstraints = lesson.getNegativeConstraint();
-            if (negativeConstraints == null || negativeConstraints.isBlank()) {
-                negativeConstraints = (lesson.getContext() != null && !lesson.getContext().isBlank())
-                        ? "avoids: " + lesson.getContext()
-                        : "avoids failure repetition";
-            }
-
-            String suggestedPivot = lesson.getSuggestedPivot();
-            if (suggestedPivot == null || suggestedPivot.isBlank()) {
-                suggestedPivot = "pivot to alternative strategy";
-            }
-
-            String predicate = negativeConstraints;
-            String object = suggestedPivot;
-
-            Fact fact = new Fact("NEGATIVE_CONSTRAINT", subject, predicate, object);
-
-            if (factEngine != null) {
-                factEngine.addFact(fact);
-            }
-
-            if (memory != null) {
-                try {
-                    String memKey = "facts:negative_constraint:" + signature;
-                    memory.saveMemory(memKey, lesson.toPromptEnvelope());
-                } catch (Exception e) {
-                    System.err.println("[LessonPromotionEngine] Failed to persist lesson in CentralMemory: " + e.getMessage());
-                }
-            }
-
+            applyPromotion(lesson, signature, factEngine, memory);
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Applies the promotion of a distilled lesson into FactEngine and CentralMemory.
+     */
+    private void applyPromotion(DistilledLesson lesson, String signature, FactEngine factEngine, CentralMemory memory) {
+        if (lesson == null) return;
+        String category = lesson.getCategory() != null ? lesson.getCategory().name() : "GENERAL";
+        String constraint = lesson.getNegativeConstraint() != null ? lesson.getNegativeConstraint() : "";
+        String pivot = lesson.getSuggestedPivot() != null ? lesson.getSuggestedPivot() : "";
+        double conf = lesson.getConfidence();
+
+        FactEngine targetEngine = (factEngine != null) ? factEngine : this.factEngine;
+        if (targetEngine != null) {
+            // Register comprehensive facts covering both constraint and pivot
+            targetEngine.addFact(new Fact(category, constraint, constraint + " -> " + pivot, conf));
+            targetEngine.addFact(new Fact(category, pivot, constraint + " -> " + pivot, conf));
+            targetEngine.addFact(new Fact("NEGATIVE_CONSTRAINT", category, constraint + " -> " + pivot, conf));
+            targetEngine.addFact(new Fact(category, category, constraint + " -> " + pivot, conf));
+
+            if (targetEngine.getRelationshipGraph() != null) {
+                targetEngine.getRelationshipGraph().addTriple(
+                    new RelationshipTriple(category, constraint, pivot, "lesson_promotion", conf)
+                );
+            }
+        }
+
+        CentralMemory targetMemory = (memory != null) ? memory : this.memory;
+        if (targetMemory != null) {
+            try {
+                String memKey = "facts:negative_constraint:" + signature;
+                targetMemory.saveMemory(memKey, lesson.toPromptEnvelope());
+            } catch (Exception e) {
+                System.err.println("[LessonPromotionEngine] Failed to persist lesson in CentralMemory: " + e.getMessage());
+            }
+        }
     }
 
     /**
@@ -151,7 +233,7 @@ public class LessonPromotionEngine {
     }
 
     /**
-     * Checks if a specific signature has been promoted.
+     * Checks if a specific lesson signature has already been promoted.
      */
     public boolean isPromoted(String signature) {
         if (signature == null) {
@@ -161,54 +243,34 @@ public class LessonPromotionEngine {
     }
 
     /**
-     * Checks if a specific lesson has been promoted.
+     * Checks if a distilled lesson has already been promoted.
      */
     public boolean isPromoted(DistilledLesson lesson) {
         return isPromoted(computeNormalizedSignature(lesson));
     }
 
     /**
-     * Gets the promotion threshold.
-     */
-    public int getPromotionThreshold() {
-        return promotionThreshold;
-    }
-
-    /**
-     * Sets the promotion threshold (minimum 1).
+     * Sets the promotion occurrence threshold (minimum occurrences before promotion).
      */
     public void setPromotionThreshold(int threshold) {
         this.promotionThreshold = Math.max(1, threshold);
     }
 
-    /**
-     * Retrieves the cached DistilledLesson for a signature, or null if not recorded.
-     */
-    public DistilledLesson getLesson(String signature) {
-        if (signature == null) {
-            return null;
-        }
-        return lessonCache.get(signature);
+    public int getPromotionThreshold() {
+        return promotionThreshold;
     }
 
     /**
-     * Returns an unmodifiable view of the occurrence counter map.
-     */
-    public Map<String, Integer> getOccurrenceCounter() {
-        return Collections.unmodifiableMap(occurrenceCounter);
-    }
-
-    /**
-     * Returns an unmodifiable view of the lesson cache.
+     * Returns the lesson cache mapping signatures to distilled lessons.
      */
     public Map<String, DistilledLesson> getLessonCache() {
-        return Collections.unmodifiableMap(lessonCache);
+        return this.lessonCache != null ? this.lessonCache : Collections.emptyMap();
     }
 
     /**
-     * Resets counters, caches, and promoted signatures.
+     * Resets counters and promoted cache.
      */
-    public void clear() {
+    public synchronized void clear() {
         occurrenceCounter.clear();
         lessonCache.clear();
         promotedSignatures.clear();

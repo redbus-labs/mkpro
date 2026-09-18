@@ -580,22 +580,13 @@ public class MakerLoop {
     }
 
     /**
-     * Mark the current goal as done by user confirmation.
+     * Manual completion (e.g., from /done command or coordinator wrap-up).
      */
     public void markComplete() {
         if (currentGoal != null) {
             currentGoal.setPhase(MakerState.GoalPhase.DONE);
             learnFromCompletion(true);
-        }
-    }
-
-    /**
-     * Mark current goal as abandoned/failed.
-     */
-    public void markFailed() {
-        if (currentGoal != null) {
-            currentGoal.setPhase(MakerState.GoalPhase.DONE);
-            learnFromCompletion(false);
+            currentGoal = null;
         }
     }
 
@@ -663,6 +654,9 @@ public class MakerLoop {
      */
     public void setFactEngine(com.mkpro.facts.FactEngine engine) {
         this.factEngine = engine;
+        if (this.promotionEngine != null) {
+            this.promotionEngine.setFactEngine(engine);
+        }
     }
 
     public com.mkpro.facts.FactEngine getFactEngine() {
@@ -671,10 +665,16 @@ public class MakerLoop {
 
     public void setCentralMemory(com.mkpro.CentralMemory memory) {
         this.memory = memory;
+        if (this.promotionEngine != null) {
+            this.promotionEngine.setMemory(memory);
+        }
     }
 
     public void setMemory(com.mkpro.CentralMemory memory) {
         this.memory = memory;
+        if (this.promotionEngine != null) {
+            this.promotionEngine.setMemory(memory);
+        }
     }
 
     public com.mkpro.CentralMemory getCentralMemory() {

@@ -17,21 +17,52 @@ public class DistilledLesson {
     private List<String> negativeConstraints;
     private String suggestedPivot;
     private long timestamp;
+    private double confidence = 1.0;
 
     public DistilledLesson() {
         this.negativeConstraints = new ArrayList<>();
         this.timestamp = System.currentTimeMillis();
+        this.confidence = 1.0;
+    }
+
+    public DistilledLesson(String signature, FailureCategory category, String negativeConstraint,
+                           String suggestedPivot, double confidence) {
+        this("lesson-" + System.nanoTime(), signature, category, negativeConstraint, null,
+                (negativeConstraint != null ? List.of(negativeConstraint) : Collections.emptyList()),
+                suggestedPivot, System.currentTimeMillis(), confidence);
+    }
+
+    public DistilledLesson(String signature, LessonCategory category, String negativeConstraint,
+                           String suggestedPivot, double confidence) {
+        this(signature, category != null ? category.toFailureCategory() : FailureCategory.UNKNOWN,
+                negativeConstraint, suggestedPivot, confidence);
+    }
+
+    public DistilledLesson(String signature, FailureCategory category, String negativeConstraint,
+                           String suggestedPivot) {
+        this(signature, category, negativeConstraint, suggestedPivot, 1.0);
+    }
+
+    public DistilledLesson(String signature, LessonCategory category, String negativeConstraint,
+                           String suggestedPivot) {
+        this(signature, category, negativeConstraint, suggestedPivot, 1.0);
     }
 
     public DistilledLesson(String lessonId, FailureCategory category, String rootCauseSummary,
                            String failedHypothesis, List<String> negativeConstraints,
                            String suggestedPivot, long timestamp) {
-        this(lessonId, null, category, rootCauseSummary, failedHypothesis, negativeConstraints, suggestedPivot, timestamp);
+        this(lessonId, null, category, rootCauseSummary, failedHypothesis, negativeConstraints, suggestedPivot, timestamp, 1.0);
     }
 
     public DistilledLesson(String lessonId, String signature, FailureCategory category, String rootCauseSummary,
                            String failedHypothesis, List<String> negativeConstraints,
                            String suggestedPivot, long timestamp) {
+        this(lessonId, signature, category, rootCauseSummary, failedHypothesis, negativeConstraints, suggestedPivot, timestamp, 1.0);
+    }
+
+    public DistilledLesson(String lessonId, String signature, FailureCategory category, String rootCauseSummary,
+                           String failedHypothesis, List<String> negativeConstraints,
+                           String suggestedPivot, long timestamp, double confidence) {
         this.lessonId = lessonId;
         this.signature = signature;
         this.category = category;
@@ -40,6 +71,7 @@ public class DistilledLesson {
         this.negativeConstraints = (negativeConstraints != null) ? new ArrayList<>(negativeConstraints) : new ArrayList<>();
         this.suggestedPivot = suggestedPivot;
         this.timestamp = timestamp;
+        this.confidence = confidence;
     }
 
     public static Builder builder() {
@@ -118,8 +150,20 @@ public class DistilledLesson {
         return category;
     }
 
+    public LessonCategory getLessonCategory() {
+        return LessonCategory.fromFailureCategory(this.category);
+    }
+
+    public FailureCategory category() {
+        return category;
+    }
+
     public void setCategory(FailureCategory category) {
         this.category = category;
+    }
+
+    public void setCategory(LessonCategory category) {
+        this.category = category != null ? category.toFailureCategory() : null;
     }
 
     public String getRootCauseSummary() {
@@ -149,6 +193,10 @@ public class DistilledLesson {
         return "";
     }
 
+    public String negativeConstraint() {
+        return getNegativeConstraint();
+    }
+
     public String getContext() {
         if (rootCauseSummary != null && !rootCauseSummary.isEmpty()) {
             return rootCauseSummary;
@@ -173,6 +221,10 @@ public class DistilledLesson {
         return suggestedPivot;
     }
 
+    public String suggestedPivot() {
+        return suggestedPivot;
+    }
+
     public void setSuggestedPivot(String suggestedPivot) {
         this.suggestedPivot = suggestedPivot;
     }
@@ -185,12 +237,25 @@ public class DistilledLesson {
         this.timestamp = timestamp;
     }
 
+    public double getConfidence() {
+        return confidence;
+    }
+
+    public double confidence() {
+        return confidence;
+    }
+
+    public void setConfidence(double confidence) {
+        this.confidence = confidence;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DistilledLesson that = (DistilledLesson) o;
         return timestamp == that.timestamp &&
+                Double.compare(that.confidence, confidence) == 0 &&
                 Objects.equals(lessonId, that.lessonId) &&
                 Objects.equals(signature, that.signature) &&
                 category == that.category &&
@@ -202,7 +267,7 @@ public class DistilledLesson {
 
     @Override
     public int hashCode() {
-        return Objects.hash(lessonId, signature, category, rootCauseSummary, failedHypothesis, negativeConstraints, suggestedPivot, timestamp);
+        return Objects.hash(lessonId, signature, category, rootCauseSummary, failedHypothesis, negativeConstraints, suggestedPivot, timestamp, confidence);
     }
 
     @Override
@@ -212,6 +277,7 @@ public class DistilledLesson {
                 ", category=" + category +
                 ", rootCauseSummary='" + rootCauseSummary + '\'' +
                 ", timestamp=" + timestamp +
+                ", confidence=" + confidence +
                 '}';
     }
 
@@ -224,6 +290,7 @@ public class DistilledLesson {
         private List<String> negativeConstraints = new ArrayList<>();
         private String suggestedPivot;
         private long timestamp = System.currentTimeMillis();
+        private double confidence = 1.0;
 
         public Builder lessonId(String lessonId) {
             this.lessonId = lessonId;
@@ -237,6 +304,11 @@ public class DistilledLesson {
 
         public Builder category(FailureCategory category) {
             this.category = category;
+            return this;
+        }
+
+        public Builder category(LessonCategory category) {
+            this.category = category != null ? category.toFailureCategory() : null;
             return this;
         }
 
@@ -274,8 +346,13 @@ public class DistilledLesson {
             return this;
         }
 
+        public Builder confidence(double confidence) {
+            this.confidence = confidence;
+            return this;
+        }
+
         public DistilledLesson build() {
-            return new DistilledLesson(lessonId, signature, category, rootCauseSummary, failedHypothesis, negativeConstraints, suggestedPivot, timestamp);
+            return new DistilledLesson(lessonId, signature, category, rootCauseSummary, failedHypothesis, negativeConstraints, suggestedPivot, timestamp, confidence);
         }
     }
 }

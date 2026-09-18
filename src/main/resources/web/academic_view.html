@@ -1,0 +1,4695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>mkpro — Academic View</title>
+    <!-- Academic & Technical Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+    <!-- Syntax Highlighting Themes -->
+    <link rel="stylesheet" id="hljs-theme" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <!-- PDF.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #F5F4EF;
+            --surface: #FCFBF9;
+            --surface-hover: #ECEAE3;
+            --surface-elevated: #FFFFFF;
+            --ink: #1D1E20;
+            --ink-secondary: #4A4F59;
+            --muted: #7E8694;
+            --accent: #2C5282;
+            --accent-soft: rgba(44, 82, 130, 0.08);
+            --green: #2B6CB0;
+            --success: #287D43;
+            --danger: #C53030;
+            --warning: #C05621;
+
+            /* Pure Zero-1px Border Tonal Washes */
+            --wash-user: #EAE5DC;
+            --wash-coordinator: #E5EFE9;
+            --wash-coder: #E5ECF6;
+            --wash-architect: #F5EEE2;
+            --wash-maker: #EEE7F5;
+            --wash-router: #EAF0F6;
+            --wash-system: #ECEBE6;
+            --wash-diff-add: #E4F3E8;
+            --wash-diff-del: #FBE7E7;
+
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.05);
+            --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.08);
+            --shadow-dock: 0 12px 36px rgba(0, 0, 0, 0.10);
+        }
+
+        [data-theme="dark"] {
+            --bg: #141517;
+            --surface: #1B1D20;
+            --surface-hover: #24272C;
+            --surface-elevated: #212429;
+            --ink: #E5E7EB;
+            --ink-secondary: #9CA3AF;
+            --muted: #6B7280;
+            --accent: #81A1C1;
+            --accent-soft: rgba(129, 161, 193, 0.12);
+            --green: #88C0D0;
+            --success: #48BB78;
+            --danger: #F56565;
+            --warning: #ECC94B;
+
+            /* Dark Tonal Washes */
+            --wash-user: #262420;
+            --wash-coordinator: #1B2620;
+            --wash-coder: #1C2430;
+            --wash-architect: #282319;
+            --wash-maker: #251D2D;
+            --wash-router: #1C222B;
+            --wash-system: #1F2126;
+            --wash-diff-add: #172D1E;
+            --wash-diff-del: #361A1E;
+
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+            --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35);
+            --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.45);
+            --shadow-dock: 0 12px 36px rgba(0, 0, 0, 0.55);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 15px;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* App Shell */
+        .app-root {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Masthead */
+        .masthead {
+            height: 52px;
+            padding: 0 24px;
+            background: var(--surface);
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            z-index: 50;
+            flex-shrink: 0;
+        }
+
+        .brand-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent);
+            letter-spacing: -0.3px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .brand-title .badge-pill {
+            font-size: 10px;
+            font-weight: 500;
+            padding: 2px 7px;
+            border-radius: 12px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-left: 8px;
+        }
+        .nav-links a {
+            color: var(--ink-secondary);
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .nav-links a:hover {
+            background: var(--surface-hover);
+            color: var(--ink);
+        }
+
+        .masthead-center {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+        }
+
+        .masthead-select-wrap {
+            display: inline-flex;
+            align-items: center;
+            background: var(--surface-hover);
+            border-radius: 8px;
+            padding: 2px 8px;
+            font-size: 12px;
+            color: var(--ink-secondary);
+        }
+        .masthead-select-wrap span {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            margin-right: 4px;
+            opacity: 0.8;
+        }
+        .masthead-select-wrap select {
+            background: transparent;
+            border: none;
+            color: var(--ink);
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            outline: none;
+            padding: 4px 2px;
+        }
+        .masthead-select-wrap select option {
+            background: var(--surface-elevated);
+            color: var(--ink);
+        }
+
+        .user-alias-btn {
+            background: var(--surface-hover);
+            border: none;
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--ink-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s;
+        }
+        .user-alias-btn:hover {
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+
+        .masthead-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 12px;
+        }
+
+        .icon-btn {
+            background: var(--surface-hover);
+            border: none;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 13px;
+            color: var(--ink-secondary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+        }
+        .icon-btn:hover {
+            background: var(--accent-soft);
+            color: var(--ink);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+        }
+        .status-dot.connected { background: var(--success); box-shadow: 0 0 6px rgba(40, 125, 67, 0.4); }
+        .status-dot.disconnected { background: var(--danger); }
+
+        /* Reading Stream (Single Column Focus, Centered 760px) */
+        #chat,
+        .chat-scroll,
+        .stream-viewport {
+            flex: 1;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+            padding: 24px 24px 70px !important;
+            scroll-padding-bottom: 70px !important;
+            box-sizing: border-box !important;
+            display: flex;
+            justify-content: center;
+        }
+        .stream-container {
+            width: 100%;
+            max-width: 760px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .stream-container > *:last-child,
+        .chat-scroll > *:last-child {
+            margin-bottom: 24px;
+        }
+
+        /* Dedicated trailing spacer element */
+        .chat-bottom-spacer,
+        #chatBottomSpacer {
+            height: 70px !important;
+            min-height: 70px !important;
+            width: 100%;
+            flex-shrink: 0;
+            pointer-events: none;
+        }
+
+        /* History Loading Indicator */
+        .history-status-indicator {
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--muted);
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: var(--surface);
+            box-shadow: var(--shadow-sm);
+            align-self: center;
+        }
+
+        /* Academic Memo Cards */
+        .academic-card {
+            border-radius: 14px;
+            padding: 18px 22px;
+            box-shadow: var(--shadow-sm);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            position: relative;
+            word-break: break-word;
+        }
+        .academic-card:hover {
+            box-shadow: var(--shadow-md);
+        }
+
+        /* Zero-1px Border Tonal Washes per Agent Persona */
+        .academic-card.card-user {
+            background: var(--wash-user);
+            align-self: flex-end;
+            max-width: 88%;
+        }
+        .academic-card.card-coordinator {
+            background: var(--wash-coordinator);
+        }
+        .academic-card.card-coder {
+            background: var(--wash-coder);
+        }
+        .academic-card.card-architect {
+            background: var(--wash-architect);
+        }
+        .academic-card.card-maker {
+            background: var(--wash-maker);
+        }
+        .academic-card.card-router {
+            background: var(--wash-router);
+            font-size: 13px;
+            padding: 12px 18px;
+        }
+        .academic-card.card-system {
+            background: var(--wash-system);
+            font-size: 13px;
+            padding: 10px 16px;
+            color: var(--muted);
+            align-self: center;
+            max-width: 90%;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--muted);
+        }
+        .card-author {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: var(--ink);
+        }
+        .card-author .persona-badge {
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.05);
+            font-weight: 500;
+            color: var(--ink-secondary);
+        }
+        [data-theme="dark"] .card-author .persona-badge {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .card-timestamp {
+            font-size: 10px;
+            opacity: 0.75;
+        }
+
+        /* Typography Inside Cards */
+        .academic-prose {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 15px;
+            line-height: 1.68;
+            color: var(--ink);
+        }
+        .academic-card.card-coordinator .academic-prose,
+        .academic-card.card-architect .academic-prose,
+        .academic-card.card-maker .academic-prose {
+            font-family: 'EB Garamond', Georgia, serif;
+            font-size: 17.5px;
+            line-height: 1.65;
+        }
+
+        .academic-prose p {
+            margin-bottom: 12px;
+        }
+        .academic-prose p:last-child {
+            margin-bottom: 0;
+        }
+
+        .academic-prose h1, .academic-prose h2, .academic-prose h3,
+        .academic-prose h4, .academic-prose h5, .academic-prose h6 {
+            font-family: 'EB Garamond', Georgia, serif;
+            color: var(--ink);
+            font-weight: 600;
+            margin: 18px 0 8px 0;
+            line-height: 1.3;
+        }
+        .academic-prose h1 { font-size: 1.5em; }
+        .academic-prose h2 { font-size: 1.35em; }
+        .academic-prose h3 { font-size: 1.2em; }
+        .academic-prose h4 { font-size: 1.1em; }
+
+        .academic-prose strong {
+            font-weight: 600;
+            color: var(--ink);
+        }
+        .academic-prose em {
+            font-style: italic;
+        }
+        .academic-prose a {
+            color: var(--accent);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+        .academic-prose blockquote {
+            margin: 14px 0;
+            padding: 8px 16px;
+            border-radius: 0 8px 8px 0;
+            background: rgba(0, 0, 0, 0.03);
+            border-left: 3px solid var(--accent);
+            font-style: italic;
+        }
+        [data-theme="dark"] .academic-prose blockquote {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .academic-prose ul, .academic-prose ol {
+            margin: 10px 0 12px 24px;
+        }
+        .academic-prose li {
+            margin-bottom: 4px;
+        }
+
+        /* Inline Code & Technical Telemetry */
+        .academic-prose img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            margin: 12px 0;
+            display: block;
+            cursor: zoom-in;
+            box-shadow: var(--shadow-sm);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .academic-prose img:hover {
+            box-shadow: var(--shadow-md);
+        }
+
+        .academic-prose code:not(.hljs) {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.88em;
+            padding: 2px 6px;
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.05);
+            color: var(--accent);
+        }
+        [data-theme="dark"] .academic-prose img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            margin: 12px 0;
+            display: block;
+            cursor: zoom-in;
+            box-shadow: var(--shadow-sm);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .academic-prose img:hover {
+            box-shadow: var(--shadow-md);
+        }
+
+        .academic-prose code:not(.hljs) {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        /* Code Blocks */
+        .code-container {
+            margin: 14px 0;
+            border-radius: 10px;
+            background: var(--surface-elevated);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+        .code-header-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 14px;
+            background: rgba(0, 0, 0, 0.03);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--muted);
+        }
+        [data-theme="dark"] .code-header-bar {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .code-copy-btn {
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .code-copy-btn:hover {
+            background: var(--surface-hover);
+            color: var(--ink);
+        }
+        .code-copy-btn.copied {
+            color: var(--success);
+        }
+        .code-container pre {
+            margin: 0;
+            padding: 14px 16px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.55;
+            background: transparent !important;
+        }
+        .code-container pre code {
+            background: transparent !important;
+            padding: 0 !important;
+            font-family: inherit;
+        }
+
+        /* Visual Diff Proposal Card */
+        .edit-proposal-card {
+            border-radius: 12px;
+            background: var(--surface);
+            box-shadow: var(--shadow-md);
+            overflow: hidden;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            margin: 8px 0;
+        }
+        [data-theme="dark"] .edit-proposal-card {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .diff-header {
+            padding: 10px 16px;
+            background: var(--surface-hover);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .diff-lines-wrap {
+            padding: 12px 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+        .diff-line {
+            white-space: pre-wrap;
+            word-break: break-all;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+        .diff-line.added {
+            background: var(--wash-diff-add);
+            color: var(--success);
+        }
+        .diff-line.removed {
+            background: var(--wash-diff-del);
+            color: var(--danger);
+        }
+        .diff-line.info {
+            color: var(--muted);
+        }
+
+        .diff-actions-bar {
+            padding: 10px 16px;
+            background: var(--surface-hover);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .btn-diff-approve {
+            background: var(--success);
+            color: #FFFFFF;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn-diff-approve:hover { opacity: 0.9; }
+        .btn-diff-reject {
+            background: var(--danger);
+            color: #FFFFFF;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn-diff-reject:hover { opacity: 0.9; }
+        .diff-countdown {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--muted);
+            margin-left: auto;
+        }
+        .edit-proposal-card.resolved .diff-actions-bar {
+            display: none;
+        }
+
+        /* Tool Execution Accordions */
+        .tool-call-accordion {
+            border-radius: 8px;
+            background: var(--surface);
+            margin: 8px 0;
+            font-size: 13px;
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+        .tool-call-accordion summary {
+            padding: 8px 14px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--ink-secondary);
+            background: var(--surface-hover);
+            user-select: none;
+        }
+        .tool-call-accordion .tool-call-body {
+            padding: 12px 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            max-height: 260px;
+        }
+
+        /* Multi-Modal Thumbnail Grids inside User Cards */
+        .card-media-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .card-media-grid .media-thumbnail {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: var(--shadow-sm);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .card-media-grid .media-thumbnail:hover {
+            transform: scale(1.03);
+            box-shadow: var(--shadow-md);
+        }
+
+        .card-file-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .file-chip {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: var(--surface-elevated);
+            color: var(--ink);
+            box-shadow: var(--shadow-sm);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Streaming Cursor Pulse */
+        .streaming-cursor {
+            display: inline-block;
+            width: 7px;
+            height: 15px;
+            background: var(--accent);
+            margin-left: 4px;
+            vertical-align: middle;
+            animation: blink 0.9s infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Thinking & Loader Animation */
+        .thinking-loader {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 18px;
+            border-radius: 12px;
+            background: var(--surface);
+            box-shadow: var(--shadow-sm);
+            width: fit-content;
+            align-self: flex-start;
+            margin: 6px 0;
+        }
+        .thinking-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: pulse-dot 1.2s infinite ease-in-out;
+        }
+        .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+        .thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes pulse-dot {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+        .thinking-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        /* Floating Input Dock */
+        .dock-wrapper {
+            position: fixed;
+            bottom: 24px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            pointer-events: none;
+            z-index: 100;
+            padding: 0 16px;
+        }
+
+        .dock-content {
+            width: 100%;
+            max-width: 760px;
+            pointer-events: auto;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* Multi-Modal Attachment Tray in Dock */
+        .dock-attachment-tray {
+            display: none;
+            background: var(--surface-elevated);
+            border-radius: 14px;
+            padding: 10px 14px;
+            box-shadow: var(--shadow-dock);
+            gap: 10px;
+            overflow-x: auto;
+            align-items: center;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+        .dock-attachment-tray.active {
+            display: flex;
+        }
+        .tray-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            border-radius: 8px;
+            background: var(--surface-hover);
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .tray-thumb {
+            width: 32px;
+            height: 32px;
+            object-fit: cover;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .tray-chip-info {
+            display: flex;
+            flex-direction: column;
+        }
+        .tray-chip-name {
+            font-weight: 500;
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .tray-chip-size {
+            font-size: 10px;
+            color: var(--muted);
+        }
+        .tray-chip-remove {
+            cursor: pointer;
+            color: var(--muted);
+            font-weight: bold;
+            padding: 2px 4px;
+            border-radius: 4px;
+            transition: color 0.15s;
+        }
+        .tray-chip-remove:hover {
+            color: var(--danger);
+        }
+
+        /* Pill Input Dock */
+        .dock-pill {
+            background: var(--surface-elevated);
+            box-shadow: var(--shadow-dock);
+            border-radius: 28px;
+            padding: 8px 12px 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            transition: box-shadow 0.2s ease;
+        }
+        .dock-pill:focus-within {
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.14);
+        }
+        [data-theme="dark"] .dock-pill:focus-within {
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+        }
+
+        .dock-btn {
+            background: transparent;
+            border: none;
+            font-size: 18px;
+            color: var(--ink-secondary);
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 8px;
+            transition: background 0.15s, color 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .dock-btn:hover {
+            background: var(--surface-hover);
+            color: var(--accent);
+        }
+
+        .dock-input {
+            flex: 1;
+            border: none;
+            outline: none;
+            background: transparent;
+            font-family: inherit;
+            font-size: 15px;
+            color: var(--ink);
+        }
+        .dock-input::placeholder {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .dock-send-btn {
+            background: var(--ink);
+            color: var(--bg);
+            border: none;
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s ease, transform 0.1s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dock-send-btn:hover {
+            opacity: 0.9;
+        }
+        .dock-send-btn:active {
+            transform: scale(0.97);
+        }
+
+        /* Slash Command Palette Popup */
+        .slash-palette {
+            position: absolute;
+            bottom: calc(100% + 10px);
+            left: 0;
+            right: 0;
+            max-height: 280px;
+            overflow-y: auto;
+            background: var(--surface-elevated);
+            border-radius: 14px;
+            box-shadow: var(--shadow-dock);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            display: none;
+            flex-direction: column;
+            padding: 6px 0;
+            z-index: 150;
+        }
+        [data-theme="dark"] .slash-palette {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .slash-palette.open {
+            display: block;
+        }
+        .slash-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            transition: background 0.15s ease;
+        }
+        .slash-item:hover, .slash-item.active {
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+        .slash-item-desc {
+            color: var(--muted);
+            font-size: 11px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Slide-over Drawer (Ctrl + B) */
+        .slide-drawer {
+            position: fixed;
+            top: 0;
+            right: -360px;
+            width: 360px;
+            height: 100vh;
+            background: var(--surface);
+            box-shadow: var(--shadow-lg);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            transition: right 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .slide-drawer.open {
+            right: 0;
+        }
+        .drawer-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.2);
+            z-index: 999;
+            display: none;
+            backdrop-filter: blur(2px);
+        }
+        .drawer-backdrop.open {
+            display: block;
+        }
+
+        .drawer-header {
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--surface-hover);
+        }
+        .drawer-tabs {
+            display: flex;
+            gap: 12px;
+        }
+        .drawer-tab-btn {
+            background: transparent;
+            border: none;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--muted);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.15s;
+        }
+        .drawer-tab-btn.active {
+            background: var(--surface-elevated);
+            color: var(--ink);
+            box-shadow: var(--shadow-sm);
+        }
+        .drawer-close-btn {
+            background: transparent;
+            border: none;
+            font-size: 16px;
+            color: var(--muted);
+            cursor: pointer;
+            padding: 4px;
+        }
+        .drawer-close-btn:hover {
+            color: var(--ink);
+        }
+
+        .drawer-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+        }
+
+        .file-tree-node {
+            display: flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            cursor: pointer;
+            gap: 6px;
+            transition: background 0.15s;
+            user-select: none;
+            position: relative;
+        }
+        .file-tree-node:hover {
+            background: var(--surface-hover);
+        }
+        .file-tree-node .node-arrow {
+            font-size: 9px;
+            width: 12px;
+            color: var(--muted);
+            transition: transform 0.15s;
+        }
+        .file-tree-node .node-arrow.expanded {
+            transform: rotate(90deg);
+        }
+        .file-tree-node .node-icon {
+            font-size: 13px;
+            flex-shrink: 0;
+        }
+        .file-tree-node .node-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+        .file-tree-node .node-attach-btn {
+            opacity: 0;
+            background: transparent;
+            border: none;
+            font-size: 11px;
+            padding: 2px 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            color: var(--muted);
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .file-tree-node:hover .node-attach-btn {
+            opacity: 0.85;
+        }
+        .file-tree-node .node-attach-btn:hover {
+            opacity: 1;
+            background: var(--accent-soft);
+            color: var(--accent);
+            transform: scale(1.1);
+        }
+        .file-tree-children {
+            display: none;
+            padding-left: 14px;
+        }
+        .file-tree-children.open {
+            display: block;
+        }
+
+        .drawer-footer {
+            padding: 14px 20px;
+            background: var(--surface-hover);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        /* File Edit Approval Modal Popup */
+        #editApprovalModal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        #editApprovalModal.active {
+            display: flex !important;
+            opacity: 1 !important;
+        }
+
+        .edit-modal-card {
+            background: var(--surface-elevated);
+            color: var(--ink);
+            border-radius: 14px;
+            box-shadow: var(--shadow-dock), 0 20px 50px rgba(0, 0, 0, 0.25);
+            width: 100%;
+            max-width: 780px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        [data-theme="dark"] .edit-modal-card {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .edit-modal-header {
+            padding: 14px 20px;
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            flex-shrink: 0;
+        }
+        [data-theme="dark"] .edit-modal-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .edit-modal-title-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .edit-modal-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--ink);
+            white-space: nowrap;
+        }
+
+        #editProposalPath {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .edit-progress-track {
+            height: 4px;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+        }
+        [data-theme="dark"] .edit-progress-track {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .edit-progress-bar {
+            height: 100%;
+            width: 100%;
+            background: var(--accent);
+            transition: width 0.1s linear;
+        }
+
+        .edit-modal-body {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface-elevated);
+        }
+
+        .edit-diff-container {
+            padding: 16px 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            overflow-y: auto;
+            flex: 1;
+            background: var(--bg);
+        }
+
+        .diff-line-modal {
+            white-space: pre-wrap;
+            word-break: break-all;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-bottom: 2px;
+        }
+        .diff-line-modal.added {
+            background: var(--wash-diff-add);
+            color: var(--success);
+        }
+        .diff-line-modal.removed {
+            background: var(--wash-diff-del);
+            color: var(--danger);
+        }
+        .diff-line-modal.context {
+            color: var(--ink-secondary);
+        }
+        .diff-line-modal.info {
+            color: var(--muted);
+            font-style: italic;
+        }
+
+        .edit-modal-footer {
+            padding: 12px 20px;
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+            flex-shrink: 0;
+        }
+        [data-theme="dark"] .edit-modal-footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .edit-countdown-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .edit-modal-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .btn-modal-reject {
+            background: var(--danger);
+            color: #FFFFFF;
+            border: none;
+            border-radius: 8px;
+            padding: 7px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn-modal-reject:hover { opacity: 0.9; }
+
+        .btn-modal-approve {
+            background: var(--success);
+            color: #FFFFFF;
+            border: none;
+            border-radius: 8px;
+            padding: 7px 18px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn-modal-approve:hover { opacity: 0.9; }
+
+        @keyframes modal-pop {
+            0% { transform: scale(0.95); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Manuscript & File Inspector Modal */
+        .inspector-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .inspector-modal.active {
+            display: flex !important;
+            opacity: 1 !important;
+        }
+
+        .inspector-card {
+            background: var(--surface-elevated);
+            border-radius: 14px;
+            box-shadow: var(--shadow-dock), 0 24px 60px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 1000px;
+            height: 88vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        [data-theme="dark"] .inspector-card {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .inspector-header {
+            padding: 12px 20px;
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            flex-shrink: 0;
+        }
+        [data-theme="dark"] .inspector-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .inspector-meta-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+            flex: 1;
+        }
+        .inspector-title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .inspector-filename {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--ink);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .inspector-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 5px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            text-transform: uppercase;
+        }
+        .inspector-path-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .inspector-tabs {
+            display: inline-flex;
+            background: var(--surface-hover);
+            border-radius: 8px;
+            padding: 3px;
+            gap: 4px;
+        }
+        .inspector-tab-btn {
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--ink-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .inspector-tab-btn.active {
+            background: var(--surface-elevated);
+            color: var(--accent);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .inspector-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .inspector-btn {
+            background: var(--surface-hover);
+            border: none;
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--ink-secondary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+        }
+        .inspector-btn:hover {
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+        .inspector-btn.copied {
+            color: var(--success);
+        }
+
+        .inspector-close-btn {
+            background: var(--surface-hover);
+            border: none;
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: var(--ink-secondary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .inspector-close-btn:hover {
+            background: var(--accent-soft);
+            color: var(--danger);
+        }
+
+        .inspector-body {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            background: var(--surface-elevated);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Rendered Markdown Manuscript */
+        .inspector-rendered-markdown {
+            padding: 28px 36px;
+            overflow-y: auto;
+            flex: 1;
+            font-family: 'EB Garamond', Georgia, serif;
+            font-size: 18px;
+            line-height: 1.7;
+            color: var(--ink);
+            max-width: 820px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .inspector-rendered-markdown h1,
+        .inspector-rendered-markdown h2,
+        .inspector-rendered-markdown h3 {
+            font-family: 'EB Garamond', Georgia, serif;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        .inspector-rendered-markdown p {
+            margin-bottom: 16px;
+        }
+        .inspector-rendered-markdown code:not(.hljs) {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.88em;
+            padding: 2px 6px;
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.05);
+            color: var(--accent);
+        }
+        [data-theme="dark"] .inspector-rendered-markdown code:not(.hljs) {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        /* Code with Gutter Lines */
+        .inspector-code-wrap {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            flex: 1;
+            overflow: auto;
+            background: var(--bg);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .inspector-gutter {
+            padding: 16px 12px 16px 16px;
+            text-align: right;
+            user-select: none;
+            color: var(--muted);
+            opacity: 0.6;
+            background: rgba(0, 0, 0, 0.02);
+            border-right: 1px solid rgba(0, 0, 0, 0.05);
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
+            white-space: pre;
+            position: sticky;
+            left: 0;
+            z-index: 10;
+        }
+        [data-theme="dark"] .inspector-gutter {
+            background: rgba(255, 255, 255, 0.02);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .inspector-code-pre {
+            padding: 16px;
+            margin: 0;
+            overflow: visible;
+            background: transparent !important;
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
+            white-space: pre;
+        }
+        .inspector-code-pre code {
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
+            white-space: pre;
+            background: transparent !important;
+            padding: 0 !important;
+        }
+
+        /* Live HTML Frame */
+        .inspector-live-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #FFFFFF;
+        }
+
+        /* PDF Viewer Container */
+        .inspector-pdf-container {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            height: 100%;
+            overflow: hidden;
+            background: #525659;
+        }
+        .pdf-toolbar {
+            padding: 8px 16px;
+            background: #323639;
+            color: #FFFFFF;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            z-index: 10;
+        }
+        .pdf-page-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .pdf-tool-btn {
+            background: rgba(255, 255, 255, 0.12);
+            border: none;
+            color: #FFFFFF;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        .pdf-tool-btn:hover {
+            background: rgba(255, 255, 255, 0.24);
+        }
+        .pdf-tool-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .pdf-canvas-wrapper {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+        .pdf-canvas {
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+            border-radius: 4px;
+            max-width: 100%;
+        }
+
+        /* Graphic/Image Viewer Container */
+        .inspector-image-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 24px;
+            overflow: auto;
+            background: repeating-conic-gradient(rgba(0,0,0,0.03) 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+        }
+        [data-theme="dark"] .inspector-image-wrap {
+            background: repeating-conic-gradient(rgba(255,255,255,0.03) 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+        }
+        .inspector-image-preview {
+            max-width: 95%;
+            max-height: 95%;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            cursor: zoom-in;
+        }
+
+        /* Binary Asset Fallback Card */
+        .inspector-binary-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 14px;
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .inspector-binary-icon {
+            font-size: 48px;
+            opacity: 0.8;
+        }
+        .inspector-binary-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--ink);
+        }
+        .inspector-binary-meta {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--muted);
+            display: flex;
+            gap: 12px;
+        }
+        .inspector-binary-download-btn {
+            background: var(--accent);
+            color: #FFFFFF;
+            text-decoration: none;
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: opacity 0.15s ease;
+        }
+        .inspector-binary-download-btn:hover {
+            opacity: 0.9;
+        }
+
+        .inspector-empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--muted);
+            font-size: 13px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Lightbox Fullscreen Modal */
+        .lightbox-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 20000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .lightbox-modal.active {
+            display: flex !important;
+            opacity: 1 !important;
+        }
+        .lightbox-content {
+            position: relative;
+            max-width: 96vw;
+            max-height: 96vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .lightbox-header {
+            position: absolute;
+            top: -46px;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #FFFFFF;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+        .lightbox-close-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: #FFFFFF;
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .lightbox-close-btn:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+        .lightbox-img {
+            max-width: 95vw;
+            max-height: 88vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Remote SSH Button & Status in Academic Masthead */
+        .ssh-header-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--surface-hover);
+            border: none;
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--ink-secondary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .ssh-header-btn:hover {
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+        .ssh-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            transition: background-color 0.2s, box-shadow 0.2s;
+        }
+        .ssh-status-dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 6px rgba(40, 125, 67, 0.4);
+        }
+        .ssh-status-dot.disconnected {
+            background: var(--muted);
+        }
+
+        /* Remote SSH Modal Dialog (Academic Aesthetic) */
+        .ssh-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .ssh-modal-overlay.active {
+            display: flex;
+        }
+        .ssh-modal-card {
+            background: var(--surface-elevated);
+            color: var(--ink);
+            border-radius: 14px;
+            box-shadow: var(--shadow-dock), 0 20px 50px rgba(0, 0, 0, 0.25);
+            width: 100%;
+            max-width: 540px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            animation: modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        [data-theme="dark"] .ssh-modal-card {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .ssh-modal-header {
+            padding: 14px 20px;
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        }
+        [data-theme="dark"] .ssh-modal-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .ssh-modal-header h3 {
+            font-size: 14px;
+            color: var(--accent);
+            font-family: 'JetBrains Mono', monospace;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+        }
+        .ssh-modal-close-btn {
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            font-size: 16px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .ssh-modal-close-btn:hover {
+            color: var(--danger);
+            background: var(--accent-soft);
+        }
+        .ssh-modal-body {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            overflow-y: auto;
+            max-height: 75vh;
+            background: var(--surface-elevated);
+        }
+        .ssh-form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .ssh-form-row.row-split {
+            flex-direction: row;
+            gap: 12px;
+        }
+        .ssh-form-row.row-split > div {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .ssh-form-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ink-secondary);
+            font-family: 'JetBrains Mono', monospace;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ssh-form-label span.req { color: var(--danger); }
+        .ssh-form-input, .ssh-form-select, .ssh-form-textarea {
+            background: var(--bg);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: var(--ink);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.15s;
+            width: 100%;
+        }
+        [data-theme="dark"] .ssh-form-input, [data-theme="dark"] .ssh-form-select, [data-theme="dark"] .ssh-form-textarea {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .ssh-form-input:focus, .ssh-form-select:focus, .ssh-form-textarea:focus {
+            border-color: var(--accent);
+        }
+        .ssh-form-textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .ssh-status-banner {
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.4;
+            display: none;
+            word-break: break-word;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .ssh-status-banner.success {
+            display: block;
+            background: var(--wash-diff-add);
+            border: 1px solid var(--success);
+            color: var(--success);
+        }
+        .ssh-status-banner.error {
+            display: block;
+            background: var(--wash-diff-del);
+            border: 1px solid var(--danger);
+            color: var(--danger);
+        }
+        .ssh-status-banner.info {
+            display: block;
+            background: var(--wash-coder);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+        }
+        .ssh-active-sessions {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 10px 12px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        [data-theme="dark"] .ssh-active-sessions {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .ssh-active-header {
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ssh-active-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+        }
+        [data-theme="dark"] .ssh-active-item {
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+        }
+        .ssh-active-item:last-child { border-bottom: none; }
+        .ssh-modal-footer {
+            padding: 14px 20px;
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+            gap: 10px;
+        }
+        [data-theme="dark"] .ssh-modal-footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .ssh-footer-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .ssh-btn {
+            padding: 7px 16px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: opacity 0.15s;
+        }
+        .ssh-btn:hover { opacity: 0.9; }
+        .ssh-btn-connect {
+            background: var(--success);
+            color: white;
+        }
+        .ssh-btn-disconnect {
+            background: var(--danger);
+            color: white;
+        }
+        .ssh-btn-cancel {
+            background: var(--surface-hover);
+            color: var(--ink-secondary);
+        }
+
+    </style>
+</head>
+<body>
+    <div class="app-root">
+        <!-- Masthead -->
+        <header class="masthead">
+            <div class="brand-title">
+                <span>mkpro</span>
+                <span class="badge-pill">Academic UI</span>
+            </div>
+            <nav class="nav-links">
+                <a href="/index.html">⚙️ Standard Terminal</a>
+                <a href="/knowledge">🧠 Knowledge</a>
+                <a href="/db">📦 DB</a>
+            </nav>
+
+            <div class="masthead-center">
+                <!-- Collaborative Git Branch Switcher -->
+                <div class="masthead-select-wrap">
+                    <span>⎇</span>
+                    <select id="branchSelect" onchange="switchBranch(this.value)" title="Switch collaborative git branch">
+                        <option>loading branch...</option>
+                    </select>
+                </div>
+
+                <!-- Display Alias Button -->
+                <button class="user-alias-btn" onclick="promptUsername()" title="Set collaborative alias">
+                    <span>👤</span>
+                    <span id="userAliasText">You</span>
+                </button>
+            </div>
+
+            <div class="masthead-actions">
+                <button class="icon-btn ssh-header-btn" id="sshHeaderBtn" onclick="openSshModal()" title="Sandbox Environment (Remote Ubuntu)">
+                    <span class="ssh-status-dot disconnected" id="sshStatusDot"></span>
+                    <span>📦 Sandbox</span>
+                </button>
+                <button class="icon-btn" onclick="toggleDrawer()" title="Toggle Files &amp; Goals Drawer (Ctrl + B)">📁 Drawer</button>
+                <button class="icon-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle Theme">🌓</button>
+                <div style="display:inline-flex; align-items:center; margin-left:6px; font-size:12px; color:var(--muted);">
+                    <span id="connDot" class="status-dot disconnected"></span>
+                    <span id="connText" style="font-family:'JetBrains Mono',monospace; font-size:11px;">Connecting</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Reading Stream Viewport -->
+        <main class="chat-scroll" id="chat">
+            <div class="stream-container" id="chatStream">
+                <!-- Academic Card Stream Appends Here -->
+                <div class="chat-bottom-spacer" id="chatBottomSpacer"></div>
+            </div>
+        </main>
+
+        <!-- Floating Input Dock -->
+        <div class="dock-wrapper">
+            <div class="dock-content">
+                <!-- Multi-Modal Attachment Tray -->
+                <div class="dock-attachment-tray" id="dockAttachmentTray"></div>
+
+                <!-- Slash Command Palette Popup -->
+                <div class="slash-palette" id="slashPalette"></div>
+
+                <!-- Main Pill Dock -->
+                <div class="dock-pill">
+                    <button class="dock-btn" onclick="document.getElementById('dockFileInput').click()" title="Attach images or documents">📎</button>
+                    <input type="file" id="dockFileInput" multiple accept="*/*" style="display:none;" onchange="handleFileInput(event)" />
+                    <input type="text" class="dock-input" id="userInput" placeholder="Inquire, propose hypothesis, run /command..." autocomplete="off" />
+                    <button class="dock-send-btn" id="sendBtn" onclick="sendMessage()">Send ↵</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backdrop for Drawer -->
+        <div class="drawer-backdrop" id="drawerBackdrop" onclick="toggleDrawer()"></div>
+
+        <!-- Slide-over Drawer (Ctrl + B) -->
+        <aside class="slide-drawer" id="slideDrawer">
+            <div class="drawer-header">
+                <div class="drawer-tabs">
+                    <button class="drawer-tab-btn active" id="tabBtnFiles" onclick="switchDrawerTab('files')">📁 Files</button>
+                    <button class="drawer-tab-btn" id="tabBtnGoals" onclick="switchDrawerTab('goals')">🎯 Goals</button>
+                </div>
+                <button class="drawer-close-btn" onclick="toggleDrawer()" title="Close Drawer (Ctrl + B)">✕</button>
+            </div>
+            <div class="drawer-body" id="drawerBody">
+                <div style="color:var(--muted); font-size:12px;">Loading workspace hierarchy...</div>
+            </div>
+            <div class="drawer-footer" id="drawerTelemetry">
+                mkpro runtime • ready
+            </div>
+        </aside>
+
+        <!-- File Edit Approval Modal Popup -->
+        <div id="editApprovalModal" class="modal" onclick="if(event.target===this) closeEditModal()">
+            <div class="edit-modal-card">
+                <div class="edit-modal-header">
+                    <div class="edit-modal-title-group">
+                        <span class="edit-modal-title">📝 File Edit Proposal</span>
+                        <span id="editProposalPath" class="edit-proposal-path">src/main/java/...</span>
+                    </div>
+                    <button class="inspector-close-btn" onclick="closeEditModal()" title="Close (Esc)">✕</button>
+                </div>
+                <div class="edit-progress-track">
+                    <div id="editProposalProgress" class="edit-progress-bar"></div>
+                </div>
+                <div class="edit-modal-body">
+                    <div id="editProposalDiff" class="edit-diff-container"></div>
+                </div>
+                <div class="edit-modal-footer">
+                    <span id="editProposalCountdown" class="edit-countdown-text">Auto-proceeding in 7.0s...</span>
+                    <div class="edit-modal-actions">
+                        <button class="btn-modal-reject" onclick="rejectEditProposal()">✕ Reject</button>
+                        <button class="btn-modal-approve" onclick="approveEditProposal()">✓ Approve &amp; Apply</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Academic Manuscript & File Inspector Modal -->
+        <div id="inspectorModal" class="inspector-modal" onclick="if(event.target===this) closeInspector()">
+            <div class="inspector-card">
+                <div class="inspector-header">
+                    <div class="inspector-meta-wrap">
+                        <div class="inspector-title-row">
+                            <span class="inspector-filename" id="inspectorFilename">file.ext</span>
+                            <span class="inspector-badge" id="inspectorLangBadge">TXT</span>
+                        </div>
+                        <div class="inspector-path-row">
+                            <span class="inspector-path" id="inspectorPath">src/path/to/file.ext</span>
+                            <span class="inspector-stats" id="inspectorStats">• 0 lines • 0 B</span>
+                        </div>
+                    </div>
+                    <!-- Mode Switch Tabs for Dual-Mode Renderers -->
+                    <div class="inspector-tabs" id="inspectorTabs" style="display:none;">
+                        <button class="inspector-tab-btn active" id="inspectorTabPreview" onclick="setInspectorMode('preview')">👁️ Rendered Preview</button>
+                        <button class="inspector-tab-btn" id="inspectorTabCode" onclick="setInspectorMode('code')">📝 Source Code</button>
+                    </div>
+                    <!-- Inspector Action Buttons -->
+                    <div class="inspector-actions">
+                        <button class="inspector-btn" id="inspectorDownloadBtn" onclick="downloadInspectorFile()" title="Download File">⬇️ <span>Download</span></button>
+                        <button class="inspector-btn" id="inspectorExternalBtn" onclick="openExternalView()" title="Open in New Tab">↗️ <span>External View</span></button>
+                        <button class="inspector-btn" id="inspectorCopyBtn" onclick="copyInspectorSource()" title="Copy Source">📋 <span>Copy Source</span></button>
+                        <button class="inspector-btn" id="inspectorAttachBtn" onclick="attachInspectorFile()" title="Attach to Prompt">📎 <span>Attach to Prompt</span></button>
+                        <button class="inspector-close-btn" onclick="closeInspector()" title="Close (Esc)">✕ <span>(Esc)</span></button>
+                    </div>
+                </div>
+                <div class="inspector-body" id="inspectorBody">
+                    <div class="inspector-empty-state">Loading manuscript preview...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fullscreen Lightbox Modal -->
+        <div id="lightboxModal" class="lightbox-modal" onclick="if(event.target===this) closeLightbox()">
+            <div class="lightbox-content">
+                <div class="lightbox-header">
+                    <div class="lightbox-meta">
+                        <span id="lightboxFilename" style="font-weight:600;">Image Preview</span>
+                        <span id="lightboxDetails" style="color:rgba(255,255,255,0.7); font-size:12px;"></span>
+                    </div>
+                    <button class="lightbox-close-btn" onclick="closeLightbox()" title="Close (Esc)">
+                        ✕ Close <span style="opacity:0.6; font-size:10px;">(Esc)</span>
+                    </button>
+                </div>
+                <img id="lightboxImg" class="lightbox-img" src="" alt="Preview">
+            </div>
+        </div>
+    </div>
+
+    <!-- Core Runtime Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <script>
+        /**
+         * mkpro Academic Card UI — Complete Runtime Engine
+         */
+
+        // Configure PDF.js Worker
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        // ========== State Management ==========
+        let ws = null;
+        let localIdentity = null;
+        let userAlias = localStorage.getItem('mkpro-username') || null;
+        let pendingAttachments = []; // { name, content, type, isImage, isPathOnly, path, size }
+        let currentStreamingCard = null;
+        let currentStreamBody = null;
+        let streamBuffer = '';
+        let thinkingLoaderEl = null;
+        let historyOffset = 0;
+        let loadingHistory = false;
+        let noMoreHistory = false;
+        let activeDrawerTab = 'files';
+
+        // Visual Edit Proposal State
+        let editProposalTimer = null;
+        let currentEditProposal = null;
+
+        // Manuscript Inspector State
+        let activeInspectorPath = null;
+        let activeInspectorName = null;
+        let activeInspectorSource = '';
+
+        // Slash Commands Palette (including instant edit-modal testing)
+        const SLASH_COMMANDS = [
+            { cmd: '/test-edit', desc: 'Test file edit approval modal popup with sample diff' },
+            { cmd: '/diff-test', desc: 'Sample diff verification preview modal' },
+            { cmd: '/capture', desc: 'Capture multi-monitor screen to .mkpro/captures/' },
+            { cmd: '/compact', desc: 'Compact context window turns or database storage' },
+            { cmd: '/status', desc: 'Display agent and runtime status' },
+            { cmd: '/stats', desc: 'Display token, turn, and runtime statistics' },
+            { cmd: '/know topics', desc: 'Browse autonomous knowledge topics' },
+            { cmd: '/know status', desc: 'Check knowledge engine background scheduler' },
+            { cmd: '/train status', desc: 'Show Markov routing engine state' },
+            { cmd: '/history', desc: 'Show turn history summary' },
+            { cmd: '/config list', desc: 'Inspect system configurations' },
+            { cmd: '/help', desc: 'Show available command list' },
+            { cmd: '/remember', desc: 'Commit insight to persistent knowledge base' },
+            { cmd: '/train', desc: 'Trigger Markov transition retraining' },
+            { cmd: '/mcp', desc: 'Inspect connected MCP servers & tools' },
+            { cmd: '/network', desc: 'View peer network nodes' },
+            { cmd: '/index', desc: 'Trigger code & workspace re-indexing' },
+            { cmd: '/model', desc: 'Inspect or switch active LLM models' },
+            { cmd: '/team', desc: 'Switch agent team configuration' },
+            { cmd: '/runner', desc: 'Inspect background process runner' },
+            { cmd: '/export', desc: 'Export active conversation transcripts' },
+            { cmd: '/visualize', desc: 'Generate graph visualization memo' }
+        ];
+
+        const FILE_ICONS = {
+            'java': '☕', 'py': '🐍', 'js': '🟨', 'ts': '🔷', 'json': '📋',
+            'yaml': '⚙️', 'yml': '⚙️', 'md': '📝', 'xml': '📄', 'html': '🌐',
+            'css': '🎨', 'sql': '🗃️', 'sh': '🐚', 'bat': '🖥️', 'groovy': '⭐',
+            'kt': '🟣', 'swift': '🦅', 'rs': '🦀', 'go': '🐹', 'c': '©️',
+            'cpp': '➕', 'h': '📐', 'png': '🖼️', 'jpg': '🖼️', 'jpeg': '🖼️',
+            'gif': '🖼️', 'webp': '🖼️', 'svg': '🎨', 'toml': '⚙️', 'properties': '⚙️',
+            'pdf': '📕', 'zip': '📦', 'tar': '📦', 'gz': '📦', '7z': '📦', 'jar': '☕'
+        };
+
+        const LANG_MAP = {
+            'js': { name: 'JavaScript', hljs: 'javascript' },
+            'ts': { name: 'TypeScript', hljs: 'typescript' },
+            'jsx': { name: 'JSX', hljs: 'javascript' },
+            'tsx': { name: 'TSX', hljs: 'typescript' },
+            'java': { name: 'Java', hljs: 'java' },
+            'py': { name: 'Python', hljs: 'python' },
+            'html': { name: 'HTML', hljs: 'xml' },
+            'htm': { name: 'HTML', hljs: 'xml' },
+            'xhtml': { name: 'HTML', hljs: 'xml' },
+            'xml': { name: 'XML', hljs: 'xml' },
+            'svg': { name: 'SVG', hljs: 'xml' },
+            'css': { name: 'CSS', hljs: 'css' },
+            'scss': { name: 'SCSS', hljs: 'scss' },
+            'json': { name: 'JSON', hljs: 'json' },
+            'md': { name: 'Markdown', hljs: 'markdown' },
+            'markdown': { name: 'Markdown', hljs: 'markdown' },
+            'sql': { name: 'SQL', hljs: 'sql' },
+            'sh': { name: 'Shell', hljs: 'bash' },
+            'bash': { name: 'Bash', hljs: 'bash' },
+            'bat': { name: 'Batch', hljs: 'dos' },
+            'yml': { name: 'YAML', hljs: 'yaml' },
+            'yaml': { name: 'YAML', hljs: 'yaml' },
+            'toml': { name: 'TOML', hljs: 'ini' },
+            'properties': { name: 'Properties', hljs: 'properties' },
+            'rs': { name: 'Rust', hljs: 'rust' },
+            'go': { name: 'Go', hljs: 'go' },
+            'c': { name: 'C', hljs: 'c' },
+            'cpp': { name: 'C++', hljs: 'cpp' },
+            'h': { name: 'C Header', hljs: 'c' },
+            'kt': { name: 'Kotlin', hljs: 'kotlin' },
+            'groovy': { name: 'Groovy', hljs: 'groovy' },
+            'pdf': { name: 'PDF', hljs: null },
+            'txt': { name: 'Plain Text', hljs: 'plaintext' }
+        };
+
+        function getFileIcon(name) {
+            const ext = name.split('.').pop().toLowerCase();
+            return FILE_ICONS[ext] || '📄';
+        }
+
+        // ========== Markdown & Syntax Engine Config ==========
+        marked.setOptions({
+            gfm: true,
+            breaks: true,
+            headerIds: false,
+            mangle: false
+        });
+
+        function formatMarkdown(md) {
+            if (!md) return '';
+            const rawHtml = marked.parse(md);
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = rawHtml;
+
+            // Enhance code blocks with academic header and copy action
+            tempDiv.querySelectorAll('pre').forEach(pre => {
+                const code = pre.querySelector('code');
+                const langMatch = code ? code.className.match(/language-([a-zA-Z0-9_-]+)/) : null;
+                const lang = langMatch ? langMatch[1] : 'code';
+
+                const wrap = document.createElement('div');
+                wrap.className = 'code-container';
+
+                const header = document.createElement('div');
+                header.className = 'code-header-bar';
+                header.innerHTML = `<span>${escapeHtml(lang)}</span><button class="code-copy-btn" onclick="copyCodeSnippet(this)">📋 Copy</button>`;
+
+                wrap.appendChild(header);
+                pre.parentNode.insertBefore(wrap, pre);
+                wrap.appendChild(pre);
+            });
+
+            // Enhance images with click-to-lightbox and preserve data: URIs intact
+            tempDiv.querySelectorAll('img').forEach(img => {
+                const src = img.getAttribute('src') || '';
+                // If it's a relative workspace path (not data: or http/https or /api/), route through /api/file-raw
+                if (src && !src.startsWith('data:') && !src.startsWith('http://') && !src.startsWith('https://') && !src.startsWith('/') && !src.startsWith('blob:')) {
+                    img.src = '/api/file-raw?path=' + encodeURIComponent(src);
+                }
+                img.setAttribute('onclick', 'openLightbox(this.src, this.alt || "Image Preview", "")');
+                img.style.cursor = 'zoom-in';
+            });
+
+            return tempDiv.innerHTML;
+        }
+
+        function highlightAllCode(container) {
+            container.querySelectorAll('pre code').forEach(el => {
+                try {
+                    hljs.highlightElement(el);
+                } catch(e) {}
+            });
+        }
+
+        function copyCodeSnippet(btn) {
+            const wrap = btn.closest('.code-container');
+            const codeEl = wrap ? wrap.querySelector('pre code') : null;
+            if (!codeEl) return;
+            const text = codeEl.innerText || codeEl.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '✓ Copied';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.innerHTML = orig;
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(() => {});
+        }
+
+        // ========== DOM Elements ==========
+        const streamViewport = document.getElementById('chat') || document.getElementById('streamViewport');
+        const chatStream = document.getElementById('chatStream');
+        const userInput = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const slashPalette = document.getElementById('slashPalette');
+        const dockAttachmentTray = document.getElementById('dockAttachmentTray');
+        const connDot = document.getElementById('connDot');
+        const connText = document.getElementById('connText');
+
+        // Ensure trailing spacer element stays at the very bottom
+        function ensureSpacerAtBottom() {
+            const spacer = document.getElementById('chatBottomSpacer');
+            const chat = document.getElementById('chatStream') || document.getElementById('chat') || chatStream;
+            if (spacer && chat) {
+                chat.appendChild(spacer);
+            }
+        }
+
+        // ========== Theme Handling ==========
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || 'light';
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('mkpro-academic-theme', next);
+            updateHljsTheme(next);
+        }
+
+        function updateHljsTheme(theme) {
+            const link = document.getElementById('hljs-theme');
+            if (link) {
+                link.href = theme === 'dark'
+                    ? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css'
+                    : 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+            }
+        }
+
+        (function initSavedTheme() {
+            const saved = localStorage.getItem('mkpro-academic-theme') || 'light';
+            document.documentElement.setAttribute('data-theme', saved);
+            updateHljsTheme(saved);
+        })();
+
+        // ========== Identity & Alias ==========
+        function initUserAlias() {
+            if (userAlias) {
+                document.getElementById('userAliasText').textContent = userAlias;
+            }
+        }
+
+        function promptUsername() {
+            const current = userAlias || localIdentity || '';
+            const name = prompt('Set display name (visible to collaborative peers):', current);
+            if (name && name.trim()) {
+                userAlias = name.trim();
+                localStorage.setItem('mkpro-username', userAlias);
+                document.getElementById('userAliasText').textContent = userAlias;
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'set_alias', alias: userAlias }));
+                }
+            }
+        }
+
+        function getDisplayName() {
+            return userAlias || localIdentity || 'You';
+        }
+
+        initUserAlias();
+
+        // ========== Persona Card Classification ==========
+        function getCardClassForAgent(agent) {
+            if (!agent) return 'card-coordinator';
+            const low = agent.toLowerCase();
+            if (low.includes('coordinator') || low.includes('manager') || low.includes('leader')) return 'card-coordinator';
+            if (low.includes('coder') || low.includes('engineer') || low.includes('developer')) return 'card-coder';
+            if (low.includes('architect') || low.includes('planner') || low.includes('analyst')) return 'card-architect';
+            if (low.includes('maker') || low.includes('stimulus') || low.includes('autonomous')) return 'card-maker';
+            return 'card-coordinator';
+        }
+
+        function getTimestamp() {
+            return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function formatFileSize(bytes) {
+            if (!bytes || isNaN(bytes)) return '';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function scrollToBottom() {
+            const chat = document.getElementById('chat') || document.getElementById('streamViewport') || streamViewport || document.querySelector('.chat-scroll');
+            if (chat) {
+                chat.scrollTop = chat.scrollHeight + 1000;
+            }
+        }
+
+        // ========== WebSocket & 12 Inbound Handlers ==========
+        function connect() {
+            const wsPort = {{WS_PORT}};
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = location.hostname || 'localhost';
+            ws = new WebSocket(`${protocol}//${host}:${wsPort}`);
+
+            ws.onopen = () => {
+                connDot.className = 'status-dot connected';
+                connText.textContent = 'Connected';
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                loadBranches();
+            };
+
+            ws.onclose = () => {
+                connDot.className = 'status-dot disconnected';
+                connText.textContent = 'Offline';
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = () => { ws.close(); };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleInboundMessage(msg);
+                } catch (err) {
+                    console.error('Failed to parse WebSocket message:', err);
+                }
+            };
+        }
+
+        function handleInboundMessage(msg) {
+            switch (msg.type) {
+                // 1. system notice & welcome
+                case 'system':
+                    if (msg.text && msg.text.includes('Connected to mkpro as ')) {
+                        localIdentity = msg.text.replace('Connected to mkpro as ', '').replace('. Type a message to begin.', '');
+                        if (!userAlias) {
+                            document.getElementById('userAliasText').textContent = localIdentity;
+                        }
+                        if (userAlias && ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'set_alias', alias: userAlias }));
+                        }
+                    }
+                    addSystemCard(msg.text);
+                    break;
+
+                // 2, 3, 4. real-time streaming
+                case 'stream_start':
+                    hideThinkingLoader();
+                    startStreamingCard(msg.agent || 'Coordinator', msg.model);
+                    break;
+                case 'stream_chunk':
+                    hideThinkingLoader();
+                    appendStreamChunk(msg.text || msg.chunk || '');
+                    break;
+                case 'stream_end':
+                    hideThinkingLoader();
+                    endStreamingCard();
+                    refreshDrawerFiles();
+                    break;
+
+                // 5. autonomous maker stimulus memo
+                case 'maker':
+                    addMakerCard(msg.message || msg.text || '');
+                    break;
+
+                // 6. Markov router transition & confidence notices
+                case 'routing':
+                    addRoutingCard(msg.message || msg.text || '');
+                    break;
+
+                // 7. agent handoff transition notes
+                case 'delegation':
+                    handleDelegation(msg.agent, msg.reason);
+                    break;
+
+                // 8. tool execution accordions
+                case 'tool_call':
+                    handleToolCall(msg);
+                    break;
+
+                // 9, 10, 11. visual diff edit proposals
+                case 'edit_proposal':
+                    showEditProposalModal(msg);
+                    break;
+                case 'edit_approved':
+                    resolveEditProposal(msg.id, true);
+                    break;
+                case 'edit_rejected':
+                    resolveEditProposal(msg.id, false);
+                    break;
+
+                // 12. collaborative branch switch confirmation
+                case 'branch_confirm':
+                    showBranchConfirmation(msg);
+                    break;
+                case 'branch_switched':
+                    onBranchSwitched(msg.branch);
+                    break;
+
+                // Remote collaborative peer user cards
+                case 'user_message':
+                    showRemoteUserCard(msg.sender, msg.text, msg.attachments);
+                    break;
+            }
+        }
+
+        // ========== Card Rendering Engines ==========
+
+        function addUserCard(text, attachmentsList) {
+            const card = document.createElement('div');
+            card.className = 'academic-card card-user';
+
+            const header = document.createElement('div');
+            header.className = 'card-header';
+            header.innerHTML = `
+                <span class="card-author">
+                    <span>${escapeHtml(getDisplayName())}</span>
+                    <span class="persona-badge">You</span>
+                </span>
+                <span class="card-timestamp">${getTimestamp()}</span>
+            `;
+            card.appendChild(header);
+
+            // Render multi-modal attachments inside user card
+            if (attachmentsList && attachmentsList.length > 0) {
+                const imgAtts = attachmentsList.filter(a => a.isImage);
+                if (imgAtts.length > 0) {
+                    const grid = document.createElement('div');
+                    grid.className = 'card-media-grid';
+                    imgAtts.forEach(att => {
+                        const img = document.createElement('img');
+                        img.src = att.content;
+                        img.className = 'media-thumbnail';
+                        img.alt = att.name || 'Image';
+                        img.onclick = () => openLightbox(att.content, att.name, att.size);
+                        grid.appendChild(img);
+                    });
+                    card.appendChild(grid);
+                }
+
+                const fileAtts = attachmentsList.filter(a => !a.isImage);
+                if (fileAtts.length > 0) {
+                    const chips = document.createElement('div');
+                    chips.className = 'card-file-chips';
+                    fileAtts.forEach(att => {
+                        const chip = document.createElement('span');
+                        chip.className = 'file-chip';
+                        chip.style.cursor = 'pointer';
+                        chip.title = 'Click to inspect manuscript';
+                        chip.textContent = `${att.isPathOnly ? '📌' : '📄'} ${escapeHtml(att.isPathOnly ? att.path : att.name)}`;
+                        if (att.isPathOnly && att.path) {
+                            chip.onclick = () => inspectFile(att.path, att.name || att.path.split('/').pop());
+                        }
+                        chips.appendChild(chip);
+                    });
+                    card.appendChild(chips);
+                }
+            }
+
+            if (text) {
+                const prose = document.createElement('div');
+                prose.className = 'academic-prose';
+                prose.innerHTML = formatMarkdown(text);
+                highlightAllCode(prose);
+                card.appendChild(prose);
+            }
+
+            chatStream.appendChild(card);
+            ensureSpacerAtBottom();
+            scrollToBottom();
+        }
+
+        function showRemoteUserCard(sender, text, attachmentsList) {
+            if (sender === localIdentity || sender === userAlias) return;
+            const card = document.createElement('div');
+            card.className = 'academic-card card-user';
+            card.style.background = 'var(--wash-router)';
+
+            const header = document.createElement('div');
+            header.className = 'card-header';
+            header.innerHTML = `
+                <span class="card-author">
+                    <span>${escapeHtml(sender || 'Peer')}</span>
+                    <span class="persona-badge">Collaborator</span>
+                </span>
+                <span class="card-timestamp">${getTimestamp()}</span>
+            `;
+            card.appendChild(header);
+
+            if (text) {
+                const prose = document.createElement('div');
+                prose.className = 'academic-prose';
+                prose.innerHTML = formatMarkdown(text);
+                highlightAllCode(prose);
+                card.appendChild(prose);
+            }
+
+            chatStream.appendChild(card);
+            ensureSpacerAtBottom();
+            scrollToBottom();
+        }
+
+        function addSystemCard(text) {
+            const card = document.createElement('div');
+            card.className = 'academic-card card-system';
+            card.innerHTML = `<span>ℹ️ ${escapeHtml(text)}</span>`;
+            chatStream.appendChild(card);
+            ensureSpacerAtBottom();
+            scrollToBottom();
+        }
+
+        function addMakerCard(text) {
+            const card = document.createElement('div');
+            card.className = 'academic-card card-maker';
+            card.innerHTML = `
+                <div class="card-header">
+                    <span class="card-author">
+                        <span>Autonomous Stimulus</span>
+                        <span class="persona-badge" style="background:rgba(128,90,213,0.12); color:#805AD5;">Maker Memo</span>
+                    </span>
+                    <span class="card-timestamp">${getTimestamp()}</span>
+                </div>
+                <div class="academic-prose">${formatMarkdown(text)}</div>
+            `;
+            highlightAllCode(card);
+            chatStream.appendChild(card);
+            ensureSpacerAtBottom();
+            scrollToBottom();
+        }
+
+        function addRoutingCard(text) {
+            const card = document.createElement('div');
+            card.className = 'academic-card card-router';
+            card.innerHTML = `
+                <div class="card-header" style="margin-bottom:4px;">
+                    <span class="card-author">
+                        <span>Markov Router</span>
+                        <span class="persona-badge" style="background:rgba(49,130,206,0.12); color:#3182CE;">Confidence</span>
+                    </span>
+                    <span class="card-timestamp">${getTimestamp()}</span>
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:12px;">${escapeHtml(text)}</div>
+            `;
+            chatStream.appendChild(card);
+            ensureSpacerAtBottom();
+            scrollToBottom();
+        }
+
+        function handleDelegation(agent, reason) {
+            if (currentStreamingCard) {
+                const badge = currentStreamingCard.querySelector('.card-author span:first-child');
+                if (badge) badge.textContent = agent;
+            } else {
+                addSystemCard(`Delegated to ${agent}${reason ? ': ' + reason : ''}`);
+            }
+        }
+
+        function handleToolCall(msg) {
+            const toolDetails = document.createElement('details');
+            toolDetails.className = 'tool-call-accordion';
+            const name = msg.name || msg.tool || 'tool_execution';
+            toolDetails.innerHTML = `
+                <summary>⚡ Executed: ${escapeHtml(name)}</summary>
+                <div class="tool-call-body"><pre>${escapeHtml(JSON.stringify(msg.args || msg.input || msg.result || {}, null, 2))}</pre></div>
+            `;
+            if (currentStreamBody) {
+                currentStreamBody.appendChild(toolDetails);
+            } else {
+                chatStream.appendChild(toolDetails);
+                ensureSpacerAtBottom();
+            }
+            scrollToBottom();
+        }
+
+        // ========== Streaming Handler ==========
+        function startStreamingCard(agent, model) {
+            const cardClass = getCardClassForAgent(agent);
+            const card = document.createElement('div');
+            card.className = `academic-card ${cardClass}`;
+
+            const header = document.createElement('div');
+            header.className = 'card-header';
+            header.innerHTML = `
+                <span class="card-author">
+                    <span>${escapeHtml(agent)}</span>
+                    <span class="persona-badge">${escapeHtml(model || 'agent')}</span>
+                </span>
+                <span class="card-timestamp">${getTimestamp()}</span>
+            `;
+            card.appendChild(header);
+
+            const body = document.createElement('div');
+            body.className = 'academic-prose';
+            body.innerHTML = '<span class="streaming-cursor"></span>';
+            card.appendChild(body);
+
+            chatStream.appendChild(card);
+            ensureSpacerAtBottom();
+            currentStreamingCard = card;
+            currentStreamBody = body;
+            streamBuffer = '';
+            scrollToBottom();
+        }
+
+        function appendStreamChunk(chunk) {
+            if (!currentStreamingCard) {
+                startStreamingCard('Coordinator', '');
+            }
+            streamBuffer += chunk;
+            if (currentStreamBody) {
+                currentStreamBody.innerHTML = formatMarkdown(streamBuffer) + '<span class="streaming-cursor"></span>';
+                scrollToBottom();
+            }
+        }
+
+        function endStreamingCard() {
+            if (currentStreamBody) {
+                currentStreamBody.innerHTML = formatMarkdown(streamBuffer);
+                highlightAllCode(currentStreamBody);
+            }
+            ensureSpacerAtBottom();
+            currentStreamingCard = null;
+            currentStreamBody = null;
+            streamBuffer = '';
+            scrollToBottom();
+        }
+
+        // ========== Thinking Loader ==========
+        function showThinkingLoader() {
+            if (thinkingLoaderEl) return;
+            thinkingLoaderEl = document.createElement('div');
+            thinkingLoaderEl.className = 'thinking-loader';
+            thinkingLoaderEl.innerHTML = `
+                <div class="thinking-dot"></div>
+                <div class="thinking-dot"></div>
+                <div class="thinking-dot"></div>
+                <span class="thinking-text">Thinking & synthesizing...</span>
+            `;
+            chatStream.appendChild(thinkingLoaderEl);
+            ensureSpacerAtBottom();
+            scrollToBottom();
+        }
+
+        function hideThinkingLoader() {
+            if (thinkingLoaderEl) {
+                thinkingLoaderEl.remove();
+                thinkingLoaderEl = null;
+            }
+        }
+
+        // ========== Outbound Send Pipeline ==========
+        function sendMessage() {
+            const rawText = userInput.value.trim();
+            if (!rawText && pendingAttachments.length === 0) return;
+
+            // Quick Test Trigger (/test-edit or /diff-test)
+            if (rawText === '/test-edit' || rawText === '/diff-test' || rawText.startsWith('/test-edit ') || rawText.startsWith('/diff-test ')) {
+                userInput.value = '';
+                closeSlashPalette();
+                const sampleDiff = {
+                    id: 'test-' + Date.now(),
+                    path: 'src/main/java/com/mkpro/utils/PathUtils.java',
+                    isNewFile: false,
+                    diff: [
+                        { type: 'CONTEXT', text: 'package com.mkpro.utils;' },
+                        { type: 'CONTEXT', text: '' },
+                        { type: 'CONTEXT', text: 'public class PathUtils {' },
+                        { type: 'REMOVED', text: '    // Legacy path normalization' },
+                        { type: 'ADDED', text: '    // Academic UI Verified' },
+                        { type: 'ADDED', text: '    public static String normalize(String path) {' },
+                        { type: 'ADDED', text: '        return path != null ? path.replace("\\\\", "/") : "";' },
+                        { type: 'ADDED', text: '    }' },
+                        { type: 'CONTEXT', text: '}' }
+                    ]
+                };
+                showEditProposalModal(sampleDiff);
+                return;
+            }
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Connection to mkpro server is not active.');
+                return;
+            }
+
+            const sentAttachments = [...pendingAttachments];
+            pendingAttachments = [];
+            renderAttachmentTray();
+            userInput.value = '';
+            closeSlashPalette();
+
+            // Render local user card immediately
+            addUserCard(rawText, sentAttachments);
+
+            // Construct payload formatted for mkpro backend
+            let outboundText = rawText;
+            const pathOnly = sentAttachments.filter(a => a.isPathOnly);
+            if (pathOnly.length > 0) {
+                const pathRefs = pathOnly.map(a => `[File: ${a.path}]`).join(' ');
+                outboundText = pathRefs + (outboundText ? ' ' + outboundText : ' Analyze this file.');
+            }
+
+            const payload = {
+                type: 'user_input',
+                text: outboundText
+            };
+
+            const contentAtts = sentAttachments.filter(a => !a.isPathOnly);
+            if (contentAtts.length > 0) {
+                payload.attachments = contentAtts.map(a => ({
+                    name: a.name,
+                    content: a.content,
+                    type: a.type,
+                    isImage: a.isImage
+                }));
+            }
+
+            ws.send(JSON.stringify(payload));
+            showThinkingLoader();
+        }
+
+        // ========== Multi-Modal & Attachment Handlers ==========
+        function handleFileInput(e) {
+            const files = e.target.files;
+            if (!files) return;
+            for (const file of files) {
+                const isImage = file.type.startsWith('image/');
+                const sizeStr = formatFileSize(file.size);
+                const reader = new FileReader();
+
+                if (isImage) {
+                    reader.onload = (ev) => {
+                        pendingAttachments.push({
+                            name: file.name,
+                            content: ev.target.result,
+                            type: file.type,
+                            isImage: true,
+                            isPathOnly: false,
+                            size: sizeStr
+                        });
+                        renderAttachmentTray();
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    reader.onload = (ev) => {
+                        pendingAttachments.push({
+                            name: file.name,
+                            content: ev.target.result,
+                            type: file.type || 'text/plain',
+                            isImage: false,
+                            isPathOnly: false,
+                            size: sizeStr
+                        });
+                        renderAttachmentTray();
+                    };
+                    reader.readAsText(file);
+                }
+            }
+            e.target.value = '';
+        }
+
+        // Clipboard Paste Image Handler
+        document.addEventListener('paste', (e) => {
+            const items = (e.clipboardData || window.clipboardData)?.items;
+            if (!items) return;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.startsWith('image/')) {
+                    const file = items[i].getAsFile();
+                    if (!file) continue;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        pendingAttachments.push({
+                            name: `pasted_image_${Date.now().toString().slice(-4)}.png`,
+                            content: ev.target.result,
+                            type: file.type || 'image/png',
+                            isImage: true,
+                            isPathOnly: false,
+                            size: formatFileSize(file.size)
+                        });
+                        renderAttachmentTray();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
+        });
+
+        // Drag & Drop File Handlers
+        window.addEventListener('dragover', (e) => e.preventDefault());
+        window.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer && e.dataTransfer.files) {
+                handleFileInput({ target: { files: e.dataTransfer.files, value: '' } });
+            }
+        });
+
+        function renderAttachmentTray() {
+            if (pendingAttachments.length === 0) {
+                dockAttachmentTray.innerHTML = '';
+                dockAttachmentTray.classList.remove('active');
+                return;
+            }
+            dockAttachmentTray.classList.add('active');
+            dockAttachmentTray.innerHTML = pendingAttachments.map((a, idx) => {
+                if (a.isImage) {
+                    return `
+                        <div class="tray-chip">
+                            <img src="${a.content}" class="tray-thumb" onclick="openLightbox('${a.content}', '${escapeHtml(a.name)}', '${a.size}')" alt="thumb" />
+                            <div class="tray-chip-info">
+                                <span class="tray-chip-name">${escapeHtml(a.name)}</span>
+                                <span class="tray-chip-size">${a.size || ''}</span>
+                            </div>
+                            <span class="tray-chip-remove" onclick="removeAttachment(${idx})">✕</span>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div class="tray-chip">
+                            <span style="cursor:pointer;" onclick="if('${escapeHtml(a.path || '')}') inspectFile('${escapeHtml(a.path || '')}', '${escapeHtml(a.name)}')">${a.isPathOnly ? '📌' : '📄'}</span>
+                            <div class="tray-chip-info" style="cursor:pointer;" onclick="if('${escapeHtml(a.path || '')}') inspectFile('${escapeHtml(a.path || '')}', '${escapeHtml(a.name)}')">
+                                <span class="tray-chip-name">${escapeHtml(a.isPathOnly ? a.path : a.name)}</span>
+                                <span class="tray-chip-size">${a.isPathOnly ? 'Path Ref' : a.size || ''}</span>
+                            </div>
+                            <span class="tray-chip-remove" onclick="removeAttachment(${idx})">✕</span>
+                        </div>
+                    `;
+                }
+            }).join('');
+        }
+
+        function removeAttachment(index) {
+            pendingAttachments.splice(index, 1);
+            renderAttachmentTray();
+        }
+
+        function attachFilePath(path, name) {
+            pendingAttachments = pendingAttachments.filter(a => !(a.isPathOnly && a.path === path));
+            pendingAttachments.push({
+                name: name,
+                path: path,
+                content: null,
+                type: 'path',
+                isImage: false,
+                isPathOnly: true,
+                size: 'Workspace File'
+            });
+            renderAttachmentTray();
+        }
+
+        function attachFileToPrompt(path, name) {
+            attachFilePath(path, name);
+            userInput.focus();
+        }
+
+        // ========== File Edit Approval Modal Engine ==========
+        function showEditProposalModal(msg) {
+            hideThinkingLoader();
+            currentEditProposal = msg;
+
+            const modal = document.getElementById('editApprovalModal');
+            const pathEl = document.getElementById('editProposalPath');
+            const diffEl = document.getElementById('editProposalDiff');
+            const countdownEl = document.getElementById('editProposalCountdown');
+            const progressBar = document.getElementById('editProposalProgress');
+
+            if (!modal || !pathEl || !diffEl) return;
+
+            pathEl.textContent = (msg.path || 'unknown') + (msg.isNewFile ? ' (NEW FILE)' : '');
+
+            let diffHtml = '';
+            const diffLines = msg.diff || [];
+            if (diffLines.length > 0) {
+                for (const line of diffLines) {
+                    let cls = 'context';
+                    let prefix = '  ';
+                    if (line.type === 'ADDED' || line.type === '+') {
+                        cls = 'added';
+                        prefix = '+ ';
+                    } else if (line.type === 'REMOVED' || line.type === '-') {
+                        cls = 'removed';
+                        prefix = '- ';
+                    }
+                    diffHtml += `<div class="diff-line-modal ${cls}">${prefix}${escapeHtml(line.text || line.content || '')}</div>`;
+                }
+            } else {
+                diffHtml = '<div class="diff-line-modal info">No text changes detected</div>';
+            }
+            diffEl.innerHTML = diffHtml;
+
+            // Reset and start 7-second countdown ticker with animated progress bar
+            if (editProposalTimer) {
+                clearInterval(editProposalTimer);
+                editProposalTimer = null;
+            }
+
+            const totalMs = 7000;
+            const intervalMs = 100;
+            let elapsedMs = 0;
+
+            if (progressBar) progressBar.style.width = '100%';
+            if (countdownEl) countdownEl.textContent = 'Auto-proceeding in 7.0s...';
+
+            modal.classList.add('active');
+
+            editProposalTimer = setInterval(() => {
+                elapsedMs += intervalMs;
+                const remainingMs = Math.max(0, totalMs - elapsedMs);
+                const remainingSec = (remainingMs / 1000).toFixed(1);
+                const pct = Math.max(0, (remainingMs / totalMs) * 100);
+
+                if (progressBar) progressBar.style.width = `${pct}%`;
+                if (countdownEl) countdownEl.textContent = `Auto-proceeding in ${remainingSec}s...`;
+
+                if (remainingMs <= 0) {
+                    clearInterval(editProposalTimer);
+                    editProposalTimer = null;
+                    approveEditProposal(msg.id);
+                }
+            }, intervalMs);
+        }
+
+        // Alias for backward compatibility
+        function showEditProposal(msg) {
+            showEditProposalModal(msg);
+        }
+
+        function closeEditModal() {
+            if (editProposalTimer) {
+                clearInterval(editProposalTimer);
+                editProposalTimer = null;
+            }
+            const modal = document.getElementById('editApprovalModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function approveEditProposal(id) {
+            const propId = id || (currentEditProposal ? currentEditProposal.id : null);
+            const propPath = currentEditProposal ? currentEditProposal.path : '';
+            closeEditModal();
+
+            if (propId && !String(propId).startsWith('test-')) {
+                fetch('/api/edit/approve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: propId })
+                }).catch(console.error);
+            }
+
+            appendEditResolutionBadge(propPath, true, propId);
+            currentEditProposal = null;
+        }
+
+        function rejectEditProposal(id) {
+            const propId = id || (currentEditProposal ? currentEditProposal.id : null);
+            const propPath = currentEditProposal ? currentEditProposal.path : '';
+            closeEditModal();
+
+            if (propId && !String(propId).startsWith('test-')) {
+                fetch('/api/edit/reject', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: propId })
+                }).catch(console.error);
+            }
+
+            appendEditResolutionBadge(propPath, false, propId);
+            currentEditProposal = null;
+        }
+
+        function resolveEditProposal(id, approved) {
+            if (currentEditProposal && (currentEditProposal.id === id || !id)) {
+                const path = currentEditProposal.path;
+                closeEditModal();
+                appendEditResolutionBadge(path, approved, id);
+                currentEditProposal = null;
+            }
+            const card = document.getElementById('proposal-' + id);
+            if (card) {
+                card.classList.add('resolved');
+                const header = card.querySelector('.diff-header');
+                if (header) {
+                    header.innerHTML += approved
+                        ? ' <span style="color:var(--success)">✓ APPROVED</span>'
+                        : ' <span style="color:var(--danger)">✕ REJECTED</span>';
+                }
+            }
+        }
+
+        function appendEditResolutionBadge(path, approved, id) {
+            const card = document.createElement('div');
+            card.className = 'academic-card card-system';
+            card.style.borderLeft = approved ? '3px solid var(--success)' : '3px solid var(--danger)';
+            const statusText = approved ? 'Approved & Applied' : 'Rejected';
+            const statusIcon = approved ? '✓' : '✕';
+            const statusColor = approved ? 'var(--success)' : 'var(--danger)';
+            card.innerHTML = `
+                <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+                    <div>
+                        <strong style="color:${statusColor}">${statusIcon} File Edit ${statusText}:</strong>
+                        <code style="margin-left:6px; font-family:'JetBrains Mono',monospace;">${escapeHtml(path || 'target file')}</code>
+                    </div>
+                    <span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted);">${getTimestamp()}</span>
+                </div>
+            `;
+            chatStream.appendChild(card);
+            ensureSpacerAtBottom();
+            scrollToBottom();
+        }
+
+        // ========== Collaborative Branch Switcher ==========
+        async function loadBranches() {
+            try {
+                const resp = await fetch('/api/git/branch');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const select = document.getElementById('branchSelect');
+                select.innerHTML = '';
+
+                if (data.local && data.local.length > 0) {
+                    const localGroup = document.createElement('optgroup');
+                    localGroup.label = 'Local Branches';
+                    data.local.forEach(b => {
+                        const opt = document.createElement('option');
+                        opt.value = b;
+                        opt.textContent = b;
+                        if (b === data.current) opt.selected = true;
+                        localGroup.appendChild(opt);
+                    });
+                    select.appendChild(localGroup);
+                }
+
+                if (data.remote && data.remote.length > 0) {
+                    const localSet = new Set(data.local || []);
+                    const remoteOnly = data.remote.filter(r => {
+                        const short = r.includes('/') ? r.substring(r.indexOf('/') + 1) : r;
+                        return !localSet.has(short);
+                    });
+                    if (remoteOnly.length > 0) {
+                        const remoteGroup = document.createElement('optgroup');
+                        remoteGroup.label = 'Remote Branches';
+                        remoteOnly.forEach(b => {
+                            const opt = document.createElement('option');
+                            opt.value = b;
+                            opt.textContent = b;
+                            remoteGroup.appendChild(opt);
+                        });
+                        select.appendChild(remoteGroup);
+                    }
+                }
+            } catch (e) {
+                document.getElementById('branchSelect').innerHTML = '<option>main</option>';
+            }
+        }
+
+        async function switchBranch(branch) {
+            if (!branch) return;
+            try {
+                const resp = await fetch('/api/git/switch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ branch: branch, sender: getDisplayName() })
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    alert('Git switch failed: ' + data.error);
+                    loadBranches();
+                }
+            } catch (err) {
+                alert('Error switching branch: ' + err.message);
+                loadBranches();
+            }
+        }
+
+        function showBranchConfirmation(msg) {
+            const card = document.createElement('div');
+            card.className = 'academic-card card-system';
+            card.id = 'branch-confirm-' + msg.id;
+            card.innerHTML = `
+                <div>⎇ <strong>${escapeHtml(msg.requested_by)}</strong> requested branch switch to <strong>${escapeHtml(msg.branch)}</strong>.</div>
+                <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+                    <span>Auto-proceeding in ${msg.timeout || 10}s...</span>
+                    <button onclick="rejectBranchSwitch('${msg.id}')" style="background:var(--danger); color:white; border:none; padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer;">✕ Object</button>
+                </div>
+            `;
+            chatStream.appendChild(card);
+            ensureSpacerAtBottom();
+            scrollToBottom();
+        }
+
+        function rejectBranchSwitch(switchId) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'branch_reject', id: switchId }));
+            }
+            const el = document.getElementById('branch-confirm-' + switchId);
+            if (el) el.innerHTML = '⎇ Branch switch <strong>rejected by peer</strong>.';
+        }
+
+        function onBranchSwitched(branch) {
+            const select = document.getElementById('branchSelect');
+            for (const opt of select.options) {
+                opt.selected = (opt.value === branch);
+            }
+            refreshDrawerFiles();
+            addSystemCard(`Git workspace branch switched to: ${branch}`);
+        }
+
+        // ========== History Scroll Pagination ==========
+        streamViewport.addEventListener('scroll', async () => {
+            if (streamViewport.scrollTop === 0 && !loadingHistory && !noMoreHistory) {
+                await loadOlderHistory();
+            }
+        });
+
+        async function loadOlderHistory() {
+            loadingHistory = true;
+            const indicator = document.createElement('div');
+            indicator.className = 'history-status-indicator';
+            indicator.textContent = '⏳ Loading earlier turns...';
+            chatStream.prepend(indicator);
+
+            try {
+                const resp = await fetch(`/api/history?offset=${historyOffset}&limit=20`);
+                if (!resp.ok) throw new Error('History fetch error');
+                const data = await resp.json();
+                indicator.remove();
+
+                if (!data.messages || data.messages.length === 0) {
+                    noMoreHistory = true;
+                    return;
+                }
+
+                const prevHeight = streamViewport.scrollHeight;
+                const fragment = document.createDocumentFragment();
+
+                for (const msg of data.messages) {
+                    const card = document.createElement('div');
+                    if (msg.role === 'USER') {
+                        card.className = 'academic-card card-user';
+                        card.innerHTML = `
+                            <div class="card-header">
+                                <span class="card-author"><span>You</span><span class="persona-badge">History</span></span>
+                                <span class="card-timestamp">${formatHistoryTimestamp(msg.timestamp)}</span>
+                            </div>
+                            <div class="academic-prose">${formatMarkdown(msg.text)}</div>
+                        `;
+                    } else {
+                        const cardClass = getCardClassForAgent(msg.role);
+                        card.className = `academic-card ${cardClass}`;
+                        card.innerHTML = `
+                            <div class="card-header">
+                                <span class="card-author"><span>${escapeHtml(msg.role || 'Assistant')}</span><span class="persona-badge">History</span></span>
+                                <span class="card-timestamp">${formatHistoryTimestamp(msg.timestamp)}</span>
+                            </div>
+                            <div class="academic-prose">${formatMarkdown(msg.text)}</div>
+                        `;
+                    }
+                    highlightAllCode(card);
+                    fragment.appendChild(card);
+                }
+
+                chatStream.prepend(fragment);
+                streamViewport.scrollTop = streamViewport.scrollHeight - prevHeight;
+                historyOffset += data.messages.length;
+                noMoreHistory = !data.hasMore;
+            } catch (err) {
+                indicator.textContent = 'Failed to load history';
+                setTimeout(() => indicator.remove(), 2000);
+            } finally {
+                loadingHistory = false;
+            }
+        }
+
+        function formatHistoryTimestamp(ts) {
+            if (!ts) return '';
+            try {
+                const d = new Date(ts);
+                if (isNaN(d.getTime())) return ts.substring(11, 16);
+                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch(e) {
+                return '';
+            }
+        }
+
+        // ========== Slash Command Palette ==========
+        userInput.addEventListener('input', (e) => {
+            const val = e.target.value;
+            if (val.startsWith('/')) {
+                const query = val.slice(1).toLowerCase();
+                const matched = SLASH_COMMANDS.filter(item => item.cmd.toLowerCase().includes(query) || item.desc.toLowerCase().includes(query));
+                if (matched.length > 0) {
+                    renderSlashPalette(matched);
+                } else {
+                    closeSlashPalette();
+                }
+            } else {
+                closeSlashPalette();
+            }
+        });
+
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            } else if (e.key === 'Escape') {
+                closeSlashPalette();
+            }
+        });
+
+        // Global Shortcut: Ctrl + B or Cmd + B for Drawer
+        window.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+                e.preventDefault();
+                toggleDrawer();
+            }
+        });
+
+        function renderSlashPalette(list) {
+            slashPalette.innerHTML = list.map(item => `
+                <div class="slash-item" onclick="selectSlashCmd('${item.cmd}')">
+                    <span>${item.cmd}</span>
+                    <span class="slash-item-desc">${escapeHtml(item.desc)}</span>
+                </div>
+            `).join('');
+            slashPalette.classList.add('open');
+        }
+
+        function closeSlashPalette() {
+            slashPalette.classList.remove('open');
+        }
+
+        function selectSlashCmd(cmd) {
+            userInput.value = cmd + ' ';
+            closeSlashPalette();
+            userInput.focus();
+        }
+
+        // ========== Drawer & Slide-Over Hierarchy ==========
+        function toggleDrawer() {
+            const drawer = document.getElementById('slideDrawer');
+            const backdrop = document.getElementById('drawerBackdrop');
+            const isOpen = drawer.classList.toggle('open');
+            backdrop.classList.toggle('open', isOpen);
+            if (isOpen) {
+                switchDrawerTab(activeDrawerTab);
+                updateDrawerTelemetry();
+            }
+        }
+
+        function switchDrawerTab(tab) {
+            activeDrawerTab = tab;
+            document.getElementById('tabBtnFiles').classList.toggle('active', tab === 'files');
+            document.getElementById('tabBtnGoals').classList.toggle('active', tab === 'goals');
+            const body = document.getElementById('drawerBody');
+
+            if (tab === 'files') {
+                body.innerHTML = '<div style="color:var(--muted); font-size:12px;">Loading workspace directory...</div>';
+                loadDrawerDirectory('', body, 0);
+            } else if (tab === 'goals') {
+                body.innerHTML = '<div style="color:var(--muted); font-size:12px;">Loading active goals...</div>';
+                loadDrawerGoals(body);
+            }
+        }
+
+        function refreshDrawerFiles() {
+            if (activeDrawerTab === 'files' && document.getElementById('slideDrawer').classList.contains('open')) {
+                switchDrawerTab('files');
+            }
+        }
+
+        async function loadDrawerDirectory(path, container, depth) {
+            try {
+                const url = '/api/files' + (path ? '?path=' + encodeURIComponent(path) : '');
+                const resp = await fetch(url);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                container.innerHTML = '';
+
+                for (const entry of data.entries) {
+                    const fullPath = path ? path + '/' + entry.name : entry.name;
+                    const isDir = entry.type === 'directory';
+
+                    const node = document.createElement('div');
+                    node.className = 'file-tree-node';
+                    node.style.paddingLeft = (depth * 12 + 6) + 'px';
+
+                    if (isDir) {
+                        node.innerHTML = `
+                            <span class="node-arrow">▶</span>
+                            <span class="node-icon">📁</span>
+                            <span class="node-name">${escapeHtml(entry.name)}</span>
+                        `;
+                        const childContainer = document.createElement('div');
+                        childContainer.className = 'file-tree-children';
+
+                        let loaded = false;
+                        node.onclick = async (e) => {
+                            e.stopPropagation();
+                            const arrow = node.querySelector('.node-arrow');
+                            if (childContainer.classList.contains('open')) {
+                                childContainer.classList.remove('open');
+                                arrow.classList.remove('expanded');
+                            } else {
+                                if (!loaded) {
+                                    await loadDrawerDirectory(fullPath, childContainer, depth + 1);
+                                    loaded = true;
+                                }
+                                childContainer.classList.add('open');
+                                arrow.classList.add('expanded');
+                            }
+                        };
+                        container.appendChild(node);
+                        container.appendChild(childContainer);
+                    } else {
+                        node.innerHTML = `
+                            <span class="node-arrow" style="visibility:hidden">▶</span>
+                            <span class="node-icon">${getFileIcon(entry.name)}</span>
+                            <span class="node-name" title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</span>
+                            <button class="node-attach-btn" title="Attach [File: ${escapeHtml(fullPath)}] to prompt" onclick="event.stopPropagation(); attachFileToPrompt('${escapeHtml(fullPath)}', '${escapeHtml(entry.name)}')">📎</button>
+                        `;
+                        node.onclick = (e) => {
+                            e.stopPropagation();
+                            inspectFile(fullPath, entry.name);
+                        };
+                        container.appendChild(node);
+                    }
+                }
+            } catch (err) {
+                container.innerHTML = '<div style="color:var(--muted); font-size:12px;">No files available.</div>';
+            }
+        }
+
+        // Alias for standard file tree interaction
+        const loadDirectory = loadDrawerDirectory;
+
+        async function loadDrawerGoals(container) {
+            try {
+                const resp = await fetch('/api/goals');
+                if (!resp.ok) throw new Error();
+                const data = await resp.json();
+                if (data.goals && data.goals.length > 0) {
+                    container.innerHTML = data.goals.map(g => `
+                        <div style="padding:8px 0; border-bottom:1px solid rgba(0,0,0,0.05); font-size:13px;">
+                            🎯 <strong>${escapeHtml(g.title || g)}</strong>
+                            ${g.description ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">${escapeHtml(g.description)}</div>` : ''}
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<div style="color:var(--muted); font-size:12px;">No active goal items set.</div>';
+                }
+            } catch (e) {
+                container.innerHTML = '<div style="color:var(--muted); font-size:12px;">No goals found.</div>';
+            }
+        }
+
+        async function updateDrawerTelemetry() {
+            try {
+                const resp = await fetch('/api/status');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                document.getElementById('drawerTelemetry').innerHTML = `Branch: <strong>${escapeHtml(data.git_branch || 'main')}</strong> • Runtime: active`;
+            } catch(e) {}
+        }
+
+        // =========================================================
+        // Modular Manuscript Preview Architecture (PreviewRegistry)
+        // =========================================================
+
+        const MarkdownRenderer = {
+            isDualMode: true,
+
+            supports(ext) {
+                return ['md', 'markdown', 'mdown', 'mkd'].includes(ext);
+            },
+
+            async render(container, context) {
+                const mode = context.mode || 'preview';
+
+                if (mode === 'preview') {
+                    const renderedDiv = document.createElement('div');
+                    renderedDiv.className = 'inspector-rendered-markdown';
+                    renderedDiv.innerHTML = formatMarkdown(context.source || '');
+                    highlightAllCode(renderedDiv);
+                    container.innerHTML = '';
+                    container.appendChild(renderedDiv);
+                } else {
+                    CodeRenderer.render(container, context);
+                }
+            },
+
+            destroy() {}
+        };
+
+        const HtmlRenderer = {
+            isDualMode: true,
+            activeIframe: null,
+
+            supports(ext) {
+                return ['html', 'htm', 'xhtml'].includes(ext);
+            },
+
+            async render(container, context) {
+                this.destroy();
+                const mode = context.mode || 'preview';
+
+                if (mode === 'preview') {
+                    const iframe = document.createElement('iframe');
+                    iframe.className = 'inspector-live-frame';
+                    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+                    iframe.title = 'Live HTML Manuscript Preview';
+
+                    container.innerHTML = '';
+                    container.appendChild(iframe);
+                    this.activeIframe = iframe;
+
+                    if (context.source) {
+                        iframe.srcdoc = context.source;
+                    } else {
+                        iframe.src = `/api/file-raw?path=${encodeURIComponent(context.path)}`;
+                    }
+                } else {
+                    CodeRenderer.render(container, context);
+                }
+            },
+
+            destroy() {
+                if (this.activeIframe) {
+                    try {
+                        this.activeIframe.src = 'about:blank';
+                    } catch(e) {}
+                    this.activeIframe = null;
+                }
+            }
+        };
+
+        const PdfRenderer = {
+            isDualMode: false,
+            pdfDoc: null,
+            pageNum: 1,
+            pageRendering: false,
+            pageNumPending: null,
+            scale: 1.2,
+            canvas: null,
+            ctx: null,
+            renderTask: null,
+
+            supports(ext) {
+                return ext === 'pdf';
+            },
+
+            async render(container, context) {
+                this.destroy();
+                const rawUrl = `/api/file-raw?path=${encodeURIComponent(context.path)}`;
+                const statsEl = document.getElementById('inspectorStats');
+                if (statsEl) statsEl.textContent = `• PDF Manuscript • ${formatFileSize(context.size)}`;
+
+                container.innerHTML = `
+                    <div class="inspector-pdf-container">
+                        <div class="pdf-toolbar">
+                            <div class="pdf-page-controls">
+                                <button class="pdf-tool-btn" id="pdfPrevBtn" onclick="PdfRenderer.onPrevPage()" disabled>◀ Prev</button>
+                                <span>Page <strong id="pdfPageNum">1</strong> / <span id="pdfPageCount">-</span></span>
+                                <button class="pdf-tool-btn" id="pdfNextBtn" onclick="PdfRenderer.onNextPage()" disabled>Next ▶</button>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <button class="pdf-tool-btn" onclick="PdfRenderer.zoomOut()" title="Zoom Out">🔍 −</button>
+                                <span id="pdfZoomLevel" style="min-width:42px; text-align:center;">120%</span>
+                                <button class="pdf-tool-btn" onclick="PdfRenderer.zoomIn()" title="Zoom In">🔍 +</button>
+                                <button class="pdf-tool-btn" onclick="PdfRenderer.resetZoom()" title="Reset Zoom">Fit</button>
+                            </div>
+                        </div>
+                        <div class="pdf-canvas-wrapper" id="pdfCanvasWrapper">
+                            <div id="pdfLoadingIndicator" class="inspector-empty-state">⏳ Loading PDF Document...</div>
+                            <canvas id="pdfCanvas" class="pdf-canvas" style="display:none;"></canvas>
+                        </div>
+                    </div>
+                `;
+
+                this.canvas = document.getElementById('pdfCanvas');
+                if (this.canvas) this.ctx = this.canvas.getContext('2d');
+                this.pageNum = 1;
+                this.scale = 1.2;
+
+                if (typeof pdfjsLib === 'undefined') {
+                    this.fallbackToIframe(container, rawUrl);
+                    return;
+                }
+
+                try {
+                    const loadingTask = pdfjsLib.getDocument(rawUrl);
+                    this.pdfDoc = await loadingTask.promise;
+                    const countEl = document.getElementById('pdfPageCount');
+                    if (countEl) countEl.textContent = this.pdfDoc.numPages;
+                    const loader = document.getElementById('pdfLoadingIndicator');
+                    if (loader) loader.style.display = 'none';
+                    if (this.canvas) this.canvas.style.display = 'block';
+                    this.renderPage(this.pageNum);
+                } catch (err) {
+                    console.warn('PDF.js rendering failed, falling back to embedded iframe:', err);
+                    this.fallbackToIframe(container, rawUrl);
+                }
+            },
+
+            fallbackToIframe(container, rawUrl) {
+                container.innerHTML = `
+                    <iframe src="${rawUrl}" class="inspector-live-frame" style="height:100%; min-height:500px;" title="PDF Preview"></iframe>
+                `;
+            },
+
+            renderPage(num) {
+                if (!this.pdfDoc || !this.canvas || !this.ctx) return;
+                this.pageRendering = true;
+
+                this.pdfDoc.getPage(num).then(page => {
+                    const viewport = page.getViewport({ scale: this.scale });
+                    this.canvas.height = viewport.height;
+                    this.canvas.width = viewport.width;
+
+                    const renderContext = {
+                        canvasContext: this.ctx,
+                        viewport: viewport
+                    };
+
+                    if (this.renderTask) {
+                        try { this.renderTask.cancel(); } catch(e) {}
+                    }
+
+                    this.renderTask = page.render(renderContext);
+                    this.renderTask.promise.then(() => {
+                        this.pageRendering = false;
+                        if (this.pageNumPending !== null) {
+                            this.renderPage(this.pageNumPending);
+                            this.pageNumPending = null;
+                        }
+                    }).catch(err => {
+                        if (err && err.name !== 'RenderingCancelledException') {
+                            console.error('PDF page render error:', err);
+                        }
+                        this.pageRendering = false;
+                    });
+                }).catch(err => {
+                    console.error('PDF getPage error:', err);
+                    this.pageRendering = false;
+                });
+
+                const numEl = document.getElementById('pdfPageNum');
+                if (numEl) numEl.textContent = num;
+
+                const prevBtn = document.getElementById('pdfPrevBtn');
+                const nextBtn = document.getElementById('pdfNextBtn');
+                if (prevBtn) prevBtn.disabled = (num <= 1);
+                if (nextBtn) nextBtn.disabled = (num >= (this.pdfDoc ? this.pdfDoc.numPages : 1));
+
+                const zoomEl = document.getElementById('pdfZoomLevel');
+                if (zoomEl) zoomEl.textContent = Math.round(this.scale * 100) + '%';
+            },
+
+            queueRenderPage(num) {
+                if (this.pageRendering) {
+                    this.pageNumPending = num;
+                } else {
+                    this.renderPage(num);
+                }
+            },
+
+            onPrevPage() {
+                if (this.pageNum <= 1) return;
+                this.pageNum--;
+                this.queueRenderPage(this.pageNum);
+            },
+
+            onNextPage() {
+                if (!this.pdfDoc || this.pageNum >= this.pdfDoc.numPages) return;
+                this.pageNum++;
+                this.queueRenderPage(this.pageNum);
+            },
+
+            zoomIn() {
+                if (this.scale >= 3.0) return;
+                this.scale = Math.min(3.0, this.scale + 0.2);
+                this.queueRenderPage(this.pageNum);
+            },
+
+            zoomOut() {
+                if (this.scale <= 0.5) return;
+                this.scale = Math.max(0.5, this.scale - 0.2);
+                this.queueRenderPage(this.pageNum);
+            },
+
+            resetZoom() {
+                this.scale = 1.2;
+                this.queueRenderPage(this.pageNum);
+            },
+
+            destroy() {
+                if (this.renderTask) {
+                    try { this.renderTask.cancel(); } catch(e) {}
+                    this.renderTask = null;
+                }
+                this.pdfDoc = null;
+                this.pageNum = 1;
+                this.pageRendering = false;
+                this.pageNumPending = null;
+                this.canvas = null;
+                this.ctx = null;
+            }
+        };
+
+        const ImageRenderer = {
+            isDualMode: false,
+            objectUrl: null,
+
+            supports(ext) {
+                return ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif', 'bmp', 'ico', 'avif'].includes(ext);
+            },
+
+            async render(container, context) {
+                this.destroy();
+                const rawUrl = (context.path && (context.path.startsWith('data:') || context.path.startsWith('blob:') || context.path.startsWith('http://') || context.path.startsWith('https://') || context.path.startsWith('/')))
+                    ? context.path
+                    : `/api/file-raw?path=${encodeURIComponent(context.path)}`;
+                const statsEl = document.getElementById('inspectorStats');
+
+                container.innerHTML = `
+                    <div class="inspector-image-wrap" title="Click to view in fullscreen lightbox" style="cursor:zoom-in;">
+                        <img id="inspectorImagePreview" class="inspector-image-preview" src="${rawUrl}" alt="${escapeHtml(context.name)}" />
+                    </div>
+                `;
+
+                const img = document.getElementById('inspectorImagePreview');
+                if (img) {
+                    img.onload = () => {
+                        const dims = `${img.naturalWidth} × ${img.naturalHeight}px`;
+                        if (statsEl) statsEl.textContent = `• Graphic Manuscript • ${dims} • ${formatFileSize(context.size)}`;
+                    };
+                    img.onerror = () => {
+                        container.innerHTML = '<div class="inspector-empty-state">⚠️ Failed to load image preview</div>';
+                    };
+                    img.parentElement.onclick = () => {
+                        openLightbox(rawUrl, context.name, formatFileSize(context.size));
+                    };
+                }
+            },
+
+            destroy() {
+                if (this.objectUrl) {
+                    URL.revokeObjectURL(this.objectUrl);
+                    this.objectUrl = null;
+                }
+            }
+        };
+
+        const CodeRenderer = {
+            isDualMode: false,
+
+            supports(ext) {
+                return true;
+            },
+
+            render(container, context) {
+                const source = context.source || '';
+                const ext = context.ext || '';
+                const langInfo = LANG_MAP[ext] || { name: ext.toUpperCase() || 'TXT', hljs: null };
+
+                let highlightedCode = '';
+                try {
+                    if (langInfo.hljs && hljs.getLanguage(langInfo.hljs)) {
+                        highlightedCode = hljs.highlight(source, { language: langInfo.hljs }).value;
+                    } else {
+                        highlightedCode = hljs.highlightAuto(source).value;
+                    }
+                } catch(e) {
+                    highlightedCode = escapeHtml(source);
+                }
+
+                const lines = source.split('\n');
+                const lineCount = lines.length;
+                const maxDigits = Math.max(2, String(lineCount).length);
+                let gutterHtml = '';
+                for (let i = 1; i <= lineCount; i++) {
+                    const numStr = String(i).padStart(maxDigits, '0');
+                    gutterHtml += `${numStr}\n`;
+                }
+
+                container.innerHTML = `
+                    <div class="inspector-code-wrap">
+                        <div class="inspector-gutter">${gutterHtml}</div>
+                        <pre class="inspector-code-pre"><code class="hljs ${langInfo.hljs ? 'language-' + langInfo.hljs : ''}">${highlightedCode}</code></pre>
+                    </div>
+                `;
+            },
+
+            destroy() {}
+        };
+
+        const BinaryFallback = {
+            isDualMode: false,
+
+            supports() {
+                return true;
+            },
+
+            async render(container, context) {
+                const rawUrl = `/api/file-raw?path=${encodeURIComponent(context.path)}`;
+                const sizeStr = formatFileSize(context.size) || 'Binary File';
+                const ext = (context.ext || 'bin').toUpperCase();
+                const icon = FILE_ICONS[context.ext] || '📦';
+
+                const statsEl = document.getElementById('inspectorStats');
+                if (statsEl) statsEl.textContent = `• Binary Asset • ${sizeStr}`;
+
+                container.innerHTML = `
+                    <div class="inspector-binary-card">
+                        <div class="inspector-binary-icon">${icon}</div>
+                        <div class="inspector-binary-title">${escapeHtml(context.name)}</div>
+                        <div class="inspector-binary-meta">
+                            <span>Format: ${escapeHtml(ext)}</span>
+                            <span>•</span>
+                            <span>Size: ${escapeHtml(sizeStr)}</span>
+                            ${context.mimeType ? `<span>•</span><span>${escapeHtml(context.mimeType)}</span>` : ''}
+                        </div>
+                        <p style="color:var(--muted); font-size:13px; max-width:420px; line-height:1.5;">
+                            This binary manuscript cannot be rendered directly in prose text mode. You can download or inspect it externally.
+                        </p>
+                        <a href="${rawUrl}" download="${escapeHtml(context.name)}" class="inspector-binary-download-btn">
+                            ⬇️ Download ${escapeHtml(context.name)}
+                        </a>
+                    </div>
+                `;
+            },
+
+            destroy() {}
+        };
+
+        // Preview Registry Manager
+        const PreviewRegistry = {
+            renderers: {
+                markdown: MarkdownRenderer,
+                html: HtmlRenderer,
+                pdf: PdfRenderer,
+                image: ImageRenderer,
+                code: CodeRenderer,
+                fallback: BinaryFallback
+            },
+            activeRenderer: null,
+            activeContext: null,
+
+            register(id, renderer) {
+                this.renderers[id] = renderer;
+            },
+
+            findRenderer(ext, mimeType) {
+                if (MarkdownRenderer.supports(ext)) return MarkdownRenderer;
+                if (HtmlRenderer.supports(ext)) return HtmlRenderer;
+                if (PdfRenderer.supports(ext)) return PdfRenderer;
+                if (ImageRenderer.supports(ext)) return ImageRenderer;
+
+                const binaryExts = ['zip', 'jar', 'tar', 'gz', '7z', 'rar', 'exe', 'dll', 'so', 'dylib', 'class', 'bin', 'iso', 'dmg', 'mp3', 'mp4', 'wav', 'ogg', 'mov', 'avi', 'wasm'];
+                if (binaryExts.includes(ext)) {
+                    return BinaryFallback;
+                }
+
+                return CodeRenderer;
+            },
+
+            async render(container, context) {
+                this.cleanup();
+                const renderer = this.findRenderer(context.ext, context.mimeType);
+                this.activeRenderer = renderer;
+                this.activeContext = context;
+
+                // Configure dual mode tabs
+                const tabsEl = document.getElementById('inspectorTabs');
+                const tabPreview = document.getElementById('inspectorTabPreview');
+                const tabCode = document.getElementById('inspectorTabCode');
+
+                if (renderer && renderer.isDualMode) {
+                    if (tabsEl) tabsEl.style.display = 'inline-flex';
+                    context.mode = context.mode || 'preview';
+                    if (tabPreview) tabPreview.classList.toggle('active', context.mode === 'preview');
+                    if (tabCode) tabCode.classList.toggle('active', context.mode === 'code');
+                } else {
+                    if (tabsEl) tabsEl.style.display = 'none';
+                }
+
+                if (renderer) {
+                    await renderer.render(container, context);
+                } else {
+                    container.innerHTML = '<div class="inspector-empty-state">No suitable manuscript renderer found</div>';
+                }
+            },
+
+            setMode(mode) {
+                if (this.activeRenderer && this.activeRenderer.isDualMode && this.activeContext) {
+                    this.activeContext.mode = mode;
+                    const tabPreview = document.getElementById('inspectorTabPreview');
+                    const tabCode = document.getElementById('inspectorTabCode');
+                    if (tabPreview) tabPreview.classList.toggle('active', mode === 'preview');
+                    if (tabCode) tabCode.classList.toggle('active', mode === 'code');
+
+                    const container = document.getElementById('inspectorBody');
+                    if (container) {
+                        this.activeRenderer.render(container, this.activeContext);
+                    }
+                }
+            },
+
+            cleanup() {
+                if (this.activeRenderer && typeof this.activeRenderer.destroy === 'function') {
+                    try {
+                        this.activeRenderer.destroy();
+                    } catch(e) {
+                        console.warn('Renderer cleanup warning:', e);
+                    }
+                }
+                this.activeRenderer = null;
+                this.activeContext = null;
+            }
+        };
+
+        // ========== Inspector Modal Lifecycle Controller ==========
+        async function inspectFile(path, name) {
+            activeInspectorPath = path;
+            activeInspectorName = name || path.split('/').pop() || 'file';
+            activeInspectorSource = '';
+
+            const modal = document.getElementById('inspectorModal');
+            const filenameEl = document.getElementById('inspectorFilename');
+            const pathEl = document.getElementById('inspectorPath');
+            const badgeEl = document.getElementById('inspectorLangBadge');
+            const statsEl = document.getElementById('inspectorStats');
+            const bodyEl = document.getElementById('inspectorBody');
+            const copyBtn = document.getElementById('inspectorCopyBtn');
+            const extBtn = document.getElementById('inspectorExternalBtn');
+            const downBtn = document.getElementById('inspectorDownloadBtn');
+
+            filenameEl.textContent = activeInspectorName;
+            pathEl.textContent = path;
+            if (copyBtn) copyBtn.style.display = 'inline-flex';
+            if (extBtn) extBtn.style.display = 'inline-flex';
+            if (downBtn) downBtn.style.display = 'inline-flex';
+
+            const ext = (activeInspectorName.split('.').pop() || '').toLowerCase();
+            const langInfo = LANG_MAP[ext] || { name: ext.toUpperCase() || 'FILE', hljs: null };
+            badgeEl.textContent = langInfo.name;
+            statsEl.textContent = '• Loading...';
+
+            bodyEl.innerHTML = '<div class="inspector-empty-state">⏳ Loading manuscript preview...</div>';
+            modal.classList.add('active');
+
+            const imageExts = ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif', 'bmp', 'ico', 'avif'];
+            const binaryExts = ['zip', 'jar', 'tar', 'gz', '7z', 'rar', 'exe', 'dll', 'so', 'dylib', 'class', 'bin', 'iso', 'dmg', 'mp3', 'mp4', 'wav', 'ogg', 'mov', 'avi', 'wasm'];
+
+            if (imageExts.includes(ext)) {
+                if (copyBtn) copyBtn.style.display = 'none';
+                await PreviewRegistry.render(bodyEl, {
+                    path,
+                    name: activeInspectorName,
+                    ext,
+                    mimeType: 'image/' + (ext === 'svg' ? 'svg+xml' : ext),
+                    source: '',
+                    size: 0,
+                    mode: 'preview'
+                });
+                return;
+            }
+
+            if (ext === 'pdf') {
+                if (copyBtn) copyBtn.style.display = 'none';
+                await PreviewRegistry.render(bodyEl, {
+                    path,
+                    name: activeInspectorName,
+                    ext,
+                    mimeType: 'application/pdf',
+                    source: '',
+                    size: 0,
+                    mode: 'preview'
+                });
+                return;
+            }
+
+            if (binaryExts.includes(ext)) {
+                if (copyBtn) copyBtn.style.display = 'none';
+                await PreviewRegistry.render(bodyEl, {
+                    path,
+                    name: activeInspectorName,
+                    ext,
+                    mimeType: 'application/octet-stream',
+                    source: '',
+                    size: 0,
+                    mode: 'preview'
+                });
+                return;
+            }
+
+            // Fetch text content with fallback
+            try {
+                let data = null;
+                try {
+                    const resp = await fetch('/api/file-content?path=' + encodeURIComponent(path));
+                    if (resp.ok) {
+                        data = await resp.json();
+                    } else {
+                        throw new Error('file-content error ' + resp.status);
+                    }
+                } catch (fetchErr) {
+                    const fallbackResp = await fetch('/api/file?path=' + encodeURIComponent(path));
+                    if (fallbackResp.ok) {
+                        const ct = fallbackResp.headers.get('content-type') || '';
+                        if (ct.includes('application/json')) {
+                            data = await fallbackResp.json();
+                        } else {
+                            const raw = await fallbackResp.text();
+                            data = { content: raw };
+                        }
+                    } else {
+                        throw new Error('Failed to retrieve file content (' + fallbackResp.status + ')');
+                    }
+                }
+
+                const rawContent = data && data.content !== undefined ? data.content : (typeof data === 'string' ? data : JSON.stringify(data, null, 2));
+                activeInspectorSource = rawContent || '';
+
+                const lines = activeInspectorSource.split('\n');
+                const lineCount = lines.length;
+                const byteSize = data && data.size ? data.size : new Blob([activeInspectorSource]).size;
+                statsEl.textContent = `• ${lineCount} line${lineCount === 1 ? '' : 's'} • ${formatFileSize(byteSize)}`;
+
+                await PreviewRegistry.render(bodyEl, {
+                    path,
+                    name: activeInspectorName,
+                    ext,
+                    mimeType: data && data.mimeType ? data.mimeType : 'text/plain',
+                    source: activeInspectorSource,
+                    size: byteSize,
+                    mode: 'preview'
+                });
+            } catch (err) {
+                statsEl.textContent = '• Error loading manuscript';
+                bodyEl.innerHTML = `
+                    <div class="inspector-empty-state" style="color:var(--danger)">
+                        <span>⚠️ ${escapeHtml(err.message || 'Unable to open file')}</span>
+                    </div>
+                `;
+            }
+        }
+
+        function setInspectorMode(mode) {
+            PreviewRegistry.setMode(mode);
+        }
+
+        function closeInspector() {
+            const modal = document.getElementById('inspectorModal');
+            if (modal) modal.classList.remove('active');
+            PreviewRegistry.cleanup();
+            activeInspectorPath = null;
+            activeInspectorName = null;
+            activeInspectorSource = '';
+            const tabsEl = document.getElementById('inspectorTabs');
+            if (tabsEl) tabsEl.style.display = 'none';
+        }
+
+        function copyInspectorSource() {
+            if (!activeInspectorSource) return;
+            const btn = document.getElementById('inspectorCopyBtn');
+            navigator.clipboard.writeText(activeInspectorSource).then(() => {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '✓ <span>Copied</span>';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.innerHTML = orig;
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(() => {});
+        }
+
+        function downloadInspectorFile() {
+            if (!activeInspectorPath) return;
+            const url = `/api/file-raw?path=${encodeURIComponent(activeInspectorPath)}`;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = activeInspectorName || 'file';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        function openExternalView() {
+            if (!activeInspectorPath) return;
+            const url = `/api/file-raw?path=${encodeURIComponent(activeInspectorPath)}`;
+            window.open(url, '_blank');
+        }
+
+        function attachInspectorFile() {
+            if (!activeInspectorPath) return;
+            attachFileToPrompt(activeInspectorPath, activeInspectorName);
+            const btn = document.getElementById('inspectorAttachBtn');
+            const orig = btn.innerHTML;
+            btn.innerHTML = '✓ <span>Attached</span>';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.innerHTML = orig;
+                btn.classList.remove('copied');
+            }, 1500);
+        }
+
+        // ========== Lightbox Engine ==========
+        function openLightbox(src, name, size) {
+            const modal = document.getElementById('lightboxModal');
+            const img = document.getElementById('lightboxImg');
+            const nameEl = document.getElementById('lightboxFilename');
+            const detEl = document.getElementById('lightboxDetails');
+
+            nameEl.textContent = name || 'Image Preview';
+            detEl.textContent = size ? `(${size})` : '';
+            img.src = src;
+
+            img.onload = () => {
+                const dims = `${img.naturalWidth} × ${img.naturalHeight}px`;
+                detEl.textContent = size ? `${dims} • ${size}` : dims;
+            };
+
+            modal.classList.add('active');
+        }
+
+        function closeLightbox() {
+            const modal = document.getElementById('lightboxModal');
+            if (modal) {
+                modal.classList.remove('active');
+                document.getElementById('lightboxImg').src = '';
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const editModal = document.getElementById('editApprovalModal');
+                if (editModal && editModal.classList.contains('active')) {
+                    closeEditModal();
+                    return;
+                }
+                const inspModal = document.getElementById('inspectorModal');
+                if (inspModal && inspModal.classList.contains('active')) {
+                    closeInspector();
+                    return;
+                }
+                const lightModal = document.getElementById('lightboxModal');
+                if (lightModal && lightModal.classList.contains('active')) {
+                    closeLightbox();
+                }
+            }
+        });
+
+        // Initialize WebSocket on Load
+        connect();
+    
+        // ========================================================================
+        // Remote SSH Credentials & Management Module (Academic View)
+        // ========================================================================
+        const SSH_CONFIG_KEY = 'mkpro-ssh-config';
+
+        async function loadSshConfig() {
+            try {
+                // Fetch persistent server configuration from CentralMemory / MapDB
+                const res = await fetch('/api/ssh/config');
+                if (res.ok) {
+                    const cfg = await res.json();
+                    if (cfg.configured) {
+                        if (cfg.host && document.getElementById('sshModalHost')) document.getElementById('sshModalHost').value = cfg.host;
+                        if (cfg.port && document.getElementById('sshModalPort')) document.getElementById('sshModalPort').value = cfg.port;
+                        if (cfg.username && document.getElementById('sshModalUser')) document.getElementById('sshModalUser').value = cfg.username;
+                        if (cfg.alias && document.getElementById('sshModalAlias')) document.getElementById('sshModalAlias').value = cfg.alias;
+                        if (cfg.authType && document.getElementById('sshModalAuthType')) {
+                            document.getElementById('sshModalAuthType').value = cfg.authType;
+                            onSshAuthTypeChange();
+                        }
+                        if (cfg.privateKeyPath && document.getElementById('sshModalKeyPath')) {
+                            document.getElementById('sshModalKeyPath').value = cfg.privateKeyPath;
+                        }
+                        if (document.getElementById('sshModalAutoConnect')) {
+                            document.getElementById('sshModalAutoConnect').checked = !!cfg.autoConnect;
+                        }
+                        if (cfg.hasPassword && document.getElementById('sshModalPassword')) {
+                            document.getElementById('sshModalPassword').placeholder = '•••••••• (Saved password)';
+                        }
+                        if (cfg.hasPrivateKeyContent && document.getElementById('sshModalKeyContent')) {
+                            document.getElementById('sshModalKeyContent').placeholder = '[Using securely saved private key]';
+                        }
+                        if (cfg.hasPassphrase && document.getElementById('sshModalPassphrase')) {
+                            document.getElementById('sshModalPassphrase').placeholder = '•••••••• (Saved passphrase)';
+                        }
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not fetch backend SSH config, falling back to local storage', e);
+            }
+
+            try {
+                const raw = localStorage.getItem(SSH_CONFIG_KEY);
+                if (raw) {
+                    const cfg = JSON.parse(raw);
+                    if (cfg.host && document.getElementById('sshModalHost')) document.getElementById('sshModalHost').value = cfg.host;
+                    if (cfg.port && document.getElementById('sshModalPort')) document.getElementById('sshModalPort').value = cfg.port;
+                    if (cfg.username && document.getElementById('sshModalUser')) document.getElementById('sshModalUser').value = cfg.username;
+                    if (cfg.alias && document.getElementById('sshModalAlias')) document.getElementById('sshModalAlias').value = cfg.alias;
+                    if (cfg.authType && document.getElementById('sshModalAuthType')) {
+                        document.getElementById('sshModalAuthType').value = cfg.authType;
+                        onSshAuthTypeChange();
+                    }
+                    if (cfg.keyPath && document.getElementById('sshModalKeyPath')) {
+                        document.getElementById('sshModalKeyPath').value = cfg.keyPath;
+                    }
+                    if (document.getElementById('sshModalAutoConnect') && cfg.autoConnect !== undefined) {
+                        document.getElementById('sshModalAutoConnect').checked = !!cfg.autoConnect;
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load SSH config:', e);
+            }
+        }
+
+        function saveSshConfigNonSensitive(host, port, username, authType, alias, keyPath, autoConnect) {
+            try {
+                // SECURITY AUDIT: Only non-sensitive connection parameters are saved.
+                // Raw passwords and private key contents are NEVER written to localStorage.
+                const cfg = {
+                    host: host || '',
+                    port: port || 22,
+                    username: username || '',
+                    authType: authType || 'PASSWORD',
+                    alias: alias || 'default',
+                    keyPath: keyPath || '',
+                    autoConnect: !!autoConnect
+                };
+                localStorage.setItem(SSH_CONFIG_KEY, JSON.stringify(cfg));
+            } catch (e) {
+                console.error('Failed to save SSH config:', e);
+            }
+        }
+
+        function onSshAuthTypeChange() {
+            const authType = document.getElementById('sshModalAuthType').value;
+            const rowPass = document.getElementById('sshRowPassword');
+            const rowKeyPath = document.getElementById('sshRowKeyPath');
+            const rowKeyContent = document.getElementById('sshRowKeyContent');
+            const rowPassphrase = document.getElementById('sshRowPassphrase');
+
+            if (authType === 'PASSWORD') {
+                if (rowPass) rowPass.style.display = 'flex';
+                if (rowKeyPath) rowKeyPath.style.display = 'none';
+                if (rowKeyContent) rowKeyContent.style.display = 'none';
+                if (rowPassphrase) rowPassphrase.style.display = 'none';
+            } else if (authType === 'KEY_FILE') {
+                if (rowPass) rowPass.style.display = 'none';
+                if (rowKeyPath) rowKeyPath.style.display = 'flex';
+                if (rowKeyContent) rowKeyContent.style.display = 'none';
+                if (rowPassphrase) rowPassphrase.style.display = 'flex';
+            } else if (authType === 'KEY_CONTENT') {
+                if (rowPass) rowPass.style.display = 'none';
+                if (rowKeyPath) rowKeyPath.style.display = 'none';
+                if (rowKeyContent) rowKeyContent.style.display = 'flex';
+                if (rowPassphrase) rowPassphrase.style.display = 'flex';
+            }
+        }
+
+        function showSshBanner(type, message) {
+            const banner = document.getElementById('sshModalStatusBanner');
+            if (!banner) return;
+            banner.className = 'ssh-status-banner ' + type;
+            banner.innerHTML = message;
+            banner.style.display = 'block';
+        }
+
+        function hideSshBanner() {
+            const banner = document.getElementById('sshModalStatusBanner');
+            if (banner) {
+                banner.style.display = 'none';
+                banner.innerHTML = '';
+            }
+        }
+
+        function openSshModal() {
+            const overlay = document.getElementById('sshModalOverlay');
+            if (!overlay) return;
+            loadSshConfig();
+            hideSshBanner();
+            overlay.classList.add('active');
+            checkSshStatus();
+        }
+
+        function closeSshModal() {
+            const overlay = document.getElementById('sshModalOverlay');
+            if (overlay) overlay.classList.remove('active');
+            // Secure memory cleanup
+            clearSshSecrets();
+        }
+
+        function clearSshSecrets() {
+            const passEl = document.getElementById('sshModalPassword');
+            const keyContentEl = document.getElementById('sshModalKeyContent');
+            const passphraseEl = document.getElementById('sshModalPassphrase');
+            if (passEl) passEl.value = '';
+            if (keyContentEl) keyContentEl.value = '';
+            if (passphraseEl) passphraseEl.value = '';
+        }
+
+        async function connectSsh() {
+            const host = document.getElementById('sshModalHost').value.trim();
+            const port = parseInt(document.getElementById('sshModalPort').value.trim(), 10) || 22;
+            const username = document.getElementById('sshModalUser').value.trim();
+            const authType = document.getElementById('sshModalAuthType').value;
+            const sessionAlias = document.getElementById('sshModalAlias').value.trim() || 'default';
+
+            const passwordInput = document.getElementById('sshModalPassword');
+            const keyPathInput = document.getElementById('sshModalKeyPath');
+            const keyContentInput = document.getElementById('sshModalKeyContent');
+            const passphraseInput = document.getElementById('sshModalPassphrase');
+
+            const password = passwordInput ? passwordInput.value : '';
+            const keyPath = keyPathInput ? keyPathInput.value.trim() : '';
+            const keyContent = keyContentInput ? keyContentInput.value : '';
+            const passphrase = passphraseInput ? passphraseInput.value : '';
+
+            if (!host) {
+                showSshBanner('error', '⚠️ Host / IP address is required.');
+                return;
+            }
+            if (!username) {
+                showSshBanner('error', '⚠️ Username is required.');
+                return;
+            }
+            if (authType === 'PASSWORD' && !password) {
+                const isSaved = passwordInput && passwordInput.placeholder && passwordInput.placeholder.includes('Saved password');
+                if (!isSaved) {
+                    showSshBanner('error', '⚠️ Password is required for Password Authentication.');
+                    return;
+                }
+            }
+            if (authType === 'KEY_FILE' && !keyPath) {
+                showSshBanner('error', '⚠️ Private key file path is required.');
+                return;
+            }
+            if (authType === 'KEY_CONTENT' && !keyContent) {
+                showSshBanner('error', '⚠️ Inline private key content is required.');
+                return;
+            }
+
+            const connectBtn = document.getElementById('sshConnectBtn');
+            if (connectBtn) {
+                connectBtn.disabled = true;
+                connectBtn.textContent = 'Connecting...';
+            }
+            showSshBanner('info', `⏳ Connecting to ${escapeHtml(username)}@${escapeHtml(host)}:${port}...`);
+
+            const autoConnectEl = document.getElementById('sshModalAutoConnect');
+            const autoConnect = autoConnectEl ? autoConnectEl.checked : false;
+
+            const payload = {
+                host: host,
+                port: port,
+                username: username,
+                authType: authType,
+                sessionAlias: sessionAlias,
+                autoConnect: autoConnect
+            };
+
+            if (authType === 'PASSWORD') payload.password = password;
+            if (authType === 'KEY_FILE') {
+                payload.privateKeyPath = keyPath;
+                if (passphrase) payload.passphrase = passphrase;
+            }
+            if (authType === 'KEY_CONTENT') {
+                payload.privateKeyContent = keyContent;
+                if (passphrase) payload.passphrase = passphrase;
+            }
+
+            try {
+                console.log('[Sandbox UI] Initiating connection payload:', { host, port, username, authType, sessionAlias });
+                const res = await fetch('/api/ssh/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                console.log('[Sandbox UI] Response status:', res.status, res.statusText);
+                const rawText = await res.text();
+                console.log('[Sandbox UI] Raw response body:', rawText);
+                let data;
+                try {
+                    data = rawText ? JSON.parse(rawText) : {};
+                } catch (err) {
+                    console.error('[Sandbox UI] JSON parse failed on text:', rawText, err);
+                    throw new Error(`Server returned status ${res.status} with non-JSON body: ${rawText.substring(0, 200)}`);
+                }
+                console.log('[Sandbox UI] Parsed response data:', data);
+
+                // Clear secrets from memory immediately
+                clearSshSecrets();
+
+                if (res.ok && data.status === 'connected') {
+                    showSshBanner('success', `✓ Successfully connected to <strong>${escapeHtml(data.username)}@${escapeHtml(data.host)}:${data.port}</strong> (alias: <code>${escapeHtml(data.alias || sessionAlias)}</code>)`);
+                    saveSshConfigNonSensitive(host, port, username, authType, sessionAlias, keyPath, autoConnect);
+                    updateSshStatusIndicator(true);
+                    checkSshStatus();
+                } else {
+                    showSshBanner('error', `✕ Connection Failed: ${escapeHtml(data.error || 'Unknown SSH error')}`);
+                }
+            } catch (err) {
+                clearSshSecrets();
+                console.error('[Sandbox UI] Connection Exception:', err);
+                showSshBanner('error', `✕ Connection Error: ${escapeHtml(err.message)}`);
+            } finally {
+                if (connectBtn) {
+                    connectBtn.disabled = false;
+                    connectBtn.textContent = 'Connect';
+                }
+            }
+        }
+        const submitSshConnect = connectSsh;
+
+        async function disconnectSsh(alias) {
+            const effectiveAlias = alias || document.getElementById('sshModalAlias').value.trim() || 'default';
+            const disconnectBtn = document.getElementById('sshDisconnectBtn');
+            if (disconnectBtn) {
+                disconnectBtn.disabled = true;
+                disconnectBtn.textContent = 'Disconnecting...';
+            }
+
+            try {
+                console.log('[Sandbox UI] Disconnecting session alias:', effectiveAlias);
+                const res = await fetch('/api/ssh/disconnect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ alias: effectiveAlias })
+                });
+                console.log('[Sandbox UI] Disconnect response status:', res.status, res.statusText);
+                const rawText = await res.text();
+                console.log('[Sandbox UI] Disconnect raw body:', rawText);
+                let data;
+                try {
+                    data = rawText ? JSON.parse(rawText) : {};
+                } catch (err) {
+                    console.error('[Sandbox UI] Disconnect JSON parse failed:', rawText, err);
+                    throw new Error(`Server returned status ${res.status} with non-JSON body: ${rawText.substring(0, 200)}`);
+                }
+                console.log('[Sandbox UI] Disconnect parsed data:', data);
+
+                if (data.status === 'disconnected') {
+                    showSshBanner('info', `Session <code>${escapeHtml(effectiveAlias)}</code> disconnected.`);
+                } else {
+                    showSshBanner('info', `Session <code>${escapeHtml(effectiveAlias)}</code> is not active.`);
+                }
+                checkSshStatus();
+            } catch (err) {
+                console.error('[Sandbox UI] Disconnect Exception:', err);
+                showSshBanner('error', `Disconnect error: ${escapeHtml(err.message)}`);
+            } finally {
+                if (disconnectBtn) {
+                    disconnectBtn.disabled = false;
+                    disconnectBtn.textContent = 'Disconnect';
+                }
+            }
+        }
+
+        async function checkSshStatus() {
+            try {
+                console.log('[Sandbox UI] Checking SSH status via /api/ssh/status');
+                const res = await fetch('/api/ssh/status');
+                console.log('[Sandbox UI] Status response status:', res.status, res.statusText);
+                const rawText = await res.text();
+                let data;
+                try {
+                    data = rawText ? JSON.parse(rawText) : {};
+                } catch (err) {
+                    console.error('[Sandbox UI] Status JSON parse failed:', rawText, err);
+                    updateSshStatusIndicator(false);
+                    return;
+                }
+                if (!res.ok) {
+                    updateSshStatusIndicator(false);
+                    return;
+                }
+                const isConnected = !!data.connected;
+                updateSshStatusIndicator(isConnected);
+
+                const activeArea = document.getElementById('sshActiveSessionsArea');
+                const listEl = document.getElementById('sshActiveSessionsList');
+                const disconnectBtn = document.getElementById('sshDisconnectBtn');
+
+                if (data.sessions && data.sessions.length > 0) {
+                    if (activeArea) activeArea.style.display = 'block';
+                    if (disconnectBtn) disconnectBtn.style.display = 'inline-block';
+                    if (listEl) {
+                        listEl.innerHTML = data.sessions.map(s => `
+                            <div class="ssh-active-item">
+                                <div>
+                                    <span style="color:var(--success);font-weight:600;">●</span>
+                                    <strong>${escapeHtml(s.username)}@${escapeHtml(s.host)}:${s.port}</strong>
+                                    <span style="opacity:0.7;">(alias: <code>${escapeHtml(s.alias)}</code>)</span>
+                                </div>
+                                <button onclick="disconnectSsh('${escapeHtml(s.alias)}')" style="background:var(--danger);color:white;border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit;">✕ Terminate</button>
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    if (activeArea) activeArea.style.display = 'none';
+                    if (disconnectBtn) disconnectBtn.style.display = 'none';
+                }
+            } catch (e) {
+                console.error('[Sandbox UI] checkSshStatus error:', e);
+                updateSshStatusIndicator(false);
+            }
+        }
+        const fetchSshStatus = checkSshStatus;
+
+        function updateSshStatusIndicator(connected) {
+            const dot = document.getElementById('sshStatusDot') || document.getElementById('sshHeaderDot');
+            if (dot) {
+                dot.className = 'ssh-status-dot ' + (connected ? 'connected' : 'disconnected');
+            }
+            const headerBtn = document.getElementById('sshHeaderBtn');
+            if (headerBtn) {
+                headerBtn.title = connected ? 'Sandbox Connected' : 'Sandbox Disconnected (Click to Connect)';
+            }
+        }
+
+        // Global ESC handler addition for SSH modal in academic view
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const overlay = document.getElementById('sshModalOverlay');
+                if (overlay && overlay.classList.contains('active')) {
+                    closeSshModal();
+                }
+            }
+        });
+
+        // Periodic SSH status check every 15s
+        setInterval(checkSshStatus, 15000);
+        checkSshStatus();
+
+    </script>
+
+        <!-- Sandbox Connection Modal (Academic Dialog) -->
+        <div id="sshModalOverlay" class="ssh-modal-overlay" onclick="if(event.target===this) closeSshModal()">
+            <div class="ssh-modal-card">
+                <div class="ssh-modal-header">
+                    <div>
+                        <h3 style="margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; gap:6px; font-family:'Newsreader',Georgia,serif; letter-spacing:-0.01em;"><span>📦 Sandbox Environment (Remote Ubuntu)</span></h3>
+                        <p style="margin: 3px 0 0 0; font-size: 11px; color: var(--muted); font-family:'JetBrains Mono',monospace;">Connect to a remote sandboxed machine to run commands and execute code safely.</p>
+                    </div>
+                    <button class="ssh-modal-close-btn" onclick="closeSshModal()" title="Close (Esc)">✕</button>
+                </div>
+                <div class="ssh-modal-body">
+                    <div class="ssh-status-banner" id="sshModalStatusBanner"></div>
+
+                    <div id="sshActiveSessionsArea" style="display:none;" class="ssh-active-sessions">
+                        <div class="ssh-active-header">
+                            <span>Active Sandbox Sessions</span>
+                            <button onclick="checkSshStatus()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-family:inherit;font-size:11px;">🔄 Refresh</button>
+                        </div>
+                        <div id="sshActiveSessionsList"></div>
+                    </div>
+
+                    <div class="ssh-form-row row-split">
+                        <div style="flex: 2;">
+                            <label class="ssh-form-label" for="sshModalHost">Host / IP <span class="req">*</span></label>
+                            <input type="text" id="sshModalHost" class="ssh-form-input" placeholder="e.g. 192.168.1.100 or ubuntu.example.com" autocomplete="off" />
+                        </div>
+                        <div style="flex: 1;">
+                            <label class="ssh-form-label" for="sshModalPort">Port <span class="req">*</span></label>
+                            <input type="number" id="sshModalPort" class="ssh-form-input" value="22" autocomplete="off" />
+                        </div>
+                    </div>
+
+                    <div class="ssh-form-row row-split">
+                        <div style="flex: 1;">
+                            <label class="ssh-form-label" for="sshModalUser">Username <span class="req">*</span></label>
+                            <input type="text" id="sshModalUser" class="ssh-form-input" placeholder="e.g. ubuntu or root" autocomplete="off" />
+                        </div>
+                        <div style="flex: 1;">
+                            <label class="ssh-form-label" for="sshModalAlias">Session Alias</label>
+                            <input type="text" id="sshModalAlias" class="ssh-form-input" value="default" autocomplete="off" />
+                        </div>
+                    </div>
+
+                    <div class="ssh-form-row">
+                        <label class="ssh-form-label" for="sshModalAuthType">Authentication Method</label>
+                        <select id="sshModalAuthType" class="ssh-form-select" onchange="onSshAuthTypeChange()">
+                            <option value="PASSWORD">Password</option>
+                            <option value="KEY_FILE">Private Key File Path</option>
+                            <option value="KEY_CONTENT">Inline Private Key</option>
+                        </select>
+                    </div>
+
+                    <!-- Password Auth Row -->
+                    <div class="ssh-form-row" id="sshRowPassword">
+                        <label class="ssh-form-label" for="sshModalPassword">Password <span class="req">*</span></label>
+                        <input type="password" id="sshModalPassword" class="ssh-form-input" placeholder="Enter remote Sandbox password" autocomplete="new-password" spellcheck="false" />
+                    </div>
+
+                    <!-- Key File Path Row -->
+                    <div class="ssh-form-row" id="sshRowKeyPath" style="display:none;">
+                        <label class="ssh-form-label" for="sshModalKeyPath">Private Key Path <span class="req">*</span></label>
+                        <input type="text" id="sshModalKeyPath" class="ssh-form-input" placeholder="e.g. ~/.ssh/id_rsa or /home/ubuntu/.ssh/id_ed25519" autocomplete="off" />
+                    </div>
+
+                    <!-- Inline Key Content Row -->
+                    <div class="ssh-form-row" id="sshRowKeyContent" style="display:none;">
+                        <label class="ssh-form-label" for="sshModalKeyContent">Inline Private Key PEM/OpenSSH <span class="req">*</span></label>
+                        <textarea id="sshModalKeyContent" class="ssh-form-textarea" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" autocomplete="new-password" spellcheck="false" rows="5"></textarea>
+                    </div>
+
+                    <!-- Passphrase Row (for encrypted keys) -->
+                    <div class="ssh-form-row" id="sshRowPassphrase" style="display:none;">
+                        <label class="ssh-form-label" for="sshModalPassphrase">Key Passphrase <span style="font-weight:normal;opacity:0.7;">(optional)</span></label>
+                        <input type="password" id="sshModalPassphrase" class="ssh-form-input" placeholder="Passphrase for private key (if encrypted)" autocomplete="new-password" />
+                    </div>
+
+                    <!-- Auto-Connect on Startup Option -->
+                    <div class="ssh-form-row" style="margin-top: 10px; margin-bottom: 2px;">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; user-select:none;">
+                            <input type="checkbox" id="sshModalAutoConnect" style="cursor:pointer; width:15px; height:15px; accent-color:var(--accent);" />
+                            <span style="font-family:'Newsreader',Georgia,serif; font-size:13px; font-weight:500;">Auto-connect on startup</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="ssh-modal-footer">
+                    <button class="ssh-btn ssh-btn-disconnect" id="sshDisconnectBtn" onclick="disconnectSsh()" style="display:none;">Disconnect</button>
+                    <div class="ssh-footer-actions" style="margin-left:auto;">
+                        <button class="ssh-btn ssh-btn-cancel" onclick="closeSshModal()">Cancel</button>
+                        <button class="ssh-btn ssh-btn-connect" id="sshConnectBtn" onclick="connectSsh()">Connect</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+</body>
+</html>

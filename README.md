@@ -1,6 +1,6 @@
 # mkpro - The AI Software Engineering Team
 
-`mkpro` is an advanced, modular CLI assistant built on the Google Agent Development Kit (ADK). It orchestrates a team of **12 specialized AI agents** to autonomously handle complex software engineering tasks, from coding and testing to security audits and cloud deployment. It supports a multi-provider backend, allowing you to mix and match local models (Ollama) with powerful cloud models (Gemini, Bedrock).
+`mkpro` is an advanced, modular CLI assistant built on the Google Agent Development Kit (ADK). It orchestrates a team of **16 specialized AI agents** to autonomously handle complex software engineering tasks, from coding and testing to security audits, remote Linux infrastructure management, and cloud deployment. It supports a multi-provider backend, allowing you to mix and match local models (Ollama, Jlama) with powerful cloud models (Gemini, Bedrock, Azure, Sarvam).
 
 ## 🤖 Meet the Team
 
@@ -10,16 +10,20 @@ Your `mkpro` instance is not just a chatbot; it's a team of experts led by a Coo
 | :--- | :--- |
 | **Coordinator** | **Team Lead**. Orchestrates the workflow, manages long-term memory, and delegates tasks to the right specialist. It is your primary interface. |
 | **GoalTracker** | **Project Manager**. Keeps track of ongoing session goals, creates TODO lists for complex tasks, and maintains progress in a local MapDB store. |
-| **Coder** | **Software Engineer**. Reads, writes, and refactors code. Analyzes project structure and implements features. |
-| **SysAdmin** | **System Operator**. Executes shell commands, manages files, and runs build tools (Maven, Gradle, npm). *Note: Restricted from modifying code directly; must delegate code changes to the CodeEditor.* |
-| **Tester** | **QA Engineer**. Writes unit and integration tests, runs test suites, and analyzes failure reports to suggest fixes. |
+| **Coder** | **Software Engineer**. Reads and analyzes code. Leverages **Graph Memory** and **codebase search** to recall architectural patterns and context. |
+| **CodeEditor** | **Code Manipulator**. Safely applies code changes to files with a built-in diff preview and user confirmation step. Automatically creates backups using `Maker.backItUp`. |
+| **SysAdmin** | **System Operator**. Executes local shell commands, manages local infrastructure, and runs build tools (Maven, Gradle, npm). *Restricted from modifying code directly or managing git.* |
+| **UbuntuOps** | **Persistent Remote Sandbox & SSH Specialist**. Manages persistent SSH sessions, executes remote commands, handles remote security policies, and transfers files via SFTP. |
+| **GitAgent** | **Version Control Specialist**. Stages, commits, and pushes code. Enforces semantic commit messages and appends AI session token statistics to commit history. |
+| **Tester** | **QA Engineer**. Writes unit and integration tests, runs test suites, performs browser-based E2E testing via Selenium. |
 | **DocWriter** | **Technical Writer**. Maintains `README.md`, generates Javadocs/Docstrings, and ensures documentation stays in sync with code. |
 | **SecurityAuditor** | **Security Analyst**. Scans code for vulnerabilities (SQLi, XSS, secrets), runs audit tools (`npm audit`), and recommends hardening steps. |
-| **Architect** | **Principal Engineer**. Reviews high-level design, analyzes cohesion/coupling, enforces design patterns, and plans refactoring. |
+| **Architect** | **Principal Engineer**. Reviews high-level design, analyzes cohesion/coupling, enforces design patterns, plans refactoring, and uses **Graph Memory** to store and retrieve system designs. |
 | **DatabaseAdmin** | **DBA**. Writes complex SQL queries, creates schema migration scripts, and analyzes database structures. |
 | **DevOps** | **SRE / Cloud Engineer**. Writes Dockerfiles, Kubernetes manifests, CI/CD configs, and interacts with cloud CLIs (AWS, GCP). |
 | **DataAnalyst** | **Data Scientist**. Analyzes data sets (CSV, JSON), writes Python scripts (pandas, numpy) for statistical analysis, and generates insights. |
-| **CodeEditor** | **Code Manipulator**. Safely applies code changes to files with a built-in diff preview and user confirmation step. Automatically creates backups using `Maker.backItUp`. |
+| **AndroidDev** | **Mobile Engineer (Android)**. Expert in Kotlin, Jetpack Compose, Android SDK, and Gradle-based Android projects. |
+| **IosDev** | **Mobile Engineer (iOS)**. Expert in Swift, SwiftUI, Xcode, and iOS frameworks. |
 
 ### Agent Interaction Flow
 
@@ -32,6 +36,7 @@ graph TD
         Coordinator -->|Delegates Task| Coder[Coder]
         Coordinator -->|Delegates Task| Tester[Tester]
         Coordinator -->|Delegates Task| SysAdmin[SysAdmin]
+        Coordinator -->|Delegates Task| UbuntuOps[UbuntuOps]
         Coordinator -->|Delegates Task| GoalTracker[GoalTracker]
         Coordinator -.->|Manages| Others[Other Agents...]
     end
@@ -39,137 +44,214 @@ graph TD
     subgraph "Execution & State"
         Coder -->|Executes| Runner[ADK Runner]
         Tester -->|Executes| Runner
+        UbuntuOps -->|Manages| SshMgr[SshSessionManager]
         Runner -->|Persists| Session[Session Memory]
         Runner -->|Records| ActionLogger[(Action Logger)]
         GoalTracker -->|Updates| CentralMem[(Central Memory)]
     end
 
-    subgraph "Tools"
+    subgraph "Tools (Declarative via YAML)"
         Coder -->|Uses| FileTools[File System]
         Tester -->|Uses| Selenium[Selenium Browser]
         SysAdmin -->|Uses| Shell[Shell Execution]
+        UbuntuOps -->|Uses| SshTools[SSH & SFTP Transfer]
     end
 ```
 
-## 🏗️ Architecture: The Goal-Driven Core
+## 🏗️ Architecture
 
-`mkpro` is built around a rigorous goal-tracking architecture that ensures agents remain focused on the user's ultimate objective, even during long-running sessions.
+### Core Components
 
-### The Maker Class
-The `Maker` class provides the **"heartbeat"** of this goal-driven execution. It acts as the central orchestrator that evaluates the current state of the project against the defined goal tree.
-
-### Goal Stimulus System (`getGoalStimulus`)
-To drive the agents forward, the `Maker` generates a dynamic **Goal Stimulus**. This is a context-aware report provided to the agents in every turn, derived from the `getGoalStimulus` method:
-
-*   **Prioritized Action**: It analyzes the entire goal tree and prioritizes items based on their status: **FAILED** > **IN_PROGRESS** > **PENDING**. This ensures agents immediately address errors before continuing with the plan.
-*   **Effective Leaf Goals**: It identifies "Effective Leaf" goals—these are actionable tasks that either have no sub-goals or whose sub-goals are all completed. By presenting only these leaves, the system ensures agents focus on granular, actionable tasks rather than being overwhelmed by high-level milestones.
-*   **Context Optimization**: To preserve token space, it intelligently summarizes the goal tree, showing active priorities while keeping the "Pending" list concise.
-
-## 🛡️ Safety Features
-
-To ensure project integrity and prevent accidental data loss, `mkpro` includes built-in safety mechanisms:
-- **Automatic Backups**: The `CodeEditor` agent automatically creates backups of files before performing any modifications (utilizing the `Maker.backItUp` utility).
-- **Enforced Role Delegation**: The `SysAdmin` agent is strictly restricted from modifying source code directly. It must delegate all code changes to the `CodeEditor`, ensuring every change is subject to the safety pipeline and diff previews.
-
-## 🚀 Key Features
-
-- **Goal Tracking**: Never lose track of original user requests during complex, multi-step sessions.
-- **Granular Configuration**: Assign different models to different agents. Use a cheap, fast model (e.g., `gemini-1.5-flash`) for the *Coder* and a reasoning-heavy model (e.g., `claude-3-5-sonnet`) for the *Architect*.
-- **Per-Team Configurations**: Save different model setups for different teams (e.g., a "Security" team using specialized models vs. a "Dev" team using fast models).
-- **Clipboard Integration**: Paste text or images directly into the terminal using `Ctrl+V`. Images are automatically saved and provided to agents.
-- **Persistent Memory**:
-    - **Central Store**: Project summaries and agent configurations are saved to `~/.mkpro/central_memory.db`.
-    - **Local Session**: Context is managed efficiently with `/compact` to save tokens.
-- **Multi-Provider**: seamless switching between **Ollama** (Local), **Gemini** (Google), **Bedrock** (AWS), **Azure** (OpenAI), and **Sarvam**.
-- **Multi-Runner Support**: Choose between **InMemory**, **MapDB** (persistent), and **Postgres** (enterprise) execution environments for your agents.
-- **Debug Awareness**: Agents are aware of which provider/model they are running on, helping in performance tuning and debugging.
-- **Customizable Teams**: Define your own team rosters, agent descriptions, and specialized instructions using YAML files in `~/.mkpro/teams/`.
-
-To use the new background capabilities, you simply need to tell me what you want to run and specify that it should run in the "background" or "detached."
-
-Here is how you can use it:
-
-### 1. Start a Service
-Just ask me to run a command in the background.
-*   **Example:** "Start the Spring Boot application in the background."
-*   **Example:** "Run `python server.py` as a background process."
-
-### 2. Check What's Running
-Ask for a status update.
-*   **Example:** "List running background jobs."
-*   **Example:** "Show me the logs for the running server."
-
-### 3. Stop a Service
-Ask me to kill a specific job or all of them.
-*   **Example:** "Stop the background job with ID 1."
-*   **Example:** "Kill the ping process."
-
-**Try it out:**
-Do you have a specific server or script in this project you want to start up now? (e.g., `mvn spring-boot:run`)
-
-## 💎 Supported Gemini Models
-
-`mkpro` is optimized for the latest Gemini 3 and 1.5 series models. You can configure any agent to use these models via the `/config` command or team YAML files:
-
-| Model | Best For |
+| Component | Responsibility |
 | :--- | :--- |
-| **gemini-3-pro** | **Ultimate Multimodal Reasoning**. The flagship model for complex architecture, agentic workflows, and deep interactivity. Includes 'Deep Think' reasoning capabilities. |
-| **gemini-3-flash** | **Frontier Speed**. Lightning-fast intelligence for rapid iterations, testing, and system administration. |
-| **gemini-1.5-pro** | **Large Context Reasoning**. Stable option for processing massive codebases (up to 2M tokens). |
-| **gemini-1.5-flash** | **Efficiency**. Cost-effective and reliable for high-frequency sub-agent tasks. |
+| `BootstrapService` | Application initialization, service wiring, shutdown hooks |
+| `AgentManager` | Creates LLM instances, builds runners, manages delegation tools |
+| `ToolRegistry` | Maps declarative tool names (from YAML) to `BaseTool` instances |
+| `AgentFactory` | Builds `LlmAgent` from `AgentDefinition` + resolved tools |
+| `CentralMemory` | Persistent state store (hot/shared split architecture) |
+| `MkProContext` | Application state container passed to commands and UI |
+| `TerminalUI` | JLine-based interactive terminal loop |
 
-## 🦙 Supported Ollama Models
+### CentralMemory Architecture & Modernized Storage
 
-For local, privacy-first inference, `mkpro` supports a wide range of models via **Ollama**. These are ideal for running on your own hardware (e.g., Apple Silicon, NVIDIA GPUs) without sending data to the cloud.
+CentralMemory uses a **hot/shared split** for multi-instance safety with a fully modernized, platform-aware storage layout:
 
-| Model | Best For | Recommended Variant |
-| :--- | :--- | :--- |
-| **DeepSeek-Coder-V2** | **Coding & Architecture**. State-of-the-art open model for code generation and understanding. | `deepseek-coder-v2` |
-| **Qwen 2.5 Coder** | **Code Repair & Polyglot**. Excellent at fixing bugs and supporting 92+ languages. | `qwen2.5-coder:32b` |
-| **Llama 3.3** | **General Reasoning**. Powerful all-rounder from Meta with strong logic capabilities. | `llama3.3` |
-| **Phi-4** | **Complex Reasoning**. Microsoft's small but mighty model, optimized for deep logical tasks. | `phi4` |
-| **Mistral Large 2** | **Reasoning & Instruction**. High-performance model for complex instructions. | `mistral-large` |
+- **Hot Store** (per-instance, always open): Agent statistics — high-frequency writes with zero contention between instances.
+- **Shared Store** (brief file lock with retry): Agent configs, goals, memories, MCP servers — opened briefly for writes, reads served from in-memory cache.
+- **Local Cache**: `ConcurrentHashMap` for configs, volatile lists for servers. Populated on startup, invalidated on writes, refreshable via `refreshCache()` when SyncEngine receives peer updates.
+- **Platform-Aware Directory Standards**: Stores databases, configs, caches, and logs in OS-standard locations:
+  - **Windows**: `%APPDATA%\mkpro` (roaming/shared data and configuration) and `%LOCALAPPDATA%\mkpro` (local cache/temp).
+  - **Linux / macOS**: `$XDG_CONFIG_HOME/mkpro` (or `~/.config/mkpro`) and `$XDG_DATA_HOME/mkpro` (or `~/.local/share/mkpro`).
+- **Zero Workspace Root Pollution**: All persistent databases, telemetry, and temporary files reside cleanly within the user's OS application directories, keeping repository workspaces untainted.
 
-To use these, ensure you have pulled them in Ollama (e.g., `ollama pull deepseek-coder-v2`) and update your config.
+### Declarative Tool Assignment
 
-## ☁️ Supported AWS Bedrock Models
+Agent tools are defined in team YAML files rather than hardcoded:
 
-`mkpro` integrates with **AWS Bedrock** to provide access to industry-leading enterprise models. Configure your AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) to use these.
+```yaml
+agents:
+  - name: Coder
+    tools: [file_read, clipboard, codebase_search, mcp_scan, graph_memory, fetch_url]
+    
+  - name: SysAdmin
+    tools: [shell, file_read, file_write, safe_write, clipboard]
 
-| Model | Best For | Model ID |
-| :--- | :--- | :--- |
-| **Claude 4.5 Opus** | **Advanced Software Engineering**. Leading model for complex, long-running coding tasks and research. | `anthropic.claude-opus-4-5-20251101-v1:0` |
-| **Claude 3.5 Sonnet (v2)** | **Balanced Performance**. Exceptional at coding, multi-step reasoning, and tool use. | `anthropic.claude-3-5-sonnet-20241022-v2:0` |
-| **Amazon Nova Pro** | **Enterprise Reasoning**. Powerful multimodal model for software development and mathematical analysis. | `amazon.nova-pro-v1:0` |
-| **Amazon Nova 2 Lite** | **Speed & Economy**. Cost-effective reasoning with a massive 1M token context window. | `amazon.nova-2-lite-v1:0` |
-| **Mistral Large 3** | **Multimodal Workloads**. High-precision model optimized for math and coding benchmarks. | `mistral.mistral-large-2411-v1:0` |
-
-## 🛠️ Setup & Installation
-
-### Prerequisites
-- **Google Agent Development Kit (ADK)**: This project requires the **redbus version** of ADK. You must clone and install it locally from [redbus-labs/adk-java](https://github.com/redbus-labs/adk-java) before building `mkpro`.
-- **Java 17+** and **Maven** (for building).
-- **Ollama** (Optional): For local privacy-first inference.
-- **Google API Key** (Optional): Set `GOOGLE_API_KEY` for Gemini.
-- **AWS Credentials** (Optional): Set standard AWS env vars for Bedrock.
-
-### Build
-```bash
-mvn clean package
-```
-This generates the native Windows executable `target/mkpro.exe` and a fat JAR.
-
-### Run
-```bash
-./target/mkpro.exe
+  - name: UbuntuOps
+    tools: [ssh_exec, ssh_file_transfer, ssh_list_sessions, file_read, clipboard]
+    
+  - name: Tester
+    tools: [file_read, file_write, safe_write, clipboard, shell, selenium]
 ```
 
-## 🏘️ Teams & Agent Workflows
+Available tool names: `file_read`, `file_write`, `safe_write`, `clipboard`, `shell`, `image`, `codebase_search`, `multi_project_search`, `mcp_scan`, `graph_memory`, `fetch_url`, `stats`, `selenium`, `scripting`, `verify_fact`, `ssh_exec`, `ssh_file_transfer`, `ssh_list_sessions`, `screen_capture`.
 
-`mkpro` now supports multiple agent team configurations. You can switch between different engineering squads depending on your task.
+## 🎓 Academic Research View & Modern UI
 
-### How it Works:
-1.  **Configuration Files**: Team definitions are stored in `~/.mkpro/teams/` as YAML files.
-2.  **Default Team**: The `default.yaml` includes the full roster of 12 agents (Architect, Coder, DevOps, etc.).
-3.  **Minimal Team**: Use `minimal.yaml` for lighter tasks requiring only the Coordinator and Coder.
-4.  **Customization**: You can create your own YAML file (e.g., `audi-security.yaml`) and load it using `/team audi-security`.
+`mkpro` features a modern UI architecture with dual-view routing and publication-grade aesthetics:
+
+- **Academic Research View (Default Route `/`)**: Serving `academic_view.html` at `http://localhost:8080/`, this default view provides a distraction-free, publication-styled workbench optimized for in-depth code reading, literature synthesis, and architectural research. Features minimalist editorial aesthetics with **EB Garamond** serif typography, on-demand slide-over file explorer (`Ctrl+B`), line-numbered manuscript inspector, multi-modal lightbox zoom (`Ctrl+V`), and 1-click response copying.
+- **Classic View (`/classic`)**: Access the traditional dashboard and terminal-style layout via `http://localhost:8080/classic`.
+- **Cross-Navigation Header Links**: Seamlessly toggle between Academic View, Classic View, Knowledge Dashboard (`/knowledge`), MapDB browser (`/db`), and Sandbox credentials.
+
+## 👁️ Modular File Inspector & Media Viewers
+
+The web interface includes an advanced, feature-rich file and artifact inspection suite:
+
+- **Dual-Mode Tabbed Viewer**: Instantly switch between `[ 👁️ Rendered Preview ]` and `[ 📝 Source Code ]` for Markdown and HTML documents.
+- **Integrated PDF.js Canvas Viewer**: Native client-side PDF rendering with page navigation, zoom controls, and text selection.
+- **Lightbox Image Pan/Zoom & Binary Fallbacks**: High-resolution image inspection with interactive zoom/pan capabilities and informative fallback cards for binary or unsupported artifacts.
+
+## 🖥️ Multi-Monitor Screen Capture (`/capture`)
+
+Capture and analyze visual context directly from your desktop environments:
+- **Multi-Monitor Screenshot Engine**: Automatically discovers and captures screenshots across all active displays, saving artifacts to `.mkpro/captures/`.
+- **Interactive Chat Cards**: Rendered thumbnails in the chat stream with instant inspection.
+- **Automatic File Inspector Popup**: Opens captured images directly in the Modular File Inspector for deep visual review by vision-capable models (e.g., Gemini).
+
+## ⚡ Smart Event Filtering Plugin (`/compact`)
+
+Powered by the Google ADK `SmartEventFilterPlugin`, `mkpro` maintains optimal context windows during long-running sessions:
+- **Anchor Pinning**: Automatically preserves critical reference points including Turn 0 user goal, system instructions, and pinned memory events.
+- **Tool Output Pruning & Churn Eviction**: Automatically prunes oversized tool outputs (> 2KB) and evicts stale tool churn.
+- **Interactive Slash Commands**:
+  - `/compact [turns]` — Compacts conversation history.
+  - `/compact filter` — Displays event filtering statistics.
+  - `/compact prune <chars>` — Adjusts tool output pruning threshold.
+  - `/compact churn <on|off>` — Toggles stale tool churn eviction.
+
+## 📦 Persistent Remote Sandbox & SSH Infrastructure (`UbuntuOps`)
+
+`mkpro` features robust remote infrastructure management through the dedicated `UbuntuOps` specialist agent:
+- **Persistent `SshSessionManager`**: Manages persistent SSH sessions with automatic keep-alive, session aliasing, and multiplexing.
+- **Web UI `📦 Sandbox` Credentials Modal**: Secure credential configuration supporting Password authentication, SSH Key Files, and Inline Private Keys.
+- **AES-GCM Encryption in MapDB**: All sensitive credentials are encrypted using AES-GCM and securely stored in CentralMemory MapDB.
+- **Startup Auto-Reconnecting**: Automatically re-establishes persistent SSH sessions upon application startup.
+- **High-Speed Bidirectional SFTP**: Transfer files seamlessly between local workspaces and remote sandboxes using `ssh_file_transfer` or `/ssh transfer`.
+- **Remote Security Policies**: Enforced `RemoteCommandPolicy` and `RemotePathValidator` preventing dangerous operations (e.g., destructive deletions or root-level modifications) on remote systems.
+
+## 🌐 REST API
+
+When running with `--web`, mkpro exposes a full HTTP REST API alongside the WebSocket chat. No additional configuration needed.
+
+### Endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/chat` | Synchronous chat — send message, get full response |
+| `POST` | `/api/chat/stream` | Streaming chat via Server-Sent Events (SSE) |
+| `POST` | `/api/command` | Execute CLI commands (`/know`, `/train`, `/status`, `/ssh`, etc.) |
+| `GET` | `/api/status` | System info (version, runner, scheduler, Markov stats) |
+| `GET` | `/api/agents` | List all agents with tools, model, and provider |
+| `GET` | `/api/knowledge` | All knowledge topics as JSON |
+| `GET` | `/api/knowledge/search?q=` | TF-IDF knowledge search |
+| `POST` | `/api/knowledge/topics` | Add a new knowledge topic |
+| `DELETE` | `/api/knowledge/topics?name=` | Remove a knowledge topic |
+| `GET` | `/api/git/branch` | Current branch + all local/remote branches |
+| `POST` | `/api/git/switch` | Switch git branch (with multi-user confirmation) |
+| `GET` | `/api/files?path=` | List project directory contents |
+| `GET` | `/api/file-content?path=` | Read file content (10KB cap) |
+| `GET` | `/api/file-raw?path=` | Raw binary file with MIME type (20MB cap) |
+| `GET` | `/api/history?offset=&limit=` | Paginated chat history |
+| `POST` | `/api/edit/approve` | Approve pending file edit |
+| `POST` | `/api/edit/reject` | Reject pending file edit |
+| `GET` | `/api/edit/pending` | List pending edit proposals |
+| `GET` | `/api/db` | MapDB store browser (all stores as JSON) |
+
+### Usage Examples
+
+```bash
+# Ask a question (synchronous, blocks until complete)
+curl -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "explain the Markov router architecture"}'
+
+# Stream response (Server-Sent Events)
+curl -N -X POST http://localhost:8080/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"message": "write unit tests for TopicIndex"}'
+
+# Execute a CLI command
+curl -X POST http://localhost:8080/api/command \
+  -H "Content-Type: application/json" \
+  -d '{"command": "/know status"}'
+
+# Get system status
+curl http://localhost:8080/api/status
+
+# List all agents
+curl http://localhost:8080/api/agents
+
+# Search knowledge base
+curl "http://localhost:8080/api/knowledge/search?q=kubernetes+security"
+
+# Browse project files
+curl "http://localhost:8080/api/files?path=src/main/java/com/mkpro"
+```
+
+### Response Format
+
+**POST /api/chat**
+```json
+{
+  "agent": "SecurityAuditor",
+  "response": "Here's my analysis of the security...",
+  "duration_ms": 3200
+}
+```
+
+**POST /api/chat/stream** (SSE events)
+```
+data: {"type":"stream_start","agent":"Coder"}
+data: {"type":"chunk","text":"Here's my analysis..."}
+data: {"type":"chunk","text":" of the code."}
+data: {"type":"stream_end"}
+```
+
+**POST /api/command**
+```json
+{"output": "Knowledge Scheduler Status\n  ✓ kubernetes-security → 2026-07-20T15:30\n..."}
+```
+
+On Windows:
+```batch
+mkpro-web.bat
+mkpro-scheduler.bat
+mkpro-headless.bat
+mkpro-full.bat
+```
+
+On first launch, select your execution runner (InMemory, MapDB, or Postgres). Use `/config` to set your default provider and model.
+
+## 📚 Additional Documentation
+
+- **[Knowledge Scheduler](README_knowledge.md)** — Autonomous topic-based knowledge accumulation, TF-IDF search, topic discovery, confidence scoring, and the self-improving flywheel.
+- **[Markov Chain Router](README_markov.md)** — Intent classification, transition probability matrix, learned patterns, stall prediction, and training pipeline.
+- **[Fact Engine](README_fe.md)** — Verified math formulas, relationship graph, Groovy verification scripts, Knowledge→Fact pipeline, project fact discovery, and confidence scoring.
+
+## 🤝 Contributing
+
+We welcome contributions! Please feel free to submit Pull Requests or open issues for feature requests and bug reports.
+
+## 📜 License
+
+This project is licensed under the Apache License 2.0.

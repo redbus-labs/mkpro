@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mkpro.utils.PathUtils;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -13,7 +14,6 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,7 +22,7 @@ import java.util.List;
 
 public class InstanceRegistry {
     private static final ObjectMapper mapper = new ObjectMapper();
-    private static final Path REGISTRY_PATH = Paths.get(System.getProperty("user.home"), ".mkpro", "instances.json");
+    private static final Path REGISTRY_PATH = PathUtils.getDataDir().resolve("instances.json");
 
     public static class InstanceInfo {
         public String name;

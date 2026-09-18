@@ -1,0 +1,410 @@
+package com.mkpro.routing;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * MarkovTrainer builds and updates the MarkovRouter's transition matrix from JSONL training data.
+ * 
+ * Reads JSONL files from .mkpro/datajsonl/ directory and extracts:
+ * - User message → classified into TaskCategory via IntentClassifier
+ * - Assistant response → parsed to identify which agent was delegated to
+ * 
+ * The trainer can run incrementally — new JSONL files add to the existing matrix.
+ */
+public class MarkovTrainer {
+
+    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final IntentClassifier classifier = new IntentClassifier();
+
+    // Pattern to extract agent name from delegation responses
+    // Matches: "Calling ask_coder", "ask_sys_admin", etc.
+    private static final Pattern DELEGATION_PATTERN = Pattern.compile(
+        "(?:Calling |\\[Calling )?ask_([a-z_]+)", Pattern.CASE_INSENSITIVE);
+    
+    // Match "delegate to the Architect", "I'll route this to the Coder"
+    private static final Pattern AGENT_NAME_PATTERN = Pattern.compile(
+        "(?:delegate|route|Delegating) (?:this )?(?:to the |to )([A-Z][a-zA-Z]+)", Pattern.CASE_INSENSITIVE);
+    
+    // Match ">> Delegating to SysAdmin..." (real session output from ActionLogger)
+    private static final Pattern DIRECT_DELEGATION_PATTERN = Pattern.compile(
+        ">> Delegating to ([A-Za-z]+)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Train the router from all JSONL files in a directory.
+     * Returns the number of examples processed.
+     */
+    public static int trainFromDirectory(MarkovRouter router, Path directory) {
+        if (!Files.isDirectory(directory)) return 0;
+
+        int total = 0;
+        java.util.Map<String, java.util.List<String>> messagesPerCategory = new java.util.HashMap<>();
+        
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory, "*.jsonl")) {
+            for (Path file : stream) {
+                total += trainFromFile(router, file, messagesPerCategory);
+            }
+        } catch (IOException e) {
+            System.err.println("[MarkovTrainer] Error reading directory: " + e.getMessage());
+        }
+        
+        // Extract learned patterns (unigrams + bigrams) and store in router
+        if (!messagesPerCategory.isEmpty()) {
+            java.util.Map<String, java.util.Set<String>> patterns = extractLearnedPatterns(messagesPerCategory);
+            router.setLearnedPatterns(patterns);
+        }
+        
+        return total;
+    }
+
+    /**
+     * Train from a single JSONL file, collecting user messages per category.
+     */
+    public static int trainFromFile(MarkovRouter router, Path file) {
+        return trainFromFile(router, file, null);
+    }
+
+    /**
+     * Train from a single JSONL file.
+     */
+    public static int trainFromFile(MarkovRouter router, Path file, java.util.Map<String, java.util.List<String>> messagesPerCategory) {
+        int count = 0;
+        String lastAgent = null;
+
+        try (BufferedReader reader = Files.newBufferedReader(file)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+
+                try {
+                    JsonNode root = mapper.readTree(line);
+                    JsonNode messages = root.get("messages");
+                    if (messages == null || !messages.isArray()) continue;
+
+                    String userMessage = null;
+                    String assistantMessage = null;
+
+                    for (JsonNode msg : messages) {
+                        String role = msg.has("role") ? msg.get("role").asText() : "";
+                        String content = msg.has("content") ? msg.get("content").asText() : "";
+                        
+                        if ("user".equals(role)) userMessage = content;
+                        if ("assistant".equals(role)) assistantMessage = content;
+                    }
+
+                    if (userMessage != null && assistantMessage != null) {
+                        // Classify the user's intent
+                        IntentClassifier.TaskCategory category = classifier.classify(userMessage);
+
+                        // Extract which agent was selected
+                        String selectedAgent = extractAgent(assistantMessage);
+
+                        if (selectedAgent != null) {
+                            // Use category from classification, or infer from agent if GENERAL
+                            if (category == IntentClassifier.TaskCategory.GENERAL) {
+                                category = inferCategoryFromAgent(selectedAgent);
+                            }
+                            // Only record routing transitions for non-GENERAL categories
+                            if (category != IntentClassifier.TaskCategory.GENERAL) {
+                                router.recordTransition(category, lastAgent, selectedAgent);
+                                lastAgent = selectedAgent;
+                                count++;
+                            }
+                            
+                            // Collect user message for pattern learning (all categories including GENERAL-inferred)
+                            if (messagesPerCategory != null && category != IntentClassifier.TaskCategory.GENERAL) {
+                                messagesPerCategory
+                                    .computeIfAbsent(category.name(), k -> new java.util.ArrayList<>())
+                                    .add(userMessage);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    // Skip malformed lines
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("[MarkovTrainer] Error reading file " + file + ": " + e.getMessage());
+        }
+
+        return count;
+    }
+
+    // Valid agent names — anything else is a false positive
+    private static final java.util.Set<String> VALID_AGENTS = java.util.Set.of(
+        "Coordinator", "GoalTracker", "Coder", "CodeEditor", "SysAdmin", "GitAgent",
+        "Tester", "DocWriter", "SecurityAuditor", "Architect", "DatabaseAdmin",
+        "DevOps", "DataAnalyst", "AndroidDev", "IosDev", "ProductManager"
+    );
+
+    /**
+     * Extract the agent name from an assistant response.
+     */
+    static String extractAgent(String response) {
+        if (response == null) return null;
+
+        // Try tool-call pattern: "ask_coder", "ask_sys_admin"
+        Matcher m = DELEGATION_PATTERN.matcher(response);
+        if (m.find()) {
+            String agent = normalizeAgentName(m.group(1));
+            if (VALID_AGENTS.contains(agent)) return agent;
+        }
+
+        // Try direct delegation pattern: ">> Delegating to SysAdmin..."
+        m = DIRECT_DELEGATION_PATTERN.matcher(response);
+        if (m.find()) {
+            String agent = normalizeAgentName(m.group(1));
+            if (VALID_AGENTS.contains(agent)) return agent;
+        }
+
+        // Try natural language pattern: "delegate to the Architect"
+        m = AGENT_NAME_PATTERN.matcher(response);
+        if (m.find()) {
+            String agent = normalizeAgentName(m.group(1));
+            if (VALID_AGENTS.contains(agent)) return agent;
+        }
+
+        return null;
+    }
+
+    /**
+     * Train the Maker completion patterns from maker_sequences.jsonl.
+     * Format: {"category": "CODING", "agents": [...], "tools": [...], "turns": 4, "success": true}
+     */
+    public static int trainMakerSequences(MarkovRouter router, java.nio.file.Path file) {
+        if (!java.nio.file.Files.exists(file)) return 0;
+        int count = 0;
+
+        try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(file)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                try {
+                    com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(line);
+                    String categoryStr = root.has("category") ? root.get("category").asText() : null;
+                    boolean success = root.has("success") && root.get("success").asBoolean();
+                    int turns = root.has("turns") ? root.get("turns").asInt() : 1;
+
+                    if (categoryStr == null) continue;
+
+                    IntentClassifier.TaskCategory category;
+                    try {
+                        category = IntentClassifier.TaskCategory.valueOf(categoryStr);
+                    } catch (IllegalArgumentException e) {
+                        continue;
+                    }
+
+                    // Extract tools list
+                    java.util.List<String> tools = new java.util.ArrayList<>();
+                    if (root.has("tools") && root.get("tools").isArray()) {
+                        for (var node : root.get("tools")) {
+                            tools.add(node.asText());
+                        }
+                    }
+
+                    // Extract agents list
+                    java.util.List<String> agents = new java.util.ArrayList<>();
+                    if (root.has("agents") && root.get("agents").isArray()) {
+                        for (var node : root.get("agents")) {
+                            agents.add(node.asText());
+                        }
+                    }
+
+                    router.recordCompletion(category, tools, success, turns);
+
+                    // Layer 2: Record agent→tool transitions
+                    // If single agent, attribute all tools to them
+                    // If multiple agents, attribute all tools to each (slight overcount, still valid signal)
+                    if (!tools.isEmpty() && !agents.isEmpty()) {
+                        java.util.Set<String> uniqueAgents = new java.util.LinkedHashSet<>(agents);
+                        for (String agent : uniqueAgents) {
+                            router.recordToolUsage(agent, category, tools);
+                        }
+                    }
+
+                    count++;
+                } catch (Exception e) {
+                    // Skip malformed lines
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[MarkovTrainer] Error reading maker sequences: " + e.getMessage());
+        }
+        return count;
+    }
+
+    // Stopwords to ignore during pattern extraction
+    private static final java.util.Set<String> STOPWORDS = java.util.Set.of(
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "shall", "can", "need", "to", "of", "in",
+        "for", "on", "with", "at", "by", "from", "as", "into", "through",
+        "and", "but", "or", "not", "so", "yet", "all", "any", "some", "no",
+        "than", "too", "very", "just", "if", "when", "where", "how", "what",
+        "which", "who", "this", "that", "these", "those", "it", "its", "he",
+        "she", "they", "them", "we", "us", "me", "my", "your", "his", "her",
+        "our", "their", "i", "you", "please", "also", "about", "up", "out",
+        "then", "here", "there", "now", "make", "like", "get", "go", "see"
+    );
+
+    /**
+     * Extract distinctive unigrams and bigrams per category from collected user messages.
+     * Uses TF-IDF-like scoring: tokens that appear frequently in ONE category but rarely in others.
+     *
+     * @param messagesPerCategory Map of category name to list of user messages
+     * @return Map of category name to set of distinctive patterns (bigrams prefixed with "B:")
+     */
+    static java.util.Map<String, java.util.Set<String>> extractLearnedPatterns(
+            java.util.Map<String, java.util.List<String>> messagesPerCategory) {
+
+        // Count token frequency per category
+        java.util.Map<String, java.util.Map<String, Integer>> categoryTokenCounts = new java.util.HashMap<>();
+        // Count how many categories each token appears in (for IDF)
+        java.util.Map<String, java.util.Set<String>> tokenCategories = new java.util.HashMap<>();
+
+        for (var entry : messagesPerCategory.entrySet()) {
+            String category = entry.getKey();
+            java.util.Map<String, Integer> tokenCounts = new java.util.HashMap<>();
+
+            for (String message : entry.getValue()) {
+                String[] words = message.toLowerCase().replaceAll("[^a-z0-9\\s]", " ").split("\\s+");
+
+                // Unigrams
+                for (String word : words) {
+                    if (word.length() >= 3 && !STOPWORDS.contains(word)) {
+                        tokenCounts.merge(word, 1, Integer::sum);
+                        tokenCategories.computeIfAbsent(word, k -> new java.util.HashSet<>()).add(category);
+                    }
+                }
+
+                // Bigrams
+                for (int i = 0; i < words.length - 1; i++) {
+                    if (words[i].length() >= 2 && words[i + 1].length() >= 2
+                        && !STOPWORDS.contains(words[i]) && !STOPWORDS.contains(words[i + 1])) {
+                        String bigram = "B:" + words[i] + " " + words[i + 1];
+                        tokenCounts.merge(bigram, 1, Integer::sum);
+                        tokenCategories.computeIfAbsent(bigram, k -> new java.util.HashSet<>()).add(category);
+                    }
+                }
+            }
+
+            categoryTokenCounts.put(category, tokenCounts);
+        }
+
+        // Score and select top patterns per category
+        int totalCategories = Math.max(1, messagesPerCategory.size());
+        java.util.Map<String, java.util.Set<String>> result = new java.util.HashMap<>();
+
+        for (var entry : categoryTokenCounts.entrySet()) {
+            String category = entry.getKey();
+            java.util.Map<String, Integer> counts = entry.getValue();
+
+            // Need minimum 5 messages to extract patterns
+            if (messagesPerCategory.get(category).size() < 5) continue;
+
+            // Score each token: TF * IDF
+            java.util.List<java.util.Map.Entry<String, Double>> scored = new java.util.ArrayList<>();
+            for (var tokenEntry : counts.entrySet()) {
+                String token = tokenEntry.getKey();
+                int tf = tokenEntry.getValue();
+
+                // Must appear at least 3 times in this category
+                if (tf < 3) continue;
+
+                // IDF: distinctive means appears in few categories
+                int categoriesWithToken = tokenCategories.getOrDefault(token, java.util.Set.of()).size();
+                double idf = Math.log((double) (totalCategories + 1) / (categoriesWithToken + 1));
+
+                // Boost bigrams (2x weight)
+                double boost = token.startsWith("B:") ? 2.0 : 1.0;
+                double score = tf * idf * boost;
+
+                scored.add(java.util.Map.entry(token, score));
+            }
+
+            // Sort by score descending, keep top 20
+            scored.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
+            java.util.Set<String> topPatterns = new java.util.LinkedHashSet<>();
+            for (int i = 0; i < Math.min(20, scored.size()); i++) {
+                topPatterns.add(scored.get(i).getKey());
+            }
+
+            if (!topPatterns.isEmpty()) {
+                result.put(category, topPatterns);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Infer a likely category from the agent that was delegated to.
+     * Used when the user's message classifies as GENERAL but delegation still happened.
+     */
+    private static IntentClassifier.TaskCategory inferCategoryFromAgent(String agent) {
+        if (agent == null) return IntentClassifier.TaskCategory.GENERAL;
+        switch (agent) {
+            case "Coder": case "CodeEditor": return IntentClassifier.TaskCategory.CODING;
+            case "Tester": return IntentClassifier.TaskCategory.TESTING;
+            case "SysAdmin": return IntentClassifier.TaskCategory.SYSADMIN;
+            case "GitAgent": return IntentClassifier.TaskCategory.GIT;
+            case "DocWriter": return IntentClassifier.TaskCategory.DOCS;
+            case "SecurityAuditor": return IntentClassifier.TaskCategory.SECURITY;
+            case "Architect": return IntentClassifier.TaskCategory.ARCHITECTURE;
+            case "DatabaseAdmin": return IntentClassifier.TaskCategory.DATABASE;
+            case "DevOps": return IntentClassifier.TaskCategory.DEVOPS;
+            case "DataAnalyst": return IntentClassifier.TaskCategory.DATA;
+            case "AndroidDev": return IntentClassifier.TaskCategory.ANDROID;
+            case "IosDev": return IntentClassifier.TaskCategory.IOS;
+            case "GoalTracker": return IntentClassifier.TaskCategory.GOALS;
+            case "ProductManager": return IntentClassifier.TaskCategory.PRODUCT;
+            default: return IntentClassifier.TaskCategory.GENERAL;
+        }
+    }
+
+    /**
+     * Normalize tool-name format to agent display name.
+     */
+    static String normalizeAgentName(String raw) {
+        if (raw == null) return null;
+        raw = raw.toLowerCase().trim();
+
+        // Remove "ask_" prefix if present
+        if (raw.startsWith("ask_")) raw = raw.substring(4);
+
+        // Map known patterns
+        switch (raw) {
+            case "coder": case "developer": return "Coder";
+            case "code_editor": case "codeeditor": return "CodeEditor";
+            case "sys_admin": case "sysadmin": return "SysAdmin";
+            case "git_agent": case "gitagent": return "GitAgent";
+            case "tester": case "qa": return "Tester";
+            case "doc_writer": case "docwriter": return "DocWriter";
+            case "security_auditor": case "securityauditor": return "SecurityAuditor";
+            case "architect": return "Architect";
+            case "database_admin": case "databaseadmin": case "dba": return "DatabaseAdmin";
+            case "dev_ops": case "devops": return "DevOps";
+            case "data_analyst": case "dataanalyst": return "DataAnalyst";
+            case "android_dev": case "androiddev": return "AndroidDev";
+            case "ios_dev": case "iosdev": return "IosDev";
+            case "goal_tracker": case "goaltracker": return "GoalTracker";
+            case "coordinator": return "Coordinator";
+            default:
+                // CamelCase it: first letter upper
+                if (!raw.isEmpty()) {
+                    return Character.toUpperCase(raw.charAt(0)) + raw.substring(1);
+                }
+                return raw;
+        }
+    }
+}

@@ -1,21 +1,25 @@
-docs: update GitAgent prompt instructions [mkpro]
+fix(facts): synchronize FactEngine, LessonPromotionEngine, and CentralMemory persistence with 100% passing tests [mkpro]
 
-Updated the GitAgent instructions in default.yaml and polyglot.yaml to require the '[mkpro]' suffix in the commit summary.
-
-- Added new versioning metadata for the 3.4.x and 3.5.x lines.
-- Incorporated CDS and Virtual Thread performance optimization documentation.
-- Updated security patch table with recent CVE mitigations.
-- Standardized architectural trend mapping for 2024-2026.
-- Fixed minor formatting issues in the report tables.
-- Expanded the "Actionable Insights" section for better CI/CD automation guidance.
-- Added comprehensive documentation links to the "DISCOVER_TOPIC" section.
-- Integrated the latest Spring AI preview feature summary.
-- Enhanced the "Current Version Status" table with explicit EOL and preview dates.
+- Synchronized FactEngine and FactStore integration with relationship graph persistence.
+- Unified LessonPromotionEngine with CentralMemory storage and DistilledLesson categories.
+- Updated Fact models, RelationshipGraph, RelationshipTriple, and MakerLoop.
+- Fixed test suites across facts, lesson promotion distillation, and maker routing systems.
+- Verified entire test suite passes with 611 tests and 0 failures.
 
 ---
-AI Resource Usage (Session mkpro-manoj.kumar:GitAgent:C:\DevTools\rblab\mkpro (auto-resolved)):
-Session 'mkpro-manoj.kumar:GitAgent:C:\DevTools\rblab\mkpro (auto-resolved)' has consumed 3,881 tokens in total.
+AI Resource Usage (Session default-session (auto-resolved)):
+Session 'default-session (auto-resolved)' has consumed 5,921,318 tokens in total.
 Breakdown by Agent:
- - GitAgent: 3,881 tokens
+ - Coder: 0 tokens
+ - Architect: 0 tokens
+ - GitAgent: 0 tokens
+ - Coordinator: 5,921,318 tokens
 Breakdown by Model:
- - gemini-3.1-flash-lite: 3,881 tokens
+ - gemini-3-flash-preview: 2,387,531 tokens
+ - gemini-3.1-pro-preview: 1,809,471 tokens
+ - llama3: 0 tokens
+ - ornith-1.5:9b: 32,768 tokens
+ - gemini-3.1-flash-lite@GEMINI: 0 tokens
+ - laguna-xs-2.1:latest: 17,709 tokens
+ - gemini-3.7-flash: 752,388 tokens
+ - gemma4:12b: 921,451 tokens

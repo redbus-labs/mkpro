@@ -136,8 +136,8 @@ public class TerminalUI {
                             }
                         }
 
-                        com.google.genai.types.Content message = com.google.genai.types.Content.fromParts(
-                            new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(line)}
+                        Content message = Content.fromParts(
+                            new Part[]{Part.fromText(line)}
                         );
 
                         AtomicBoolean isThinking = new AtomicBoolean(true);
@@ -186,12 +186,11 @@ public class TerminalUI {
                         spinnerThread.start();
 
                         // Stream knowledge monitor: detect learning moments during live generation
-                        if (context.getKnowledgeBase() != null) {
+                        if (context.getKnowledgeScheduler() != null && context.getTopicIndex() != null) {
                             streamKnowledgeMonitor = new com.mkpro.knowledge.StreamKnowledgeMonitor(
-                                context.getKnowledgeBase(),
-                                context.getRunner(),
-                                context.getCurrentSession(),
-                                displayAgent
+                                context.getKnowledgeScheduler(),
+                                context.getTopicIndex(),
+                                prompt -> null
                             );
                         }
 
@@ -207,7 +206,7 @@ public class TerminalUI {
                                     // Handle content chunks
                                     event.content().ifPresent(c -> {
                                         c.parts().ifPresent(parts -> {
-                                            for (com.google.genai.types.Part p : parts) {
+                                            for (Part p : parts) {
                                                 p.text().ifPresent(text -> {
                                                     if (firstChunkReceived.compareAndSet(false, true)) {
                                                         isThinking.set(false);
@@ -282,8 +281,8 @@ public class TerminalUI {
                                             if (coordConfig.getProvider() != null) {
                                                 providerStr = coordConfig.getProvider().name();
                                             }
-                                            if (coordConfig.getModel() != null && !coordConfig.getModel().isBlank()) {
-                                                modelStr = coordConfig.getModel();
+                                            if (coordConfig.getModelName() != null && !coordConfig.getModelName().isBlank()) {
+                                                modelStr = coordConfig.getModelName();
                                             }
                                         }
                                     }

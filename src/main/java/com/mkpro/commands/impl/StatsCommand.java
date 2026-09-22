@@ -73,18 +73,32 @@ public class StatsCommand implements Command {
         // Example visualization
         String bar = "[████████░░░░]";
         out.println("Activity Density: " + bar);
-
-        out.println(MkPro.ANSI_YELLOW + "Breakdown by Agent:" + MkPro.ANSI_RESET);
-        stats.stream()
-            .collect(Collectors.groupingBy(AgentStat::getAgentName, Collectors.summingLong(AgentStat::getTotalTokens)))
-            .entrySet().stream()
-            .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-            .forEach(e -> out.printf(" - %-15s: %s tokens\n", e.getKey(), String.format("%,d", e.getValue())));
     }
 
     private void printBreakdowns(PrintWriter out, List<AgentStat> stats) {
         long totalTokens = stats.stream().mapToLong(AgentStat::getTotalTokens).sum();
-        
+
+        // Breakdown by Agent:
+        Map<String, Long> agentTokens = stats.stream()
+                .collect(Collectors.groupingBy(
+                        s -> (s.getAgentName() != null && !s.getAgentName().trim().isEmpty()) ? s.getAgentName().trim() : "default",
+                        Collectors.summingLong(AgentStat::getTotalTokens)
+                ));
+
+        out.println(MkPro.ANSI_YELLOW + "Breakdown by Agent:" + MkPro.ANSI_RESET);
+        agentTokens.entrySet().stream()
+            .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+            .forEach(e -> {
+                long agentTotal = e.getValue();
+                double percent = (totalTokens > 0) ? (agentTotal * 100.0 / totalTokens) : 0;
+                int filled = (int) (percent / 10);
+                StringBuilder bar = new StringBuilder("[");
+                for (int i = 0; i < 12; i++) bar.append(i < filled ? "█" : "░");
+                bar.append("]");
+                out.printf(" - %-15s: %s tokens (%d%%) %s\n", e.getKey(), String.format("%,d", agentTotal), (int) percent, bar.toString());
+            });
+
+        // Breakdown by Model:
         Map<String, Long> modelTokens = stats.stream()
                 .collect(Collectors.groupingBy(
                         s -> (s.getModel() != null && !s.getModel().trim().isEmpty()) ? s.getModel().trim() : "default",
@@ -92,7 +106,6 @@ public class StatsCommand implements Command {
                 ));
 
         out.println(MkPro.ANSI_YELLOW + "Breakdown by Model:" + MkPro.ANSI_RESET);
-        
         modelTokens.entrySet().stream()
             .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
             .forEach(e -> {
@@ -102,7 +115,7 @@ public class StatsCommand implements Command {
                 StringBuilder bar = new StringBuilder("[");
                 for (int i = 0; i < 12; i++) bar.append(i < filled ? "█" : "░");
                 bar.append("]");
-                out.printf(" - %-15s: %s tokens (%d%%) %s\n", e.getKey(), String.format("%,d", modelTotal), (int)percent, bar.toString());
+                out.printf(" - %-15s: %s tokens (%d%%) %s\n", e.getKey(), String.format("%,d", modelTotal), (int) percent, bar.toString());
             });
     }
 

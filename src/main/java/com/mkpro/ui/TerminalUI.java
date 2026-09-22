@@ -149,154 +149,78 @@ public class TerminalUI {
                         String displayModel = displayConfig != null ? displayConfig.getModelName() : "llama3";
                         String displayProvider = displayConfig != null ? displayConfig.getProvider().name() : "OLLAMA";
                         
-                        if (markovRouted) {
-                            // Extract agent name from the rewritten line "Delegate to AgentName: ..."
-                            String routedLine = line;
-                            if (routedLine.startsWith("Delegate to ")) {
-                                int colonIdx = routedLine.indexOf(':');
-                                if (colonIdx > 12) {
-                                    displayAgent = routedLine.substring(12, colonIdx);
-                                    // Try to get the routed agent's model
-                                    com.mkpro.models.AgentConfig routedConfig = context.getAgentConfigs().get(displayAgent);
-                                    if (routedConfig != null) {
-                                        displayModel = routedConfig.getModelName();
-                                        displayProvider = routedConfig.getProvider().name();
-                                    }
+                        // Check if the user prompt was explicitly delegated or prefix-routed
+                        if (line.toLowerCase().startsWith("delegate to ")) {
+                            int colonIdx = line.indexOf(':');
+                            if (colonIdx > 12) {
+                                String targetName = line.substring(12, colonIdx).trim();
+                                com.mkpro.models.AgentConfig targetCfg = context.getAgentConfigs().get(targetName);
+                                if (targetCfg != null) {
+                                    displayAgent = targetName;
+                                    displayModel = targetCfg.getModelName();
+                                    displayProvider = targetCfg.getProvider().name();
                                 }
                             }
                         }
-                        String thinkingLabel = displayAgent + "[" + displayModel + "@" + displayProvider + "] ";
-                        // Capture for lambda access
+
+                        // Spinner thread: visual feedback while waiting for first token
                         final String finalDisplayAgent = displayAgent;
                         final String finalDisplayModel = displayModel;
-
-                        // Start spinner daemon thread with color transitions
+                        final String finalDisplayProvider = displayProvider;
                         Thread spinnerThread = new Thread(() -> {
-                            String[] syms = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
-                            // Smooth color transition: blue → orange → white → blue...
-                            // Using 256-color ANSI: blue(33), orange shades(214,208,202), white(255)
-                            String[] colors = {
-                                "\u001b[38;5;33m",  // blue
-                                "\u001b[38;5;39m",  // light blue
-                                "\u001b[38;5;45m",  // cyan-blue
-                                "\u001b[38;5;81m",  // sky
-                                "\u001b[38;5;117m", // pale blue
-                                "\u001b[38;5;255m", // white
-                                "\u001b[38;5;223m", // pale orange
-                                "\u001b[38;5;216m", // light orange
-                                "\u001b[38;5;214m", // orange
-                                "\u001b[38;5;208m", // deep orange
-                                "\u001b[38;5;202m", // red-orange
-                                "\u001b[38;5;214m", // orange
-                                "\u001b[38;5;223m", // pale orange
-                                "\u001b[38;5;255m", // white
-                                "\u001b[38;5;153m", // ice blue
-                                "\u001b[38;5;111m", // medium blue
-                            };
-                            int spinnerIdx = 0;
-                            int colorIdx = 0;
-                            try {
-                                org.jline.terminal.Terminal terminal = context.getLineReader().getTerminal();
-                                while (isThinking.get() && !firstChunkReceived.get()) {
-                                    String color = colors[colorIdx % colors.length];
-                                    String sym = syms[spinnerIdx % syms.length];
-                                    terminal.writer().print("\r" + color + sym + " " + thinkingLabel + ANSI_RESET);
-                                    terminal.writer().flush();
-                                    spinnerIdx++;
-                                    colorIdx++;
-                                    Thread.sleep(80);
-                                }
-                                // Clear the spinner line
-                                terminal.writer().print("\r" + " ".repeat(thinkingLabel.length() + 4) + "\r");
-                                terminal.writer().flush();
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            } catch (Exception ignored) {
-                                // Fallback to System.out
-                                while (isThinking.get() && !firstChunkReceived.get()) {
-                                    String color = colors[colorIdx % colors.length];
-                                    String sym = syms[spinnerIdx % syms.length];
-                                    System.out.print("\r" + color + sym + " " + thinkingLabel + ANSI_RESET);
-                                    System.out.flush();
-                                    spinnerIdx++;
-                                    colorIdx++;
-                                    try { Thread.sleep(80); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
-                                }
-                                System.out.print("\r" + " ".repeat(thinkingLabel.length() + 4) + "\r");
+                            String[] frames = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+                            int i = 0;
+                            while (isThinking.get()) {
+                                System.out.print("\r" + ANSI_CYAN + frames[i % frames.length] 
+                                    + " " + finalDisplayAgent + " (" + finalDisplayProvider + "/" + finalDisplayModel + ") is thinking..." + ANSI_RESET);
                                 System.out.flush();
+                                i++;
+                                try {
+                                    Thread.sleep(80);
+                                } catch (InterruptedException ignored) {
+                                    break;
+                                }
                             }
                         });
                         spinnerThread.setDaemon(true);
                         spinnerThread.start();
 
+                        // Stream knowledge monitor: detect learning moments during live generation
+                        if (context.getKnowledgeBase() != null) {
+                            streamKnowledgeMonitor = new com.mkpro.knowledge.StreamKnowledgeMonitor(
+                                context.getKnowledgeBase(),
+                                context.getRunner(),
+                                context.getCurrentSession(),
+                                displayAgent
+                            );
+                        }
+
                         try {
-                            final String finalLine = line;
-                            long[] tokens = {0, 0, 0};
+                            // Track execution metrics
                             long startTime = System.currentTimeMillis();
-                            
-                            // Initialize/reset stream knowledge monitor
-                            if (context.getKnowledgeScheduler() != null && context.getTopicIndex() != null) {
-                                if (streamKnowledgeMonitor == null) {
-                                    // Lazily create with LLM callback from MakerLoop
-                                    java.util.function.Function<String, String> llmCb = null;
-                                    if (context.getMakerLoop() != null) {
-                                        // Reuse the Maker's llmCallback approach
-                                        final com.mkpro.core.MkProContext ctx = context;
-                                        llmCb = prompt -> {
-                                            try {
-                                                if (ctx.getRunner() == null || ctx.getCurrentSession() == null) return null;
-                                                com.mkpro.knowledge.RequestKnowledgeTool.enterSchedulerContext();
-                                                try {
-                                                    com.google.genai.types.Content msg = com.google.genai.types.Content.fromParts(
-                                                        new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(prompt)});
-                                                    StringBuilder resp = new StringBuilder();
-                                                    java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-                                                    ctx.getRunner().runAsync(ctx.getCurrentSession().sessionKey(), msg)
-                                                        .blockingSubscribe(
-                                                            event -> event.content().ifPresent(c -> c.parts().ifPresent(parts -> {
-                                                                for (com.google.genai.types.Part part : parts) {
-                                                                    part.text().ifPresent(resp::append);
-                                                                }
-                                                            })),
-                                                            error -> latch.countDown(),
-                                                            latch::countDown
-                                                        );
-                                                    latch.await(30, java.util.concurrent.TimeUnit.SECONDS);
-                                                    return resp.toString().trim().isEmpty() ? null : resp.toString().trim();
-                                                } finally {
-                                                    com.mkpro.knowledge.RequestKnowledgeTool.exitSchedulerContext();
-                                                }
-                                            } catch (Exception e) { return null; }
-                                        };
-                                    }
-                                    streamKnowledgeMonitor = new com.mkpro.knowledge.StreamKnowledgeMonitor(
-                                        context.getKnowledgeScheduler(), context.getTopicIndex(), llmCb);
-                                } else {
-                                    streamKnowledgeMonitor.reset();
-                                }
-                            }
                             StringBuilder responseBuilder = new StringBuilder();
+                            int[] tokens = new int[]{0, 0, 0}; // prompt, candidates, total
+                            String finalLine = line;
 
-                            context.getRunner().runAsync(context.getCurrentSession().sessionKey(), message)
-                                .blockingSubscribe(event -> {
-                                    // Stop spinner upon receiving first response chunk
-                                    isThinking.set(false);
-                                    spinnerThread.interrupt();
-
-                                    event.content().ifPresent(content -> {
-                                        content.parts().ifPresent(parts -> {
-                                            for (com.google.genai.types.Part part : parts) {
-                                                part.text().ifPresent(text -> {
+                            context.getRunner().run(context.getCurrentSession().id(), message)
+                                .subscribe(event -> {
+                                    // Handle content chunks
+                                    event.content().ifPresent(c -> {
+                                        c.parts().ifPresent(parts -> {
+                                            for (com.google.genai.types.Part p : parts) {
+                                                p.text().ifPresent(text -> {
                                                     if (firstChunkReceived.compareAndSet(false, true)) {
-                                                        // First text chunk, clear spinner completely and set response color
-                                                        try {
-                                                            org.jline.terminal.Terminal terminal = context.getLineReader().getTerminal();
-                                                            terminal.writer().print("\r" + " ".repeat(20) + "\r");
-                                                            terminal.writer().flush();
-                                                        } catch (Exception ignored) {
-                                                            System.out.print("\r" + " ".repeat(20) + "\r");
-                                                            System.out.flush();
-                                                        }
+                                                        isThinking.set(false);
+                                                        spinnerThread.interrupt();
+                                                        // Clear the spinner line completely
+                                                        System.out.print("\r\033[2K");
+                                                        
+                                                        // Determine color based on whether Coordinator or Delegated Agent
+                                                        String agentTag = finalDisplayAgent.equalsIgnoreCase("Coordinator")
+                                                            ? ANSI_BRIGHT_PURPLE + "[" + finalDisplayAgent + "] " + ANSI_RESET
+                                                            : ANSI_LIGHT_ORANGE + "[" + finalDisplayAgent + "] " + ANSI_RESET;
+                                                            
+                                                        System.out.println(agentTag + ANSI_GRAY + "(" + finalDisplayProvider + " / " + finalDisplayModel + ")" + ANSI_RESET);
                                                         System.out.print(ANSI_LIGHT_ORANGE);
                                                         // Web: stream start via event bus
                                                         if (context.getEventBus() != null) {
@@ -350,19 +274,23 @@ public class TerminalUI {
                                     
                                     String sessId = context.getCurrentSession() != null ? context.getCurrentSession().id() : "default-session";
                                     
-                                    String activeModel = "default";
-                                    if (context.getAgentManager() != null && context.getAgentManager().getAgentConfig("Coordinator") != null) {
-                                        activeModel = context.getAgentManager().getAgentConfig("Coordinator").getModel();
-                                    } else if (context.getConfig() != null && context.getConfig().getModel() != null) {
-                                        activeModel = context.getConfig().getModel();
+                                    String providerStr = "OLLAMA";
+                                    String modelStr = "default";
+                                    if (context.getAgentConfigs() != null && context.getAgentConfigs().containsKey("Coordinator")) {
+                                        com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
+                                        if (coordConfig != null) {
+                                            if (coordConfig.getProvider() != null) {
+                                                providerStr = coordConfig.getProvider().name();
+                                            }
+                                            if (coordConfig.getModel() != null && !coordConfig.getModel().isBlank()) {
+                                                modelStr = coordConfig.getModel();
+                                            }
+                                        }
                                     }
                                     
-                                    com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
-                                    String providerStr = coordConfig != null ? coordConfig.getProvider().name() : "OLLAMA";
-                                    
                                     com.mkpro.models.AgentStat stat = new com.mkpro.models.AgentStat(
-                                        "Coordinator", providerStr, activeModel, duration, true, 
-                                        finalLine.length(), responseBuilder.length(), 
+                                        "Coordinator", providerStr, modelStr, duration, true,
+                                        finalLine.length(), responseBuilder.length(),
                                         tokens[0], tokens[1], tokens[2], sessId
                                     );
                                     context.getCentralMemory().saveAgentStat(stat);

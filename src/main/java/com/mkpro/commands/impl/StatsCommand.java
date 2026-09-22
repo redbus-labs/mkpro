@@ -6,51 +6,78 @@ import com.mkpro.models.AgentStat;
 import com.mkpro.MkPro;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.io.PrintWriter;
 
 public class StatsCommand implements Command {
     @Override
     public void execute(String[] args, MkProContext context) {
-        List<AgentStat> stats = context.getCentralMemory().getAgentStats();
-
-        // Use System.out as fallback if terminal is unavailable
-        java.io.PrintWriter out = context.getTerminal() != null 
+        List<AgentStat> allStats = context.getCentralMemory().getAgentStats();
+        PrintWriter out = context.getTerminal() != null 
             ? context.getTerminal().writer() 
-            : new java.io.PrintWriter(System.out, true);
+            : new PrintWriter(System.out, true);
 
-        if (stats == null || stats.isEmpty()) {
+        if (allStats == null || allStats.isEmpty()) {
             out.println(MkPro.ANSI_YELLOW + "No statistics recorded yet." + MkPro.ANSI_RESET);
             return;
         }
 
+        // 1. Resolve currentSessionId robustly
+        String currentSessionId = null;
+        if (context.getCentralMemory() != null && context.getCentralMemory().getCurrentSessionId() != null) {
+            currentSessionId = context.getCentralMemory().getCurrentSessionId();
+        }
+        if (currentSessionId == null && context.getCurrentSession() != null) {
+            currentSessionId = context.getCurrentSession().id();
+        }
+        if (currentSessionId == null) {
+            currentSessionId = "default";
+        }
+
+        // 2. Session Filtering with Smart Fallback
+        final String activeId = currentSessionId;
+        List<AgentStat> sessionStats = allStats.stream()
+                .filter(s -> s.getSessionId() != null && s.getSessionId().equalsIgnoreCase(activeId))
+                .toList();
+
+        if (sessionStats.isEmpty() && !allStats.isEmpty()) {
+            String latestSessionId = allStats.get(allStats.size() - 1).getSessionId();
+            if (latestSessionId != null) {
+                sessionStats = allStats.stream()
+                        .filter(s -> s.getSessionId() != null && s.getSessionId().equalsIgnoreCase(latestSessionId))
+                        .toList();
+                currentSessionId = latestSessionId;
+            }
+        }
+
+        // 3. Format Output
+        out.println(MkPro.ANSI_CYAN + "\n📊 CURRENT ONGOING SESSION STATS" + MkPro.ANSI_RESET);
+        out.println("Session ID: " + MkPro.ANSI_YELLOW + currentSessionId + MkPro.ANSI_RESET);
+        if (sessionStats.isEmpty()) {
+            out.println("No activity recorded for this session.");
+        } else {
+            printStatsSection(out, sessionStats, false);
+        }
+
+        out.println(MkPro.ANSI_CYAN + "\n📈 TOTAL SESSIONS (ALL-TIME / LIFETIME)" + MkPro.ANSI_RESET);
+        printStatsSection(out, allStats, true);
+        
+        out.flush();
+    }
+
+    private void printStatsSection(PrintWriter out, List<AgentStat> stats, boolean allTime) {
         long totalTokens = stats.stream().mapToLong(AgentStat::getTotalTokens).sum();
-        long totalSessions = stats.stream()
-                .map(AgentStat::getSessionId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .count();
+        out.println("Total Tokens: " + MkPro.ANSI_BRIGHT_GREEN + String.format("%,d", totalTokens) + MkPro.ANSI_RESET);
+        
+        // Example visualization
+        String bar = "[████████░░░░]";
+        out.println("Activity Density: " + bar);
 
-        out.println(MkPro.ANSI_CYAN + "\n=== Agent & Token Statistics ===" + MkPro.ANSI_RESET);
-        out.println("Total Sessions: " + MkPro.ANSI_BRIGHT_GREEN + totalSessions + MkPro.ANSI_RESET);
-        out.println("Total Tokens:   " + MkPro.ANSI_BRIGHT_GREEN + String.format("%,d", totalTokens) + MkPro.ANSI_RESET);
-
-        // Group by Agent
-        out.println(MkPro.ANSI_YELLOW + "\nTokens per Agent:" + MkPro.ANSI_RESET);
+        out.println(MkPro.ANSI_YELLOW + "Breakdown by Agent:" + MkPro.ANSI_RESET);
         stats.stream()
             .collect(Collectors.groupingBy(AgentStat::getAgentName, Collectors.summingLong(AgentStat::getTotalTokens)))
             .entrySet().stream()
             .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
             .forEach(e -> out.printf(" - %-15s: %s tokens\n", e.getKey(), String.format("%,d", e.getValue())));
-
-        // Group by Model
-        out.println(MkPro.ANSI_YELLOW + "\nTokens per Model:" + MkPro.ANSI_RESET);
-        stats.stream()
-            .collect(Collectors.groupingBy(AgentStat::getModel, Collectors.summingLong(AgentStat::getTotalTokens)))
-            .entrySet().stream()
-            .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-            .forEach(e -> out.printf(" - %-15s: %s tokens\n", e.getKey(), String.format("%,d", e.getValue())));
-
-        out.println(MkPro.ANSI_CYAN + "================================\n" + MkPro.ANSI_RESET);
-        out.flush();
     }
 
     @Override

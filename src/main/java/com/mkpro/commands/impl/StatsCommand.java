@@ -22,12 +22,12 @@ public class StatsCommand implements Command {
         }
 
         // 1. Resolve currentSessionId robustly
-        String currentSessionId = null;
-        if (context.getCentralMemory() != null && context.getCentralMemory().getCurrentSessionId() != null) {
-            currentSessionId = context.getCentralMemory().getCurrentSessionId();
-        }
-        if (currentSessionId == null && context.getCurrentSession() != null) {
-            currentSessionId = context.getCurrentSession().id();
+        String currentSessionId = (context.getCurrentSession() != null && context.getCurrentSession().id() != null)
+                ? context.getCurrentSession().id()
+                : null;
+
+        if (currentSessionId == null && !allStats.isEmpty()) {
+            currentSessionId = allStats.get(allStats.size() - 1).getSessionId();
         }
         if (currentSessionId == null) {
             currentSessionId = "default";

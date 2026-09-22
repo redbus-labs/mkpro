@@ -56,10 +56,12 @@ public class StatsCommand implements Command {
             out.println("No activity recorded for this session.");
         } else {
             printStatsSection(out, sessionStats, false);
+            printBreakdowns(out, sessionStats);
         }
 
         out.println(MkPro.ANSI_CYAN + "\n📈 TOTAL SESSIONS (ALL-TIME / LIFETIME)" + MkPro.ANSI_RESET);
         printStatsSection(out, allStats, true);
+        printBreakdowns(out, allStats);
         
         out.flush();
     }
@@ -78,6 +80,30 @@ public class StatsCommand implements Command {
             .entrySet().stream()
             .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
             .forEach(e -> out.printf(" - %-15s: %s tokens\n", e.getKey(), String.format("%,d", e.getValue())));
+    }
+
+    private void printBreakdowns(PrintWriter out, List<AgentStat> stats) {
+        long totalTokens = stats.stream().mapToLong(AgentStat::getTotalTokens).sum();
+        
+        Map<String, Long> modelTokens = stats.stream()
+                .collect(Collectors.groupingBy(
+                        s -> (s.getModel() != null && !s.getModel().trim().isEmpty()) ? s.getModel().trim() : "default",
+                        Collectors.summingLong(AgentStat::getTotalTokens)
+                ));
+
+        out.println(MkPro.ANSI_YELLOW + "Breakdown by Model:" + MkPro.ANSI_RESET);
+        
+        modelTokens.entrySet().stream()
+            .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+            .forEach(e -> {
+                long modelTotal = e.getValue();
+                double percent = (totalTokens > 0) ? (modelTotal * 100.0 / totalTokens) : 0;
+                int filled = (int) (percent / 10);
+                StringBuilder bar = new StringBuilder("[");
+                for (int i = 0; i < 12; i++) bar.append(i < filled ? "█" : "░");
+                bar.append("]");
+                out.printf(" - %-15s: %s tokens (%d%%) %s\n", e.getKey(), String.format("%,d", modelTotal), (int)percent, bar.toString());
+            });
     }
 
     @Override

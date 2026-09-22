@@ -350,12 +350,18 @@ public class TerminalUI {
                                     
                                     String sessId = context.getCurrentSession() != null ? context.getCurrentSession().id() : "default-session";
                                     
+                                    String activeModel = "default";
+                                    if (context.getAgentManager() != null && context.getAgentManager().getAgentConfig("Coordinator") != null) {
+                                        activeModel = context.getAgentManager().getAgentConfig("Coordinator").getModel();
+                                    } else if (context.getConfig() != null && context.getConfig().getModel() != null) {
+                                        activeModel = context.getConfig().getModel();
+                                    }
+                                    
                                     com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
                                     String providerStr = coordConfig != null ? coordConfig.getProvider().name() : "OLLAMA";
-                                    String modelStr = coordConfig != null ? coordConfig.getModelName() : "llama3";
                                     
                                     com.mkpro.models.AgentStat stat = new com.mkpro.models.AgentStat(
-                                        "Coordinator", providerStr, modelStr, duration, true, 
+                                        "Coordinator", providerStr, activeModel, duration, true, 
                                         finalLine.length(), responseBuilder.length(), 
                                         tokens[0], tokens[1], tokens[2], sessId
                                     );

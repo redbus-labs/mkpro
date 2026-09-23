@@ -30,7 +30,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *   Server → Client: {"type": "stream_end"}
  *   Server → Client: {"type": "maker", "message": "..."}
  *   Server → Client: {"type": "routing", "message": "..."}
- *   Server → Client: {"type": "delegation", "agent": "SysAdmin"}
+ *   Server → Client: {"type": "delegation", "agent": "SysAdmin", "reason": "...", "status": "active", "stepId": "..."}
+ *   Server → Client: {"type": "step_start", "stepId": "...", "title": "...", "agent": "..."}
+ *   Server → Client: {"type": "step_complete", "stepId": "...", "title": "...", "status": "completed"}
  */
 public class WebChatServer {
 
@@ -215,7 +217,72 @@ public class WebChatServer {
      * Broadcast a delegation event.
      */
     public void broadcastDelegation(String agent) {
-        broadcast(createMessage("delegation").put("agent", agent));
+        broadcastDelegation(agent, "", "active", "");
+    }
+
+    public void broadcastDelegation(String agent, String reason, String status, String stepId) {
+        broadcastDelegation(agent, reason, status, stepId, null);
+    }
+
+    public void broadcastDelegation(String agent, String reason, String status, String stepId, String title) {
+        ObjectNode msg = createMessage("delegation");
+        msg.put("agent", agent != null ? agent : "");
+        msg.put("reason", reason != null ? reason : "");
+        msg.put("status", status != null ? status : "active");
+        msg.put("stepId", stepId != null ? stepId : "");
+        if (title != null && !title.isEmpty()) {
+            msg.put("title", title);
+        }
+        broadcast(msg);
+    }
+
+    /**
+     * Broadcast step lifecycle events.
+     */
+    public void broadcastStepStart(String stepId, String title, String agent) {
+        broadcastStepStart(stepId, title, agent, null);
+    }
+
+    public void broadcastStepStart(String stepId, String title, String agent, String description) {
+        ObjectNode msg = createMessage("step_start");
+        msg.put("stepId", stepId != null ? stepId : "");
+        msg.put("title", title != null ? title : "");
+        msg.put("agent", agent != null ? agent : "");
+        if (description != null && !description.isEmpty()) {
+            msg.put("description", description);
+        }
+        broadcast(msg);
+    }
+
+    public void broadcastStepComplete(String stepId, String title, String status) {
+        broadcastStepComplete(stepId, title, status, null);
+    }
+
+    public void broadcastStepComplete(String stepId, String title, String status, String result) {
+        ObjectNode msg = createMessage("step_complete");
+        msg.put("stepId", stepId != null ? stepId : "");
+        msg.put("title", title != null ? title : "");
+        msg.put("status", status != null ? status : "completed");
+        if (result != null && !result.isEmpty()) {
+            msg.put("result", result);
+        }
+        broadcast(msg);
+    }
+
+    public void broadcastStep(String type, String stepId, String title, String agent, String status, String details) {
+        if ("step_start".equalsIgnoreCase(type) || "start".equalsIgnoreCase(type)) {
+            broadcastStepStart(stepId, title, agent, details);
+        } else if ("step_complete".equalsIgnoreCase(type) || "complete".equalsIgnoreCase(type)) {
+            broadcastStepComplete(stepId, title, status, details);
+        } else {
+            ObjectNode msg = createMessage(type != null ? type : "step");
+            msg.put("stepId", stepId != null ? stepId : "");
+            msg.put("title", title != null ? title : "");
+            if (agent != null) msg.put("agent", agent);
+            if (status != null) msg.put("status", status);
+            if (details != null) msg.put("details", details);
+            broadcast(msg);
+        }
     }
 
     public boolean hasClients() {

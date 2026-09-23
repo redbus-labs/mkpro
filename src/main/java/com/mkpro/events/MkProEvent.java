@@ -1,6 +1,7 @@
 package com.mkpro.events;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -21,6 +22,8 @@ public class MkProEvent {
         STREAM_CHUNK,        // Text chunk
         STREAM_END,          // Response complete
         DELEGATION,          // Coordinator delegated to agent
+        STEP_START,          // Step execution started
+        STEP_COMPLETE,       // Step execution completed
         SYSTEM,              // System messages
         GOAL_UPDATE,         // Goal status changed
         KNOWLEDGE_UPDATE,    // Scheduler refreshed a topic
@@ -102,7 +105,57 @@ public class MkProEvent {
     }
 
     public static MkProEvent delegation(String agent) {
-        return new MkProEvent(Type.DELEGATION, Map.of("agent", agent));
+        return delegation(agent, "", "active", "");
+    }
+
+    public static MkProEvent delegation(String agent, String reason, String status) {
+        return delegation(agent, reason, status, "");
+    }
+
+    public static MkProEvent delegation(String agent, String reason, String status, String stepId) {
+        return delegation(agent, reason, status, stepId, "");
+    }
+
+    public static MkProEvent delegation(String agent, String reason, String status, String stepId, String title) {
+        Map<String, String> map = new HashMap<>();
+        map.put("agent", agent != null ? agent : "");
+        map.put("reason", reason != null ? reason : "");
+        map.put("status", status != null ? status : "active");
+        map.put("stepId", stepId != null ? stepId : "");
+        if (title != null && !title.isEmpty()) {
+            map.put("title", title);
+        }
+        return new MkProEvent(Type.DELEGATION, Collections.unmodifiableMap(map));
+    }
+
+    public static MkProEvent stepStart(String stepId, String title, String agent) {
+        return stepStart(stepId, title, agent, "");
+    }
+
+    public static MkProEvent stepStart(String stepId, String title, String agent, String description) {
+        Map<String, String> map = new HashMap<>();
+        map.put("stepId", stepId != null ? stepId : "");
+        map.put("title", title != null ? title : "");
+        map.put("agent", agent != null ? agent : "");
+        if (description != null && !description.isEmpty()) {
+            map.put("description", description);
+        }
+        return new MkProEvent(Type.STEP_START, Collections.unmodifiableMap(map));
+    }
+
+    public static MkProEvent stepComplete(String stepId, String title, String status) {
+        return stepComplete(stepId, title, status, "");
+    }
+
+    public static MkProEvent stepComplete(String stepId, String title, String status, String result) {
+        Map<String, String> map = new HashMap<>();
+        map.put("stepId", stepId != null ? stepId : "");
+        map.put("title", title != null ? title : "");
+        map.put("status", status != null ? status : "completed");
+        if (result != null && !result.isEmpty()) {
+            map.put("result", result);
+        }
+        return new MkProEvent(Type.STEP_COMPLETE, Collections.unmodifiableMap(map));
     }
 
     public static MkProEvent editProposal(EditProposal proposal) {

@@ -54,7 +54,29 @@ public class WebSocketSink implements MkProEventListener {
                 webChatServer.broadcastStreamEnd();
             }
             case DELEGATION -> {
-                webChatServer.broadcastDelegation(event.get("agent"));
+                webChatServer.broadcastDelegation(
+                    event.get("agent"),
+                    event.get("reason"),
+                    event.get("status", "active"),
+                    event.get("stepId"),
+                    event.get("title")
+                );
+            }
+            case STEP_START -> {
+                webChatServer.broadcastStepStart(
+                    event.get("stepId"),
+                    event.get("title"),
+                    event.get("agent"),
+                    event.get("description")
+                );
+            }
+            case STEP_COMPLETE -> {
+                webChatServer.broadcastStepComplete(
+                    event.get("stepId"),
+                    event.get("title"),
+                    event.get("status", "completed"),
+                    event.get("result")
+                );
             }
             case SYSTEM -> {
                 webChatServer.broadcastSystem(event.get("message"));

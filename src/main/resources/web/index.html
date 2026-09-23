@@ -1238,6 +1238,206 @@
             };
         }
 
+        
+        // Agent Transfer Loader & Pipeline State
+        let currentTransferCard = null;
+        let currentTransferTimeline = null;
+        let currentPipelineFlow = null;
+        let pipelineAgentsList = [];
+
+        function getOrCreateTransferCard() {
+            if (currentTransferCard && currentTransferCard.isConnected && !currentTransferCard.dataset.completed) {
+                return currentTransferCard;
+            }
+
+            const card = document.createElement('div');
+            card.className = 'agent-transfer-card';
+
+            const flow = document.createElement('div');
+            flow.className = 'agent-pipeline-flow';
+
+            const timeline = document.createElement('div');
+            timeline.className = 'step-timeline';
+
+            card.appendChild(flow);
+            card.appendChild(timeline);
+
+            if (typeof currentMessage !== 'undefined' && currentMessage) {
+                currentMessage.appendChild(card);
+            } else if (typeof chat !== 'undefined' && chat) {
+                chat.appendChild(card);
+            }
+
+            currentTransferCard = card;
+            currentTransferTimeline = timeline;
+            currentPipelineFlow = flow;
+            pipelineAgentsList = [];
+
+            scrollToBottom();
+            return card;
+        }
+
+        function updatePipelineFlowVisual(activeAgent, isThinking) {
+            if (!currentPipelineFlow) return;
+
+            if (pipelineAgentsList.length === 0) {
+                pipelineAgentsList.push('Coordinator');
+            }
+
+            if (activeAgent && pipelineAgentsList[pipelineAgentsList.length - 1] !== activeAgent) {
+                pipelineAgentsList.push(activeAgent);
+            }
+
+            let html = '';
+            pipelineAgentsList.forEach((ag, idx) => {
+                const isLast = (idx === pipelineAgentsList.length - 1);
+                if (isLast && isThinking) {
+                    html += `<span class="agent-node agent-node-pulse">⚡ ${escapeHtml(ag)} (thinking...)</span>`;
+                } else {
+                    html += `<span class="agent-node completed">${escapeHtml(ag)}</span>`;
+                }
+
+                if (idx < pipelineAgentsList.length - 1) {
+                    html += `<span class="flow-connector">➔</span>`;
+                }
+            });
+
+            currentPipelineFlow.innerHTML = html;
+        }
+
+        function completeActiveSteps() {
+            if (!currentTransferTimeline) return;
+
+            const activeItems = currentTransferTimeline.querySelectorAll('.step-status-active');
+            activeItems.forEach(item => {
+                item.classList.remove('step-status-active');
+                item.classList.add('step-status-completed', 'collapsed');
+
+                const spinner = item.querySelector('.step-spinner');
+                if (spinner) {
+                    const check = document.createElement('span');
+                    check.className = 'step-checkmark';
+                    check.textContent = '✓';
+                    spinner.replaceWith(check);
+                }
+            });
+
+            if (currentTransferCard) {
+                currentTransferCard.dataset.completed = 'true';
+                currentTransferCard.classList.add('minimized');
+            }
+
+            if (currentPipelineFlow) {
+                const pulsingNode = currentPipelineFlow.querySelector('.agent-node-pulse');
+                if (pulsingNode) {
+                    pulsingNode.classList.remove('agent-node-pulse');
+                    pulsingNode.classList.add('completed');
+                    const agName = pipelineAgentsList[pipelineAgentsList.length - 1] || 'Agent';
+                    pulsingNode.innerHTML = escapeHtml(agName);
+                }
+            }
+        }
+
+        function handleDelegationEvent(msg) {
+            const toAgent = msg.agent || 'Agent';
+            const fromAgent = msg.from || msg.previousAgent || (pipelineAgentsList.length > 0 ? pipelineAgentsList[pipelineAgentsList.length - 1] : 'Coordinator');
+            const reason = msg.reason || msg.text || '';
+
+            completeActiveSteps();
+
+            getOrCreateTransferCard();
+            delete currentTransferCard.dataset.completed;
+            currentTransferCard.classList.remove('minimized');
+
+            if (pipelineAgentsList.length === 0) {
+                pipelineAgentsList.push(fromAgent);
+            }
+            updatePipelineFlowVisual(toAgent, true);
+
+            const stepItem = document.createElement('div');
+            stepItem.className = 'step-item step-status-active';
+
+            const textSpan = document.createElement('span');
+            textSpan.innerHTML = `Transferring to <strong>${escapeHtml(toAgent)}</strong>${reason ? ' (' + escapeHtml(reason) + ')' : '...'}`;
+
+            const spinner = document.createElement('div');
+            spinner.className = 'step-spinner';
+
+            stepItem.appendChild(spinner);
+            stepItem.appendChild(textSpan);
+
+            currentTransferTimeline.appendChild(stepItem);
+            scrollToBottom();
+        }
+
+        function handleStepStartEvent(msg) {
+            const agent = msg.agent || 'Agent';
+            const stepText = msg.step || msg.title || msg.text || msg.description || `${agent} processing...`;
+
+            completeActiveSteps();
+
+            getOrCreateTransferCard();
+            delete currentTransferCard.dataset.completed;
+            currentTransferCard.classList.remove('minimized');
+
+            updatePipelineFlowVisual(agent, true);
+
+            const stepItem = document.createElement('div');
+            stepItem.className = 'step-item step-status-active';
+
+            const textSpan = document.createElement('span');
+            textSpan.innerHTML = `<strong>${escapeHtml(agent)}</strong> processing: ${escapeHtml(stepText)}`;
+
+            const spinner = document.createElement('div');
+            spinner.className = 'step-spinner';
+
+            stepItem.appendChild(spinner);
+            stepItem.appendChild(textSpan);
+
+            currentTransferTimeline.appendChild(stepItem);
+            scrollToBottom();
+        }
+
+        function handleStepCompleteEvent(msg) {
+            const agent = msg.agent || 'Agent';
+            const resultText = msg.result || msg.text || msg.step || `Handed off to ${agent}`;
+
+            if (currentTransferTimeline) {
+                const activeItems = currentTransferTimeline.querySelectorAll('.step-status-active');
+                activeItems.forEach(item => {
+                    item.classList.remove('step-status-active');
+                    item.classList.add('step-status-completed', 'collapsed');
+
+                    const textSpan = item.querySelector('span');
+                    if (textSpan) {
+                        textSpan.innerHTML = `✓ Handed off to <strong>${escapeHtml(agent)}</strong> (${escapeHtml(resultText)})`;
+                    }
+
+                    const spinner = item.querySelector('.step-spinner');
+                    if (spinner) {
+                        const check = document.createElement('span');
+                        check.className = 'step-checkmark';
+                        check.textContent = '✓';
+                        spinner.replaceWith(check);
+                    }
+                });
+            }
+
+            if (currentTransferCard) {
+                currentTransferCard.dataset.completed = 'true';
+                currentTransferCard.classList.add('minimized');
+            }
+
+            if (currentPipelineFlow) {
+                const pulsingNode = currentPipelineFlow.querySelector('.agent-node-pulse');
+                if (pulsingNode) {
+                    pulsingNode.classList.remove('agent-node-pulse');
+                    pulsingNode.classList.add('completed');
+                    pulsingNode.innerHTML = escapeHtml(agent);
+                }
+            }
+        }
+
         function handleMessage(msg) {
             switch (msg.type) {
                 case 'system':
@@ -1279,6 +1479,13 @@
                         const badge = currentMessage.querySelector('.agent-badge');
                         if (badge) badge.textContent = msg.agent;
                     }
+                    handleDelegationEvent(msg);
+                    break;
+                case 'step_start':
+                    handleStepStartEvent(msg);
+                    break;
+                case 'step_complete':
+                    handleStepCompleteEvent(msg);
                     break;
                 case 'edit_proposal':
                     showEditProposal(msg);
@@ -1364,6 +1571,7 @@
 
         // ========== Message Rendering ==========
         function addUserMessage(text) {
+            completeActiveSteps();
             const div = document.createElement('div');
             div.className = 'message user';
             const senderLabel = `<div style="font-size:10px;opacity:0.7;margin-bottom:2px">${escapeHtml(getDisplayName())}</div>`;

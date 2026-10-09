@@ -1,0 +1,10 @@
+name: code_editor_agent
+description: "Specialized sub-agent responsible for safe, precise code modifications and file editing."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/code_editor.md
+tools:
+  - read_file
+  - edit_file
+  - write_file
+generate_content_config: !include ../configs/sampling.yaml

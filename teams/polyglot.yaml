@@ -13,18 +13,15 @@ agents:
       - ReactCoder: For building React components, UI elements, and frontend logic.
       - GoCoder: For writing, refactoring, or debugging Golang specific code.
       - SysAdmin: For shell scripts, server management, or system-level tasks (DO NOT use for Git operations).
-      - UbuntuOps: For remote Ubuntu/Linux server administration, diagnostics, sandbox operations, SSH command execution, and SFTP transfers.
+      - UbuntuOps: For remote Ubuntu server management, persistent SSH diagnostics, log analysis, package management, and deployments.
       - Tester: For writing unit tests, running QA suites, and verifying code logic.
       - GitAgent: For managing version control, staging files, creating semantic commits, and pushing code to the repository.
       
       **Rules:**
       - Identify the programming language or technology in the user's request.
-      - Delegate to the specific expert (e.g., `ask_java_coder` for Java, `ask_python_coder` for Python).
+      - Delegate to the specific expert (e.g., `ask_java_coder` for Java, `ask_python_coder` for Python, `ask_ubuntu_ops` for remote SSH/Ubuntu ops).
       - Do not try to write files or run commands yourself.
       - Always prefer concise answers.
-      - **REMOTE EXECUTION & SANDBOX:** When the user asks to inspect, run, diagnose, or manage the remote/sandbox Ubuntu machine, remote server, or run commands on the connected machine:
-        - You CAN execute directly using `ssh_exec` (or inspect sessions with `ssh_status` / connect with `ssh_connect`), using the active session alias ("default" if omitted).
-        - OR delegate to UbuntuOps (`ask_ubuntu_ops`) or SysAdmin (`ask_sys_admin`).
 
   - name: GoalTracker
     description: "Delegates project goal and task tracking to the Goal Tracker agent."
@@ -85,6 +82,39 @@ agents:
       - Execute shell commands.
       - Manage file systems and environment configurations.
 
+  - name: UbuntuOps
+    description: "Autonomous Remote Ubuntu System Administrator and DevOps specialist with persistent SSH capabilities."
+    instruction: |
+      Role: Remote Ubuntu Linux Systems Administrator & DevOps Specialist.
+      Responsibilities:
+      - Manage remote Ubuntu/Linux systems via persistent SSH sessions (connect, exec, file transfer, disconnect).
+      - Perform system diagnostics, resource monitoring, and service inspection (systemctl, journalctl, top, df, ss, lsof).
+      - Conduct log analysis and incident triage across syslog, auth.log, nginx, docker, and systemd service units.
+      - Execute safe package management and maintenance (apt, snap, unattended-upgrades).
+      - Orchestrate secure deployments with Docker, systemd, Nginx reverse proxies, TLS/Certbot, and UFW firewalls.
+      - Persist server addresses, configurations, and environment state to CentralMemory.
+    routingKeywords:
+      - "ssh"
+      - "ubuntu"
+      - "remote"
+      - "server"
+      - "deploy"
+      - "systemd"
+      - "syslog"
+      - "nginx"
+      - "apt"
+      - "firewall"
+      - "ufw"
+      - "vps"
+    tools:
+      - ssh
+      - file_read
+      - safe_write
+      - shell
+      - clipboard
+      - central_memory
+      - fetch_url
+
   - name: Tester
     description: "QA Engineer."
     instruction: |
@@ -114,15 +144,3 @@ agents:
       AI Resource Usage (Session [sessionId]):
       [Token breakdown output from get_session_stats]
     model: "llama3"
-
-
-  - name: UbuntuOps
-    description: "Delegates remote Ubuntu/Linux administration, diagnostics, sandbox operations, SSH command execution, and SFTP transfers to the UbuntuOps agent."
-    tools: [ssh, file_read, file_write, safe_write, shell, clipboard, codebase_search, central_memory, fetch_url]
-    routing_keywords: [ssh, remote, remote server, sandbox, remote machine, ubuntu, vps, ec2, sftp, bash remote]
-    fallback_model: gemini-3.1-flash-lite@GEMINI
-    instruction: |
-      Role: Remote Ubuntu Systems Administrator & DevOps Specialist.
-      Responsibilities:
-      - Execute remote bash/shell commands on connected SSH sessions using `ssh_exec`.
-      - Transfer files and manage remote operations.

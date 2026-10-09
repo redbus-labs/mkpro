@@ -526,11 +526,14 @@ public class BootstrapService {
             com.mkpro.routing.MakerLoop makerLoop = new com.mkpro.routing.MakerLoop(markovRouter);
             context.setMakerLoop(makerLoop);
 
-            // Disable Maker for cloud providers (powerful enough without micro-supervision)
-            com.mkpro.models.AgentConfig coordConfig = context.getAgentConfigs().get("Coordinator");
-            if (coordConfig != null && isCloudProvider(coordConfig.getProvider())) {
+            // Maker is opt-in (disabled by default)
+            String makerProp = System.getProperty("mkpro.maker.enabled", System.getenv("MKPRO_MAKER_ENABLED"));
+            if ("true".equalsIgnoreCase(makerProp)) {
+                context.getMakerEnabled().set(true);
+                System.out.println(ANSI_DIM + "  Maker: enabled (explicitly configured)" + ANSI_RESET);
+            } else {
                 context.getMakerEnabled().set(false);
-                System.out.println(ANSI_DIM + "  Maker: disabled (" + coordConfig.getProvider() + " provider)" + ANSI_RESET);
+                System.out.println(ANSI_DIM + "  Maker: disabled by default" + ANSI_RESET);
             }
 
             // Initialize FactEngine (verified facts + relationship graph)

@@ -1,0 +1,9 @@
+name: product_manager_agent
+description: "Specialized sub-agent responsible for product requirements, PRD authoring, INVEST user story creation, and backlog prioritization."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/product_manager.md
+tools:
+  - read_file
+  - search_similar_code
+generate_content_config: !include ../configs/sampling.yaml

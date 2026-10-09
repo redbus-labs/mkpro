@@ -1,0 +1,10 @@
+name: tester_agent
+description: "Specialized sub-agent responsible for quality assurance, test case creation, automated test execution, and verification."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/tester.md
+tools:
+  - run_command
+  - read_file
+  - get_status
+generate_content_config: !include ../configs/sampling.yaml

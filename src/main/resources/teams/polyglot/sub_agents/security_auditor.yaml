@@ -1,0 +1,10 @@
+name: security_auditor_agent
+description: "Specialized sub-agent responsible for security audits, OWASP vulnerability scanning, secret detection, and dependency risk analysis."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/security_auditor.md
+tools:
+  - run_command
+  - read_file
+  - search_similar_code
+generate_content_config: !include ../configs/sampling.yaml

@@ -1,0 +1,11 @@
+name: ios_dev_agent
+description: "Specialized sub-agent responsible for iOS application development using Swift/Objective-C, SwiftUI, UIKit, and Apple frameworks."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/ios_dev.md
+tools:
+  - run_command
+  - read_file
+  - edit_file
+  - write_file
+generate_content_config: !include ../configs/sampling.yaml

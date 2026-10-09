@@ -1,25 +1,31 @@
-fix(facts): synchronize FactEngine, LessonPromotionEngine, and CentralMemory persistence with 100% passing tests [mkpro]
+feat(release): bump version to 4.9.0, add ADK YAML spec loader and polyglot modular teams [mkpro]
 
-- Synchronized FactEngine and FactStore integration with relationship graph persistence.
-- Unified LessonPromotionEngine with CentralMemory storage and DistilledLesson categories.
-- Updated Fact models, RelationshipGraph, RelationshipTriple, and MakerLoop.
-- Fixed test suites across facts, lesson promotion distillation, and maker routing systems.
-- Verified entire test suite passes with 611 tests and 0 failures.
+- Bumped version to 4.9.0 across pom.xml and startup/execution scripts.
+- Added ADK YAML configuration loader (AdkYamlConfigLoader) and agent specification models (AdkAgentSpec, AdkSamplingConfig) for declarative multi-agent workflows.
+- Configured opt-in Maker loop supervision in BootstrapService and MkProContext.
+- Added MakerEnablementTest and GroovySkillsExecutionTest test suites.
+- Added polyglot modular team definitions, agent prompts, and hybrid Groovy skill scripts.
+- Added *.safetensors and *.zip exclusion rules to .gitignore and removed large binary weights (>100MB) from git index.
 
 ---
-AI Resource Usage (Session default-session (auto-resolved)):
-Session 'default-session (auto-resolved)' has consumed 5,921,318 tokens in total.
+AI Resource Usage (Session default-session):
+Session 'default-session' has consumed 5,263,059 tokens in total.
 Breakdown by Agent:
+ - SysAdmin: 0 tokens
  - Coder: 0 tokens
- - Architect: 0 tokens
+ - Tester: 0 tokens
+ - CodeEditor: 0 tokens
  - GitAgent: 0 tokens
- - Coordinator: 5,921,318 tokens
+ - Coordinator: 5,263,059 tokens
 Breakdown by Model:
- - gemini-3-flash-preview: 2,387,531 tokens
- - gemini-3.1-pro-preview: 1,809,471 tokens
- - llama3: 0 tokens
- - ornith-1.5:9b: 32,768 tokens
- - gemini-3.1-flash-lite@GEMINI: 0 tokens
- - laguna-xs-2.1:latest: 17,709 tokens
- - gemini-3.7-flash: 752,388 tokens
- - gemma4:12b: 921,451 tokens
+ - gemini-3-flash-preview: 60,582 tokens
+ - gemma4-agent:tuned: 28,565 tokens
+ - gemini-3.1-pro-preview: 201,870 tokens
+ - qwen3.8:27b: 205,073 tokens
+ - laguna-xs-2.1:latest: 4,218 tokens
+ - gemini-3.7-flash: 3,394,742 tokens
+ - gemma4:e2b-it-qat: 1,039,476 tokens
+ - gemma4-agent:latest: 130,726 tokens
+ - gemini-3.6-flash: 37,989 tokens
+ - gemma4:12b-it-qat: 39,354 tokens
+ - gpt-oss-safeguard:latest: 120,464 tokens

@@ -171,6 +171,12 @@ public class ScriptEngine {
         Binding binding = new Binding();
         if (args != null) {
             args.forEach(binding::setVariable);
+            if (!args.containsKey("params")) {
+                binding.setVariable("params", args);
+            }
+            if (!args.containsKey("args")) {
+                binding.setVariable("args", args);
+            }
         }
         binding.setVariable("out", capturedOut);
 

@@ -82,7 +82,7 @@ public class MkProContext {
     private LineReader lineReader;
     private EmbeddingService embeddingService;
     private VectorStore vectorStore;
-    private AtomicBoolean makerEnabled = new AtomicBoolean(true);
+    private AtomicBoolean makerEnabled = new AtomicBoolean(false);
     private AgentManager agentManager;
     private com.mkpro.routing.MarkovRouter markovRouter;
     private com.mkpro.routing.MakerLoop makerLoop;
@@ -231,13 +231,18 @@ public class MkProContext {
 
             System.out.println("\u001b[32mSuccessfully rebuilt active runner & session context.\u001b[0m");
 
-            // Update Maker state based on Coordinator's provider
+            // Update Maker state based on Coordinator's provider (opt-in only)
             com.mkpro.models.AgentConfig coordConfig = this.agentConfigs.get("Coordinator");
             if (coordConfig != null) {
-                boolean needsMaker = !BootstrapService.isCloudProvider(coordConfig.getProvider());
-                this.makerEnabled.set(needsMaker);
-                if (!needsMaker) {
-                    System.out.println("\u001b[90m  Maker: disabled (" + coordConfig.getProvider() + " provider)\u001b[0m");
+                String makerProp = System.getProperty("mkpro.maker.enabled", System.getenv("MKPRO_MAKER_ENABLED"));
+                if ("true".equalsIgnoreCase(makerProp)) {
+                    boolean needsMaker = !BootstrapService.isCloudProvider(coordConfig.getProvider());
+                    this.makerEnabled.set(needsMaker);
+                    if (!needsMaker) {
+                        System.out.println("\u001b[90m  Maker: disabled (" + coordConfig.getProvider() + " provider)\u001b[0m");
+                    }
+                } else {
+                    this.makerEnabled.set(false);
                 }
             }
         } catch (Exception e) {

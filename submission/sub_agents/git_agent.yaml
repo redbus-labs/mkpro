@@ -1,0 +1,11 @@
+name: git_agent
+description: "Specialized sub-agent responsible for Git version control, semantic commits, branch management, and repository state tracking."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/git_agent.md
+tools:
+  - run_command
+  - read_file
+  - get_status
+  - submit_patch
+generate_content_config: !include ../configs/sampling.yaml

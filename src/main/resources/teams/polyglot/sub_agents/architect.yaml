@@ -1,0 +1,11 @@
+name: architect_agent
+description: "Specialized sub-agent responsible for architectural analysis, system design review, modularity evaluation, and graph memory structuring."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/architect.md
+tools:
+  - read_file
+  - search_similar_code
+  - get_code_neighbors
+  - get_code_subgraph
+generate_content_config: !include ../configs/sampling.yaml

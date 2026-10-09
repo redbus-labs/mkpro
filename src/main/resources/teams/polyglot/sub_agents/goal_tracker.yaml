@@ -1,0 +1,9 @@
+name: goal_tracker_agent
+description: "Specialized sub-agent responsible for hierarchical goal tracking, task decomposition, and progress status monitoring."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/goal_tracker.md
+tools:
+  - read_file
+  - get_status
+generate_content_config: !include ../configs/sampling.yaml

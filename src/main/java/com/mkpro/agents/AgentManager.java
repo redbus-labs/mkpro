@@ -28,6 +28,7 @@ import com.google.genai.types.FunctionDeclaration;
 import com.google.genai.types.Part;
 import com.google.genai.types.Schema;
 import io.reactivex.rxjava3.core.Single;
+import com.mkpro.models.AdkAgentSpec;
 import com.mkpro.models.AgentConfig;
 import com.mkpro.models.AgentRequest;
 import com.mkpro.models.AgentStat;
@@ -39,12 +40,14 @@ import com.mkpro.tools.StatsTools;
 import com.mkpro.tools.GraphMemoryTools;
 import com.mkpro.ActionLogger;
 import com.mkpro.CentralMemory;
+import com.mkpro.config.AdkYamlConfigLoader;
 import com.google.adk.memory.EmbeddingService;
 import com.google.adk.memory.MapDBVectorStore;
 import com.mkpro.plugins.FilterConfig;
 import com.mkpro.plugins.SmartEventFilterPlugin;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.Files;
 import java.nio.file.DirectoryStream;
 import java.io.InputStream;
@@ -53,6 +56,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Properties;
@@ -137,8 +141,11 @@ public class AgentManager {
     }
 
     private void registerAgentDefinitions() {
+        if (agentDefinitions == null) {
+            agentDefinitions = new LinkedHashMap<>();
+        }
         for (AgentDefinition def : agentDefinitions.values()) {
-            if (centralMemory.getAgentConfigs(def.getName()) == null) {
+            if (centralMemory != null && centralMemory.getAgentConfigs(def.getName()) == null) {
                 Provider provider = Provider.OLLAMA; 
                 if (def.getProvider() != null) {
                     try {
@@ -159,19 +166,43 @@ public class AgentManager {
         }
     }
 
-    private Map<String, AgentDefinition> loadAgentDefinitions(Path path) {
+    /**
+     * Loads agent definitions using AdkYamlConfigLoader with fallback to legacy YAML loader.
+     */
+    public Map<String, AgentDefinition> loadAgentDefinitions(Path path) {
+        if (path != null && Files.exists(path)) {
+            try {
+                AdkYamlConfigLoader adkLoader = new AdkYamlConfigLoader();
+                Map<String, AgentDefinition> defs = adkLoader.loadAgentDefinitions(path);
+                if (defs != null && !defs.isEmpty()) {
+                    this.agentDefinitions = defs;
+                    if (logger != null) {
+                        logger.log("INFO", "Loaded " + agentDefinitions.size() + " agent definitions from: " + path);
+                    }
+                    return defs;
+                }
+            } catch (Exception e) {
+                if (logger != null) {
+                    logger.log("WARN", "AdkYamlConfigLoader failed for " + path + ", falling back to legacy loader: " + e.getMessage());
+                }
+            }
+        }
+
+        // Existing legacy fallback logic
         Map<String, AgentDefinition> defs = new HashMap<>();
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
 
-        if (Files.isDirectory(path)) {
-            try (DirectoryStream<Path> stream = Files.newDirectoryStream(path, "*.{yaml,yml}")) {
-                for (Path entry : stream) {
-                    loadFromFile(entry, mapper, defs);
+        if (path != null && Files.exists(path)) {
+            if (Files.isDirectory(path)) {
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(path, "*.{yaml,yml}")) {
+                    for (Path entry : stream) {
+                        loadFromFile(entry, mapper, defs);
+                    }
+                } catch (IOException e) {
                 }
-            } catch (IOException e) {
+            } else if (Files.isRegularFile(path)) {
+                loadFromFile(path, mapper, defs);
             }
-        } else if (Files.isRegularFile(path)) {
-            loadFromFile(path, mapper, defs);
         }
         return defs;
     }
@@ -185,6 +216,129 @@ public class AgentManager {
                 }
             }
         } catch (IOException e) {
+        }
+    }
+
+    /**
+     * Loads a team by name, checking for a modular ADK directory (e.g. teams/<teamName>/agent.yaml
+     * or teams/<teamName>/ directory in filesystem or classpath). If not found, falls back to legacy teams/<teamName>.yaml.
+     */
+    public void loadTeam(String teamName) {
+        if (teamName == null || teamName.trim().isEmpty()) {
+            return;
+        }
+
+        AdkYamlConfigLoader adkLoader = new AdkYamlConfigLoader();
+
+        // 1. Check filesystem candidate base directories for modular ADK directory
+        List<Path> baseDirs = List.of(
+            Paths.get("teams"),
+            Paths.get("src/main/resources/teams"),
+            Paths.get(".")
+        );
+
+        for (Path base : baseDirs) {
+            Path teamDir = base.resolve(teamName);
+            if (Files.isDirectory(teamDir)) {
+                if (Files.exists(teamDir.resolve("agent.yaml")) || Files.exists(teamDir.resolve("agent.yml"))) {
+                    try {
+                        Map<String, AgentDefinition> defs = adkLoader.loadAgentDefinitions(teamDir);
+                        if (defs != null && !defs.isEmpty()) {
+                            this.agentDefinitions = defs;
+                            registerAgentDefinitions();
+                            if (logger != null) {
+                                logger.log("INFO", "Loaded modular team '" + teamName + "' with " + defs.size() + " agent definitions from " + teamDir);
+                            }
+                            return;
+                        }
+                    } catch (Exception e) {
+                        if (logger != null) {
+                            logger.log("WARN", "Failed loading modular team from " + teamDir + ": " + e.getMessage());
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Check classpath resources for modular ADK directory (e.g. teams/<teamName>/agent.yaml)
+        String modularResource = "teams/" + teamName + "/agent.yaml";
+        try {
+            AdkAgentSpec spec = adkLoader.loadFromResource(modularResource);
+            if (spec != null) {
+                Map<String, AgentDefinition> defs = new LinkedHashMap<>();
+                AgentDefinition rootDef = adkLoader.toAgentDefinition(spec);
+                if (rootDef != null) {
+                    defs.put(rootDef.getName(), rootDef);
+                }
+                for (AdkAgentSpec subSpec : spec.getSubAgents().values()) {
+                    AgentDefinition subDef = adkLoader.toAgentDefinition(subSpec);
+                    if (subDef != null) {
+                        defs.put(subDef.getName(), subDef);
+                    }
+                }
+                if (!defs.isEmpty()) {
+                    this.agentDefinitions = defs;
+                    registerAgentDefinitions();
+                    if (logger != null) {
+                        logger.log("INFO", "Loaded modular team '" + teamName + "' from resource: " + modularResource);
+                    }
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        // 3. Fall back to legacy teams/<teamName>.yaml (filesystem first, then classpath)
+        for (Path base : baseDirs) {
+            Path yamlFile = base.resolve(teamName + ".yaml");
+            if (Files.isRegularFile(yamlFile)) {
+                reloadAgents(yamlFile);
+                return;
+            }
+            Path ymlFile = base.resolve(teamName + ".yml");
+            if (Files.isRegularFile(ymlFile)) {
+                reloadAgents(ymlFile);
+                return;
+            }
+        }
+
+        // Check legacy resource file (e.g. teams/<teamName>.yaml)
+        String legacyResource = "teams/" + teamName + ".yaml";
+        try {
+            AdkAgentSpec spec = adkLoader.loadFromResource(legacyResource);
+            if (spec != null) {
+                Map<String, AgentDefinition> defs = new LinkedHashMap<>();
+                AgentDefinition rootDef = adkLoader.toAgentDefinition(spec);
+                if (rootDef != null) {
+                    defs.put(rootDef.getName(), rootDef);
+                }
+                for (AdkAgentSpec subSpec : spec.getSubAgents().values()) {
+                    AgentDefinition subDef = adkLoader.toAgentDefinition(subSpec);
+                    if (subDef != null) {
+                        defs.put(subDef.getName(), subDef);
+                    }
+                }
+                if (!defs.isEmpty()) {
+                    this.agentDefinitions = defs;
+                    registerAgentDefinitions();
+                    if (logger != null) {
+                        logger.log("INFO", "Loaded legacy team '" + teamName + "' from resource: " + legacyResource);
+                    }
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        // Direct path check if teamName is already a path
+        Path directPath = Paths.get(teamName);
+        if (Files.exists(directPath)) {
+            reloadAgents(directPath);
+            return;
+        }
+
+        if (logger != null) {
+            logger.log("WARN", "Could not resolve team: " + teamName);
         }
     }
 
@@ -253,12 +407,14 @@ public class AgentManager {
             return config.getServerUrl();
         }
         // 2. First registered endpoint (all are active)
-        List<String> servers = centralMemory.getOllamaServers();
-        if (!servers.isEmpty()) {
-            String first = servers.get(0);
-            int sep = first.indexOf('|');
-            if (sep >= 0) {
-                return first.substring(sep + 1);
+        if (centralMemory != null) {
+            List<String> servers = centralMemory.getOllamaServers();
+            if (servers != null && !servers.isEmpty()) {
+                String first = servers.get(0);
+                int sep = first.indexOf('|');
+                if (sep >= 0) {
+                    return first.substring(sep + 1);
+                }
             }
         }
         // 3. Default (from config.properties via constructor)
@@ -458,7 +614,6 @@ public class AgentManager {
             // Peer agent communication — Coordinator can directly ask other instances
             coordinatorTools.addAll(toolRegistry.get("ask_peer_agent"));
             coordinatorTools.addAll(toolRegistry.get("list_peers"));
-            //coordinatorTools.add(McpServerConnectTools.createListMcpServersTool(centralMemory));
 
             // Generate delegation tools for all sub-agents and add them to coordinatorTools
             // Determine which agents need full project context injected (from YAML needs_context field)
@@ -493,6 +648,15 @@ public class AgentManager {
             // Build Coordinator instruction: YAML-defined instruction + project context + state memory
             String coordInstruction = fullContext;
             AgentDefinition coordDef = agentDefinitions.get("Coordinator");
+            if (coordDef == null) {
+                // Try case-insensitive coordinator lookup
+                for (AgentDefinition d : agentDefinitions.values()) {
+                    if ("coordinator".equalsIgnoreCase(d.getName())) {
+                        coordDef = d;
+                        break;
+                    }
+                }
+            }
             if (coordDef != null && coordDef.getInstruction() != null) {
                 coordInstruction = coordDef.getInstruction() + "\n\n" + fullContext;
             }
@@ -505,15 +669,19 @@ public class AgentManager {
             }
 
             // Inject Project Memory (insights committed via /remember or commit_to_memory)
-            String projectMemory = centralMemory.getMemory(projectPath);
-            if (projectMemory != null && !projectMemory.isEmpty()) {
-                coordInstruction += "\n\n── PROJECT MEMORY ──\n" + projectMemory;
+            if (centralMemory != null) {
+                String projectMemory = centralMemory.getMemory(projectPath);
+                if (projectMemory != null && !projectMemory.isEmpty()) {
+                    coordInstruction += "\n\n── PROJECT MEMORY ──\n" + projectMemory;
+                }
             }
 
             // Inject MCP Context (available MCP servers and workflow instructions)
-            String mcpContext = com.mkpro.tools.McpServerConnectTools.buildMcpContextForAgent(centralMemory);
-            if (mcpContext != null && !mcpContext.isEmpty()) {
-                coordInstruction += mcpContext;
+            if (centralMemory != null) {
+                String mcpContext = com.mkpro.tools.McpServerConnectTools.buildMcpContextForAgent(centralMemory);
+                if (mcpContext != null && !mcpContext.isEmpty()) {
+                    coordInstruction += mcpContext;
+                }
             }
 
             // Inject Connected Peers info (for cross-instance agent communication)
@@ -606,12 +774,16 @@ public class AgentManager {
                 agentBuilder.plugins(java.util.Collections.singletonList(new SmartEventFilterPlugin(filterConfig)));
             }
 
-            logger.log("INFO", "Creating runner for type: " + runnerType);
+            if (logger != null) {
+                logger.log("INFO", "Creating runner for type: " + runnerType);
+            }
             
             return agentBuilder.build();
 
         } catch (Exception e) {
-            logger.log("ERROR", "Error creating runner: " + e.getMessage());
+            if (logger != null) {
+                logger.log("ERROR", "Error creating runner: " + e.getMessage());
+            }
             System.err.println("\u001b[31mError creating runner: " + e.getMessage() + "\u001b[0m");
             if (e.getCause() != null) {
                 System.err.println("\u001b[31m  cause: " + e.getCause().getMessage() + "\u001b[0m");
@@ -714,7 +886,7 @@ public class AgentManager {
                 String instruction = (String) args.get("instruction");
                 System.out.println(ANSI_BLUE + ">> Delegating to " + agentName + "..." + ANSI_RESET);
                 AgentManager.lastDelegatedAgent = agentName;
-                AgentConfig config = agentConfigs.get(agentName);
+                AgentConfig config = agentConfigs != null ? agentConfigs.get(agentName) : null;
                 if (config == null) {
                     config = new AgentConfig(Provider.OLLAMA, "llama3");
                 }
@@ -748,8 +920,10 @@ public class AgentManager {
         String usedModel = request.getModelName();
         String usedProvider = request.getProvider().name();
         
-        logger.log("SYSTEM", String.format("Delegating task to %s (%s/%s)...", 
-            request.getAgentName(), request.getProvider(), request.getModelName()));
+        if (logger != null) {
+            logger.log("SYSTEM", String.format("Delegating task to %s (%s/%s)...", 
+                request.getAgentName(), request.getProvider(), request.getModelName()));
+        }
 
         try {
             String result = attemptExecution(request, APP_NAME, output, tokens);
@@ -758,7 +932,9 @@ public class AgentManager {
             }
             
             String resultStr = output.toString();
-            logger.log(request.getAgentName(), resultStr);
+            if (logger != null) {
+                logger.log(request.getAgentName(), resultStr);
+            }
             return resultStr;
         } catch (Exception e) {
             // Determine if this is a connection/health issue or a model failure
@@ -771,8 +947,10 @@ public class AgentManager {
             if (isConnectionError && request.getProvider() == Provider.OLLAMA) {
                 String alternateUrl = findAlternateOllamaEndpoint(request.getServerUrl());
                 if (alternateUrl != null && maxRetries > 0) {
-                    logger.log("SYSTEM", String.format("[RETRY] %s: Connection failed to %s, trying alternate endpoint %s...",
-                        request.getAgentName(), request.getServerUrl(), alternateUrl));
+                    if (logger != null) {
+                        logger.log("SYSTEM", String.format("[RETRY] %s: Connection failed to %s, trying alternate endpoint %s...",
+                            request.getAgentName(), request.getServerUrl(), alternateUrl));
+                    }
                     System.out.println("\u001b[33m[Retry] " + request.getAgentName() + ": routing to alternate endpoint...\u001b[0m");
                     
                     try {
@@ -787,7 +965,9 @@ public class AgentManager {
                         usedModel = request.getModelName() + " (rerouted)";
                         
                         String resultStr = output.toString();
-                        logger.log(request.getAgentName(), resultStr);
+                        if (logger != null) {
+                            logger.log(request.getAgentName(), resultStr);
+                        }
                         return resultStr;
                     } catch (Exception retryEx) {
                         // Retry also failed — fall through to fallback model
@@ -799,7 +979,7 @@ public class AgentManager {
             String fallbackModelStr = null;
             if (def != null && def.getFallbackModel() != null && !def.getFallbackModel().isEmpty()) {
                 fallbackModelStr = def.getFallbackModel();
-            } else {
+            } else if (centralMemory != null) {
                 // Check global fallback
                 String globalFallback = centralMemory.getMemory("__global_fallback_model");
                 if (globalFallback != null && !globalFallback.isEmpty()) {
@@ -809,8 +989,10 @@ public class AgentManager {
             
             if (fallbackModelStr != null && maxRetries > 0) {
                 String fallback = fallbackModelStr;
-                logger.log("SYSTEM", String.format("[FALLBACK] %s: Primary model failed, trying fallback: %s",
-                    request.getAgentName(), fallback));
+                if (logger != null) {
+                    logger.log("SYSTEM", String.format("[FALLBACK] %s: Primary model failed, trying fallback: %s",
+                        request.getAgentName(), fallback));
+                }
                 System.out.println("\u001b[33m[Fallback] " + request.getAgentName() + ": switching to " + fallback + "\u001b[0m");
                 
                 try {
@@ -850,16 +1032,20 @@ public class AgentManager {
                     usedProvider = fallbackProvider.name();
                     
                     String resultStr = output.toString();
-                    logger.log(request.getAgentName(), resultStr);
+                    if (logger != null) {
+                        logger.log(request.getAgentName(), resultStr);
+                    }
                     
                     // Recommend upgrading the primary model since fallback succeeded
-                    ConfigRecommender.recommendAfterFallback(
-                        request.getAgentName(),
-                        request.getModelName(),
-                        fallback,
-                        activeAgentConfigs,
-                        centralMemory
-                    );
+                    if (centralMemory != null) {
+                        ConfigRecommender.recommendAfterFallback(
+                            request.getAgentName(),
+                            request.getModelName(),
+                            fallback,
+                            activeAgentConfigs,
+                            centralMemory
+                        );
+                    }
                     
                     return resultStr;
                 } catch (Exception fallbackEx) {
@@ -873,23 +1059,25 @@ public class AgentManager {
             return "Error executing sub-agent " + request.getAgentName() + ": " + e.getMessage();
         } finally {
             long duration = System.currentTimeMillis() - startTime;
-            try {
-                AgentStat stat = new AgentStat(
-                    request.getAgentName(), 
-                    usedProvider, 
-                    usedModel, 
-                    duration, 
-                    success, 
-                    request.getUserPrompt().length(), 
-                    output.length(),
-                    tokens[0],
-                    tokens[1],
-                    tokens[2],
-                    sessId
-                );
-                centralMemory.saveAgentStat(stat);
-            } catch (Exception e) {
-                System.err.println("Failed to save agent stats: " + e.getMessage());
+            if (centralMemory != null) {
+                try {
+                    AgentStat stat = new AgentStat(
+                        request.getAgentName(), 
+                        usedProvider, 
+                        usedModel, 
+                        duration, 
+                        success, 
+                        request.getUserPrompt().length(), 
+                        output.length(),
+                        tokens[0],
+                        tokens[1],
+                        tokens[2],
+                        sessId
+                    );
+                    centralMemory.saveAgentStat(stat);
+                } catch (Exception e) {
+                    System.err.println("Failed to save agent stats: " + e.getMessage());
+                }
             }
         }
     }
@@ -963,13 +1151,17 @@ public class AgentManager {
      * Finds an alternate Ollama endpoint that is different from the failed one.
      */
     private String findAlternateOllamaEndpoint(String failedUrl) {
-        List<String> servers = centralMemory.getOllamaServers();
-        for (String entry : servers) {
-            int sep = entry.indexOf('|');
-            if (sep >= 0) {
-                String url = entry.substring(sep + 1);
-                if (!url.equals(failedUrl)) {
-                    return url; // Return first endpoint that isn't the one that failed
+        if (centralMemory != null) {
+            List<String> servers = centralMemory.getOllamaServers();
+            if (servers != null) {
+                for (String entry : servers) {
+                    int sep = entry.indexOf('|');
+                    if (sep >= 0) {
+                        String url = entry.substring(sep + 1);
+                        if (!url.equals(failedUrl)) {
+                            return url; // Return first endpoint that isn't the one that failed
+                        }
+                    }
                 }
             }
         }

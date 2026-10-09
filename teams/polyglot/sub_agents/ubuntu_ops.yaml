@@ -1,0 +1,12 @@
+name: ubuntu_ops_agent
+description: "Specialized sub-agent responsible for remote Ubuntu/Linux administration, SSH workflows, system diagnostics, and service management."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/ubuntu_ops.md
+tools:
+  - run_command
+  - read_file
+  - edit_file
+  - write_file
+  - get_status
+generate_content_config: !include ../configs/sampling.yaml

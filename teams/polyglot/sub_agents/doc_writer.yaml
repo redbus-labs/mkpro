@@ -1,0 +1,10 @@
+name: doc_writer_agent
+description: "Specialized sub-agent responsible for technical documentation, API reference writing, JavaDoc/Docstring generation, and guide maintenance."
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/doc_writer.md
+tools:
+  - read_file
+  - edit_file
+  - write_file
+generate_content_config: !include ../configs/sampling.yaml

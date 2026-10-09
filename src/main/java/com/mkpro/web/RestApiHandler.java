@@ -3,7 +3,11 @@ package com.mkpro.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mkpro.models.notes.TaskItem;
+import com.mkpro.models.notes.NoteItem;
 import com.mkpro.security.PathValidator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.sun.net.httpserver.HttpExchange;
 
 import java.io.IOException;
@@ -29,6 +33,7 @@ import java.util.stream.Collectors;
  */
 class RestApiHandler {
 
+    private static final Logger logger = LoggerFactory.getLogger(RestApiHandler.class);
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private static final Set<String> EXCLUDED_DIRS = Set.of(
@@ -101,9 +106,17 @@ class RestApiHandler {
                 handleSshDisconnectApi(exchange); return true;
             case "/api/ssh/status":
                 handleSshStatusApi(exchange); return true;
+            case "/api/tasks":
+                handleTasksApi(exchange); return true;
+            case "/api/notes":
+                handleNotesApi(exchange); return true;
             default:
                 // Prefix-based routes
-                if (path.startsWith("/api/knowledge/search")) {
+                if (path.startsWith("/api/tasks/")) {
+                    handleTasksWithIdApi(exchange, path); return true;
+                } else if (path.startsWith("/api/notes/")) {
+                    handleNotesWithIdApi(exchange, path); return true;
+                } else if (path.startsWith("/api/knowledge/search")) {
                     serveKnowledgeSearchApi(exchange); return true;
                 } else if (path.startsWith("/api/files")) {
                     serveFilesApi(exchange); return true;
@@ -819,8 +832,8 @@ class RestApiHandler {
      * POST /api/ssh/connect — Connect to a remote SSH/Sandbox host.
      */
     private void handleSshConnectApi(HttpExchange exchange) throws IOException {
-        System.out.println("[RestApiHandler] >>> Incoming request: " + exchange.getRequestMethod() + " " + exchange.getRequestURI());
-        System.out.println("[RestApiHandler] Headers: " + exchange.getRequestHeaders().entrySet());
+        logger.debug("[RestApiHandler] >>> Incoming request: " + exchange.getRequestMethod() + " " + exchange.getRequestURI());
+        logger.debug("[RestApiHandler] Headers: " + exchange.getRequestHeaders().entrySet());
 
         if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
@@ -830,7 +843,7 @@ class RestApiHandler {
 
         try {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            System.out.println("[RestApiHandler] Body: " + (body.length() > 500 ? body.substring(0, 500) + "..." : body));
+            logger.debug("[RestApiHandler] Body: " + (body.length() > 500 ? body.substring(0, 500) + "..." : body));
 
             JsonNode req = mapper.readTree(body);
             String host = req.has("host") ? req.get("host").asText().trim() : "";
@@ -846,7 +859,7 @@ class RestApiHandler {
 
             if (host.isEmpty() || username.isEmpty()) {
                 Map<String, Object> errResponse = Map.of("error", "host and username are required");
-                System.out.println("[RestApiHandler] <<< Response 400: " + mapper.writeValueAsString(errResponse));
+                logger.debug("[RestApiHandler] <<< Response 400: " + mapper.writeValueAsString(errResponse));
                 sendJsonResponse(exchange, 400, errResponse);
                 return;
             }
@@ -863,11 +876,11 @@ class RestApiHandler {
             resp.put("username", entry.getUsername());
 
             String respJson = mapper.writeValueAsString(resp);
-            System.out.println("[RestApiHandler] <<< Response 200: " + respJson);
+            logger.debug("[RestApiHandler] <<< Response 200: " + respJson);
             sendJsonResponse(exchange, 200, resp);
 
         } catch (Exception e) {
-            System.out.println("[RestApiHandler] <<< Response 500 (Exception): " + e.getMessage());
+            logger.debug("[RestApiHandler] <<< Response 500 (Exception): " + e.getMessage());
             sendJsonResponse(exchange, 500, Map.of("error", e.getMessage() != null ? e.getMessage() : e.toString()));
         }
     }
@@ -876,8 +889,8 @@ class RestApiHandler {
      * POST /api/ssh/disconnect — Disconnect an active SSH session by alias.
      */
     private void handleSshDisconnectApi(HttpExchange exchange) throws IOException {
-        System.out.println("[RestApiHandler] >>> Incoming request: " + exchange.getRequestMethod() + " " + exchange.getRequestURI());
-        System.out.println("[RestApiHandler] Headers: " + exchange.getRequestHeaders().entrySet());
+        logger.debug("[RestApiHandler] >>> Incoming request: " + exchange.getRequestMethod() + " " + exchange.getRequestURI());
+        logger.debug("[RestApiHandler] Headers: " + exchange.getRequestHeaders().entrySet());
 
         if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
@@ -887,7 +900,7 @@ class RestApiHandler {
 
         try {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            System.out.println("[RestApiHandler] Body: " + body);
+            logger.debug("[RestApiHandler] Body: " + body);
 
             JsonNode req = mapper.readTree(body);
             String alias = req.has("alias") ? req.get("alias").asText().trim() : (req.has("sessionAlias") ? req.get("sessionAlias").asText().trim() : "default");
@@ -900,10 +913,10 @@ class RestApiHandler {
                 "alias", alias
             );
             String respJson = mapper.writeValueAsString(resp);
-            System.out.println("[RestApiHandler] <<< Response 200: " + respJson);
+            logger.debug("[RestApiHandler] <<< Response 200: " + respJson);
             sendJsonResponse(exchange, 200, resp);
         } catch (Exception e) {
-            System.out.println("[RestApiHandler] <<< Response 500 (Exception): " + e.getMessage());
+            logger.debug("[RestApiHandler] <<< Response 500 (Exception): " + e.getMessage());
             sendJsonResponse(exchange, 500, Map.of("error", e.getMessage() != null ? e.getMessage() : e.toString()));
         }
     }
@@ -912,8 +925,8 @@ class RestApiHandler {
      * GET /api/ssh/status — Check active SSH sessions status.
      */
     private void handleSshStatusApi(HttpExchange exchange) throws IOException {
-        System.out.println("[RestApiHandler] >>> Incoming request: " + exchange.getRequestMethod() + " " + exchange.getRequestURI());
-        System.out.println("[RestApiHandler] Headers: " + exchange.getRequestHeaders().entrySet());
+        logger.debug("[RestApiHandler] >>> Incoming request: " + exchange.getRequestMethod() + " " + exchange.getRequestURI());
+        logger.debug("[RestApiHandler] Headers: " + exchange.getRequestHeaders().entrySet());
 
         try {
             com.mkpro.infra.ssh.SshSessionManager mgr = com.mkpro.infra.ssh.SshSessionManager.getInstance();
@@ -938,10 +951,10 @@ class RestApiHandler {
             resp.put("sessions", sessionList);
 
             String respJson = mapper.writeValueAsString(resp);
-            System.out.println("[RestApiHandler] <<< Response 200: " + respJson);
+            logger.debug("[RestApiHandler] <<< Response 200: " + respJson);
             sendJsonResponse(exchange, 200, resp);
         } catch (Exception e) {
-            System.out.println("[RestApiHandler] <<< Response 500 (Exception): " + e.getMessage());
+            logger.debug("[RestApiHandler] <<< Response 500 (Exception): " + e.getMessage());
             sendJsonResponse(exchange, 500, Map.of("error", e.getMessage() != null ? e.getMessage() : e.toString()));
         }
     }
@@ -971,6 +984,153 @@ class RestApiHandler {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("goals", centralMemory != null ? centralMemory.getGoals(".") : List.of());
         sendJsonResponse(exchange, 200, response);
+    }
+
+    // ========================================================================
+    // Tasks and Notes API Handlers
+    // ========================================================================
+
+    private void handleTasksApi(HttpExchange exchange) throws IOException {
+        String method = exchange.getRequestMethod();
+        if ("GET".equalsIgnoreCase(method)) {
+            List<TaskItem> tasks = centralMemory != null ? centralMemory.getAllTasks() : List.of();
+            sendJsonResponse(exchange, 200, tasks);
+        } else if ("POST".equalsIgnoreCase(method)) {
+            try {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                TaskItem task = mapper.readValue(body, TaskItem.class);
+                TaskItem saved = centralMemory != null ? centralMemory.saveTask(task) : null;
+                sendJsonResponse(exchange, 201, saved);
+            } catch (Exception e) {
+                sendJsonError(exchange, 400, "Failed to create task: " + e.getMessage());
+            }
+        } else {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+        }
+    }
+
+    private void handleTasksWithIdApi(HttpExchange exchange, String path) throws IOException {
+        String sub = path.substring("/api/tasks/".length());
+        if (sub.endsWith("/")) {
+            sub = sub.substring(0, sub.length() - 1);
+        }
+        if (sub.isEmpty()) {
+            handleTasksApi(exchange);
+            return;
+        }
+
+        if (sub.endsWith("/toggle")) {
+            String id = sub.substring(0, sub.length() - "/toggle".length());
+            if (id.endsWith("/")) {
+                id = id.substring(0, id.length() - 1);
+            }
+            id = URLDecoder.decode(id, StandardCharsets.UTF_8);
+            String method = exchange.getRequestMethod();
+            if ("POST".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method)) {
+                TaskItem toggled = centralMemory != null ? centralMemory.toggleTask(id) : null;
+                if (toggled != null) {
+                    sendJsonResponse(exchange, 200, toggled);
+                } else {
+                    sendJsonError(exchange, 404, "Task not found: " + id);
+                }
+            } else {
+                exchange.sendResponseHeaders(405, -1);
+                exchange.close();
+            }
+            return;
+        }
+
+        String id = URLDecoder.decode(sub, StandardCharsets.UTF_8);
+        String method = exchange.getRequestMethod();
+
+        if ("GET".equalsIgnoreCase(method)) {
+            TaskItem task = centralMemory != null ? centralMemory.getTask(id) : null;
+            if (task != null) {
+                sendJsonResponse(exchange, 200, task);
+            } else {
+                sendJsonError(exchange, 404, "Task not found: " + id);
+            }
+        } else if ("PUT".equalsIgnoreCase(method)) {
+            try {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                TaskItem task = mapper.readValue(body, TaskItem.class);
+                task.setId(id);
+                TaskItem saved = centralMemory != null ? centralMemory.saveTask(task) : null;
+                sendJsonResponse(exchange, 200, saved);
+            } catch (Exception e) {
+                sendJsonError(exchange, 400, "Failed to update task: " + e.getMessage());
+            }
+        } else if ("DELETE".equalsIgnoreCase(method)) {
+            if (centralMemory != null) {
+                centralMemory.deleteTask(id);
+            }
+            sendJsonResponse(exchange, 200, Map.of("status", "deleted", "id", id));
+        } else {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+        }
+    }
+
+    private void handleNotesApi(HttpExchange exchange) throws IOException {
+        String method = exchange.getRequestMethod();
+        if ("GET".equalsIgnoreCase(method)) {
+            List<NoteItem> notes = centralMemory != null ? centralMemory.getAllNotes() : List.of();
+            sendJsonResponse(exchange, 200, notes);
+        } else if ("POST".equalsIgnoreCase(method)) {
+            try {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                NoteItem note = mapper.readValue(body, NoteItem.class);
+                NoteItem saved = centralMemory != null ? centralMemory.saveNote(note) : null;
+                sendJsonResponse(exchange, 201, saved);
+            } catch (Exception e) {
+                sendJsonError(exchange, 400, "Failed to create note: " + e.getMessage());
+            }
+        } else {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+        }
+    }
+
+    private void handleNotesWithIdApi(HttpExchange exchange, String path) throws IOException {
+        String sub = path.substring("/api/notes/".length());
+        if (sub.endsWith("/")) {
+            sub = sub.substring(0, sub.length() - 1);
+        }
+        if (sub.isEmpty()) {
+            handleNotesApi(exchange);
+            return;
+        }
+
+        String id = URLDecoder.decode(sub, StandardCharsets.UTF_8);
+        String method = exchange.getRequestMethod();
+
+        if ("GET".equalsIgnoreCase(method)) {
+            NoteItem note = centralMemory != null ? centralMemory.getNote(id) : null;
+            if (note != null) {
+                sendJsonResponse(exchange, 200, note);
+            } else {
+                sendJsonError(exchange, 404, "Note not found: " + id);
+            }
+        } else if ("PUT".equalsIgnoreCase(method)) {
+            try {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                NoteItem note = mapper.readValue(body, NoteItem.class);
+                note.setId(id);
+                NoteItem saved = centralMemory != null ? centralMemory.saveNote(note) : null;
+                sendJsonResponse(exchange, 200, saved);
+            } catch (Exception e) {
+                sendJsonError(exchange, 400, "Failed to update note: " + e.getMessage());
+            }
+        } else if ("DELETE".equalsIgnoreCase(method)) {
+            if (centralMemory != null) {
+                centralMemory.deleteNote(id);
+            }
+            sendJsonResponse(exchange, 200, Map.of("status", "deleted", "id", id));
+        } else {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+        }
     }
 
     private void handleNewSessionApi(HttpExchange exchange) throws IOException {

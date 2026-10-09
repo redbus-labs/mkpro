@@ -195,6 +195,9 @@ public class FactEngine {
             fact.setKey(key);
             store.addMathFact(fact);
         }
+        if (fact.getScript() != null && !fact.getScript().isBlank()) {
+            return;
+        }
         String script = "def verify(Map v) {\n"
                 + "    Binding b = new Binding(v != null ? new HashMap<>(v) : new HashMap<>())\n"
                 + "    GroovyShell sh = new GroovyShell(b)\n"

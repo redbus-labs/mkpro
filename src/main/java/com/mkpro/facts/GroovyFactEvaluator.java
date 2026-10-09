@@ -13,11 +13,11 @@ import java.util.concurrent.*;
 /**
  * Sandboxed Groovy execution for fact verification scripts.
  * Runs verify() and validate() functions from MathFact scripts.
- * Timeout: 5 seconds. No I/O, networking, or thread access.
+ * Timeout: 15 seconds. No I/O, networking, or thread access.
  */
 public class GroovyFactEvaluator {
 
-    private static final long TIMEOUT_MS = 5000;
+    private static final long TIMEOUT_MS = 15000;
     private final CompilerConfiguration config;
 
     public GroovyFactEvaluator() {
@@ -94,18 +94,15 @@ public class GroovyFactEvaluator {
             return future.get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
-            return Map.of("error", "Script timed out (5s limit)");
+            return Map.of("error", "Script timed out (" + (TIMEOUT_MS / 1000) + "s limit)");
         } catch (Exception e) {
             return Map.of("error", "Execution failed: " + e.getMessage());
         } finally {
-            executor.shutdownNow(); // Abandon the thread if still running
+            executor.shutdownNow();
         }
     }
 
-    /**
-     * Shutdown — no persistent resources to clean up (per-eval threads are daemon).
-     */
     public void shutdown() {
-        // No-op: each evaluation creates/destroys its own executor
+        // Nothing persistent to shut down
     }
 }

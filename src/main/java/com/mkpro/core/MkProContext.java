@@ -19,6 +19,7 @@ import com.google.adk.memory.VectorStore;
 import com.google.adk.memory.MapDBVectorStore;
 import com.mkpro.agents.AgentManager;
 import com.mkpro.plugins.FilterConfig;
+import com.mkpro.plugins.SmartEventFilterPlugin;
 import org.jline.terminal.Terminal;
 import org.jline.reader.LineReader;
 
@@ -261,12 +262,47 @@ public class MkProContext {
         this.runner = runner;
     }
 
+    public SmartEventFilterPlugin getSmartEventFilterPlugin() {
+        if (this.agentManager != null) {
+            return this.agentManager.getSmartEventFilterPlugin();
+        }
+        return null;
+    }
+
     public Session getCurrentSession() {
         return currentSession;
     }
 
     public void setCurrentSession(Session currentSession) {
         this.currentSession = currentSession;
+        if (currentSession != null) {
+            SmartEventFilterPlugin plugin = getSmartEventFilterPlugin();
+            if (plugin != null) {
+                plugin.resetSessionState(currentSession.id());
+            }
+        }
+    }
+
+    public Session initSession(String sessionId) {
+        if (this.agentManager != null) {
+            Session s = this.agentManager.initSession(sessionId);
+            if (s != null) {
+                this.currentSession = s;
+            }
+            return s;
+        }
+        return null;
+    }
+
+    public Session switchSession(String sessionName) {
+        if (this.agentManager != null) {
+            Session s = this.agentManager.switchSession(sessionName);
+            if (s != null) {
+                this.currentSession = s;
+            }
+            return s;
+        }
+        return null;
     }
 
     public BaseSessionService getSessionService() {

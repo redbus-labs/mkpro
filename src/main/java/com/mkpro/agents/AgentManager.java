@@ -109,7 +109,8 @@ public class AgentManager {
     private final Properties configProperties;
     private final ToolRegistry toolRegistry;
     private final AgentFactory agentFactory;
-    private volatile Map<String, AgentConfig> activeAgentConfigs; // Set on each createRunner call
+        private volatile Map<String, AgentConfig> activeAgentConfigs; // Set on each createRunner call
+    private volatile SmartEventFilterPlugin smartEventFilterPlugin;
 
     public AgentManager(BaseSessionService sessionService, 
                         BaseArtifactService artifactService, 
@@ -771,7 +772,8 @@ public class AgentManager {
                     .memoryService(memoryService);
 
             if (filterConfig != null) {
-                agentBuilder.plugins(java.util.Collections.singletonList(new SmartEventFilterPlugin(filterConfig)));
+                this.smartEventFilterPlugin = new SmartEventFilterPlugin(filterConfig);
+            agentBuilder.plugins(java.util.Collections.singletonList(this.smartEventFilterPlugin));
             }
 
             if (logger != null) {
@@ -790,6 +792,54 @@ public class AgentManager {
             }
             return null;
         }
+    }
+
+    public SmartEventFilterPlugin getSmartEventFilterPlugin() {
+        return smartEventFilterPlugin;
+    }
+
+    public void setSmartEventFilterPlugin(SmartEventFilterPlugin smartEventFilterPlugin) {
+        this.smartEventFilterPlugin = smartEventFilterPlugin;
+    }
+
+    public Session initSession() {
+        return initSession("default-session");
+    }
+
+    public Session initSession(String sessionId) {
+        String sid = (sessionId != null && !sessionId.isBlank()) ? sessionId : "default-session";
+        SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sid);
+        Session session = null;
+        try {
+            if (sessionService != null) {
+                session = sessionService.getSession(sessionKey, com.google.adk.sessions.GetSessionConfig.builder().build()).blockingGet();
+            }
+        } catch (Exception ignored) {}
+        if (session == null && sessionService != null) {
+            session = sessionService.createSession(sessionKey, new java.util.HashMap<>()).blockingGet();
+        }
+        if (smartEventFilterPlugin != null) {
+            smartEventFilterPlugin.resetSessionState(sid);
+        }
+        return session;
+    }
+
+    public Session switchSession(String sessionName) {
+        String sid = (sessionName != null && !sessionName.isBlank()) ? sessionName : "default-session";
+        SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sid);
+        Session session = null;
+        try {
+            if (sessionService != null) {
+                session = sessionService.getSession(sessionKey, com.google.adk.sessions.GetSessionConfig.builder().build()).blockingGet();
+            }
+        } catch (Exception ignored) {}
+        if (session == null && sessionService != null) {
+            session = sessionService.createSession(sessionKey, new java.util.HashMap<>()).blockingGet();
+        }
+        if (smartEventFilterPlugin != null) {
+            smartEventFilterPlugin.resetSessionState(sid);
+        }
+        return session;
     }
 
     /**

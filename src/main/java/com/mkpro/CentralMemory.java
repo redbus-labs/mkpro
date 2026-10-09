@@ -1,5 +1,6 @@
 package com.mkpro;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mkpro.core.StoreKeys;
 import com.mkpro.infra.ssh.SshSandboxConfig;
 import com.mkpro.models.AgentConfig;
@@ -7,11 +8,15 @@ import com.mkpro.models.AgentStat;
 import com.mkpro.models.Goal;
 import com.mkpro.models.McpServer;
 import com.mkpro.models.Provider;
+import com.mkpro.models.notes.NoteItem;
+import com.mkpro.models.notes.TaskItem;
 import com.mkpro.plugins.FilterConfig;
 import com.mkpro.utils.PathUtils;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.mapdb.Serializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -44,6 +49,9 @@ public class CentralMemory {
     public interface MemoryListener {
         void onUpdate(String key, Object value);
     }
+
+    private static final Logger logger = LoggerFactory.getLogger(CentralMemory.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Path sharedDbPath;
     private final DB localDb;
@@ -417,6 +425,14 @@ public class CentralMemory {
             genericMap.forEach((k, v) -> genericStrings.put(k, v != null ? v.toString() : "null"));
             r.put("generic_store", genericStrings);
 
+            // Tasks
+            Map<String, String> tasksMap = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+            r.put("mkpro_tasks", new java.util.LinkedHashMap<>(tasksMap));
+
+            // Notes
+            Map<String, String> notesMap = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+            r.put("mkpro_notes", new java.util.LinkedHashMap<>(notesMap));
+
             return r;
         });
         result.putAll(shared);
@@ -505,6 +521,242 @@ public class CentralMemory {
             db.commit();
         });
         notifyListeners("goals:" + path, goals);
+    }
+
+    // ==========================================================================
+    // SHARED PATH — Tasks & Notes (shared DB, JSON serialized)
+    // ==========================================================================
+
+    public List<TaskItem> getAllTasks() {
+        try {
+            List<TaskItem> tasks = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<TaskItem> list = new ArrayList<>();
+                for (String json : map.values()) {
+                    try {
+                        TaskItem task = objectMapper.readValue(json, TaskItem.class);
+                        if (task != null) {
+                            list.add(task);
+                        }
+                    } catch (Exception e) {
+                        logger.error("Failed to deserialize task: {}", json, e);
+                    }
+                }
+                return list;
+            });
+            return tasks != null ? tasks : Collections.emptyList();
+        } catch (Exception e) {
+            logger.error("Failed to retrieve tasks", e);
+            return Collections.emptyList();
+        }
+    }
+
+    public TaskItem getTask(String id) {
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        try {
+            return withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                String json = map.get(id);
+                if (json == null) {
+                    return null;
+                }
+                try {
+                    return objectMapper.readValue(json, TaskItem.class);
+                } catch (Exception e) {
+                    logger.error("Failed to deserialize task for id: {}", id, e);
+                    return null;
+                }
+            });
+        } catch (Exception e) {
+            logger.error("Failed to retrieve task for id: {}", id, e);
+            return null;
+        }
+    }
+
+    public TaskItem saveTask(TaskItem task) {
+        if (task == null) {
+            return null;
+        }
+        try {
+            if (task.getId() == null || task.getId().isBlank()) {
+                task.setId(UUID.randomUUID().toString());
+            }
+            task.setUpdatedAt(System.currentTimeMillis());
+            String json = objectMapper.writeValueAsString(task);
+            withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                map.put(task.getId(), json);
+                db.commit();
+                return null;
+            });
+            notifyListeners("task:" + task.getId(), task);
+            return task;
+        } catch (Exception e) {
+            logger.error("Failed to save task: {}", task.getId(), e);
+            return null;
+        }
+    }
+
+    public boolean deleteTask(String id) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+        try {
+            Boolean removed = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                boolean exists = map.remove(id) != null;
+                if (exists) {
+                    db.commit();
+                }
+                return exists;
+            });
+            boolean result = Boolean.TRUE.equals(removed);
+            if (result) {
+                notifyListeners("task_deleted:" + id, null);
+            }
+            return result;
+        } catch (Exception e) {
+            logger.error("Failed to delete task: {}", id, e);
+            return false;
+        }
+    }
+
+    public TaskItem toggleTask(String id) {
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        try {
+            TaskItem updatedTask = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                String json = map.get(id);
+                if (json == null) {
+                    return null;
+                }
+                try {
+                    TaskItem task = objectMapper.readValue(json, TaskItem.class);
+                    if (task == null) {
+                        return null;
+                    }
+                    if ("DONE".equalsIgnoreCase(task.getStatus())) {
+                        task.setStatus("TODO");
+                    } else {
+                        task.setStatus("DONE");
+                    }
+                    task.setUpdatedAt(System.currentTimeMillis());
+                    map.put(id, objectMapper.writeValueAsString(task));
+                    db.commit();
+                    return task;
+                } catch (Exception e) {
+                    logger.error("Failed to toggle task JSON for id: {}", id, e);
+                    return null;
+                }
+            });
+            if (updatedTask != null) {
+                notifyListeners("task:" + updatedTask.getId(), updatedTask);
+            }
+            return updatedTask;
+        } catch (Exception e) {
+            logger.error("Failed to toggle task: {}", id, e);
+            return null;
+        }
+    }
+
+    public List<NoteItem> getAllNotes() {
+        try {
+            List<NoteItem> notes = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<NoteItem> list = new ArrayList<>();
+                for (String json : map.values()) {
+                    try {
+                        NoteItem note = objectMapper.readValue(json, NoteItem.class);
+                        if (note != null) {
+                            list.add(note);
+                        }
+                    } catch (Exception e) {
+                        logger.error("Failed to deserialize note: {}", json, e);
+                    }
+                }
+                return list;
+            });
+            return notes != null ? notes : Collections.emptyList();
+        } catch (Exception e) {
+            logger.error("Failed to retrieve notes", e);
+            return Collections.emptyList();
+        }
+    }
+
+    public NoteItem getNote(String id) {
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        try {
+            return withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                String json = map.get(id);
+                if (json == null) {
+                    return null;
+                }
+                try {
+                    return objectMapper.readValue(json, NoteItem.class);
+                } catch (Exception e) {
+                    logger.error("Failed to deserialize note for id: {}", id, e);
+                    return null;
+                }
+            });
+        } catch (Exception e) {
+            logger.error("Failed to retrieve note for id: {}", id, e);
+            return null;
+        }
+    }
+
+    public NoteItem saveNote(NoteItem note) {
+        if (note == null) {
+            return null;
+        }
+        try {
+            if (note.getId() == null || note.getId().isBlank()) {
+                note.setId(UUID.randomUUID().toString());
+            }
+            note.setUpdatedAt(System.currentTimeMillis());
+            String json = objectMapper.writeValueAsString(note);
+            withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                map.put(note.getId(), json);
+                db.commit();
+                return null;
+            });
+            notifyListeners("note:" + note.getId(), note);
+            return note;
+        } catch (Exception e) {
+            logger.error("Failed to save note: {}", note.getId(), e);
+            return null;
+        }
+    }
+
+    public boolean deleteNote(String id) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+        try {
+            Boolean removed = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                boolean exists = map.remove(id) != null;
+                if (exists) {
+                    db.commit();
+                }
+                return exists;
+            });
+            boolean result = Boolean.TRUE.equals(removed);
+            if (result) {
+                notifyListeners("note_deleted:" + id, null);
+            }
+            return result;
+        } catch (Exception e) {
+            logger.error("Failed to delete note: {}", id, e);
+            return false;
+        }
     }
 
     // ==========================================================================
@@ -815,6 +1067,12 @@ public class CentralMemory {
                 } else {
                     filterMap.remove("current");
                 }
+            } else if (key.startsWith("task:")) {
+                Map<String, String> tasks = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                tasks.put(key.substring(5), (String) value);
+            } else if (key.startsWith("note:")) {
+                Map<String, String> notes = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                notes.put(key.substring(5), (String) value);
             } else {
                 Map<String, Object> genericStore = db.hashMap("generic_store", Serializer.STRING, Serializer.JAVA).createOrOpen();
                 if (value != null) {

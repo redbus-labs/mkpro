@@ -45,6 +45,7 @@ import com.google.adk.memory.EmbeddingService;
 import com.google.adk.memory.MapDBVectorStore;
 import com.mkpro.plugins.FilterConfig;
 import com.mkpro.plugins.SmartEventFilterPlugin;
+import com.mkpro.core.MkProContext;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -60,6 +61,7 @@ import java.util.LinkedHashMap;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.function.Consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -109,8 +111,12 @@ public class AgentManager {
     private final Properties configProperties;
     private final ToolRegistry toolRegistry;
     private final AgentFactory agentFactory;
-        private volatile Map<String, AgentConfig> activeAgentConfigs; // Set on each createRunner call
+    private volatile Map<String, AgentConfig> activeAgentConfigs; // Set on each createRunner call
+    private volatile Map<String, AgentConfig> agentConfigs;
+    private volatile String projectContext;
+    private volatile MkProContext context;
     private volatile SmartEventFilterPlugin smartEventFilterPlugin;
+    private final Map<String, List<BaseTool>> agentToolMap = new java.util.concurrent.ConcurrentHashMap<>();
 
     public AgentManager(BaseSessionService sessionService, 
                         BaseArtifactService artifactService, 
@@ -356,6 +362,22 @@ public class AgentManager {
         return toolRegistry;
     }
 
+    public void setContext(MkProContext context) {
+        this.context = context;
+    }
+
+    public MkProContext getContext() {
+        return context;
+    }
+
+    public void setProjectContext(String projectContext) {
+        this.projectContext = projectContext;
+    }
+
+    public String getProjectContext() {
+        return projectContext;
+    }
+
     /**
      * Public LLM creation for use by PeerAgentRequestHandler.
      */
@@ -429,6 +451,7 @@ public class AgentManager {
 
     public Runner createRunner(Map<String, AgentConfig> agentConfigs, String augmentedContext, FilterConfig filterConfig) {
         this.activeAgentConfigs = agentConfigs;
+        this.agentConfigs = agentConfigs;
         try {
             // Automatically detect project context if not already provided or if augmentedContext is empty
             String fullContext = augmentedContext != null ? augmentedContext : "";
@@ -446,6 +469,7 @@ public class AgentManager {
                     // Ignore context detection errors
                 }
             }
+            this.projectContext = fullContext;
 
             // 1. Build discrete, specialized toolsets from com.mkpro.tools.*
             List<BaseTool> fileSystemTools = new ArrayList<>();
@@ -606,6 +630,8 @@ public class AgentManager {
                 toolMap.put(def.getName(), toolsForAgent);
             }
 
+            this.agentToolMap.putAll(toolMap);
+
             List<BaseTool> coordinatorTools = new ArrayList<>();
             coordinatorTools.add(FetchUrlTools.create());
             coordinatorTools.add(CentralMemoryTools.commitToMemory());
@@ -715,13 +741,14 @@ public class AgentManager {
                 coordInstruction += peersContext.toString();
             }
             
+            coordInstruction = com.mkpro.utils.InstructionSanitizer.sanitize(coordInstruction);
             LlmAgent coordinator = LlmAgent.builder()
                     .name("Coordinator")
                     .description("The main orchestrator agent.")
                     .instruction(coordInstruction)
                     .model(coordLlm)
-                    .tools(coordinatorTools) // Expose delegation tools + SSH tools
-                    .planning(true) // ENABLE PLANNING LOOP
+                    .tools(coordinatorTools)
+                    .planning(true)
                     .build();
             agents.add(coordinator);
 
@@ -743,9 +770,9 @@ public class AgentManager {
                 LlmAgent.Builder agentBuilder = LlmAgent.builder()
                         .name(def.getName())
                         .description(def.getDescription())
-                        .instruction(fullContext + "\n\nSpecific Instruction: " + def.getInstruction())
+                        .instruction(com.mkpro.utils.InstructionSanitizer.sanitize(fullContext + "\n\nSpecific Instruction: " + def.getInstruction()))
                         .model(llm)
-                        .planning(true); // ENABLE PLANNING LOOP
+                        .planning(true);
 
                 if (def.getName() != null) {
                     List<BaseTool> toolsForAgent = toolMap.get(def.getName());
@@ -880,7 +907,7 @@ public class AgentManager {
                 || nameLower.equals("remoteops") || nameLower.equals("remote_ops") || nameLower.equals("ops")
                 || nameLower.equals("sysadmin_ssh") || nameLower.equals("ubuntusysadmin")) {
             return ubuntuOpsTools;
-        } else if (nameLower.equals("devops") || nameLower.contains("sre")) {
+        } else if (nameLower.equals("devops") || nameContains(nameLower, "sre")) {
             return devOpsTools;
         } else if (nameLower.contains("git") || nameLower.contains("release")) {
             return gitTools;
@@ -899,6 +926,10 @@ public class AgentManager {
         } else {
             return coderTools;
         }
+    }
+
+    private static boolean nameContains(String name, String sub) {
+        return name.contains(sub);
     }
 
     private BaseTool createDelegationToolFromDef(String agentName, String toolName, 
@@ -952,10 +983,67 @@ public class AgentManager {
                         subAgentTools,
                         finalConfig.getServerUrl()
                     ));
-                    return Collections.singletonMap("result", result);
+                    String pruned = com.mkpro.plugins.ToolOutputPruner.pruneText(result, 10_000);
+                    return Collections.singletonMap("result", pruned);
                 });
             }
         };
+    }
+
+    /**
+     * Executes a sub-agent directly, bypassing the Coordinator LLM orchestrator.
+     * Used by Fast Routing when intent/keyword match has high confidence.
+     *
+     * @param agentName the target sub-agent name (e.g. "Coder", "Tester")
+     * @param userPrompt the user query/prompt
+     * @param chunkConsumer optional streaming chunk listener
+     * @return the execution response text
+     */
+    public String executeDirectDispatch(String agentName, String userPrompt, Consumer<String> chunkConsumer) {
+        if (agentName == null || userPrompt == null) {
+            return "Error: Agent name and prompt must not be null.";
+        }
+        AgentManager.lastDelegatedAgent = agentName;
+        AgentConfig config = agentConfigs != null ? agentConfigs.get(agentName) : null;
+        if (config == null) {
+            config = new AgentConfig(Provider.OLLAMA, "llama3");
+        }
+
+        AgentDefinition def = agentDefinitions != null ? agentDefinitions.get(agentName) : null;
+        String agentInstruction = (def != null && def.getInstruction() != null) ? def.getInstruction() : "";
+        boolean needsCtx = def == null || def.isNeedsContext();
+        String agentContext = needsCtx ? ((projectContext != null && !projectContext.isEmpty()) ? "\n\n" + projectContext : "") : "";
+        String fullInstruction = BASE_AGENT_POLICY + "\n" + agentInstruction + agentContext;
+
+        List<BaseTool> tools = agentToolMap.getOrDefault(agentName, Collections.emptyList());
+        if (tools.isEmpty() && def != null && def.getTools() != null && toolRegistry != null) {
+            tools = toolRegistry.resolve(def.getTools());
+            if (tools != null) {
+                agentToolMap.put(agentName, tools);
+            }
+        }
+        if (tools == null) {
+            tools = Collections.emptyList();
+        }
+
+        AgentRequest request = new AgentRequest(
+            agentName,
+            fullInstruction,
+            config.getModelName(),
+            config.getProvider(),
+            userPrompt,
+            tools,
+            config.getServerUrl(),
+            chunkConsumer
+        );
+
+        String result = executeSubAgent(request);
+
+        if (context != null && context.getActionLogger() != null) {
+            context.getActionLogger().log(agentName, result);
+        }
+
+        return result;
     }
 
     private String executeSubAgent(AgentRequest request) {
@@ -1171,7 +1259,16 @@ public class AgentManager {
             .blockingForEach(event -> {
                 event.content().ifPresent(c -> {
                     c.parts().orElse(java.util.Collections.emptyList())
-                     .forEach(p -> p.text().ifPresent(output::append));
+                     .forEach(part -> {
+                         part.text().ifPresent(text -> {
+                             if (text != null && !text.isEmpty()) {
+                                 output.append(text);
+                                 if (request.getChunkConsumer() != null) {
+                                     request.getChunkConsumer().accept(text);
+                                 }
+                             }
+                         });
+                     });
                 });
                 event.usageMetadata().ifPresent(u -> {
                     tokens[0] = u.promptTokenCount().orElse(0);

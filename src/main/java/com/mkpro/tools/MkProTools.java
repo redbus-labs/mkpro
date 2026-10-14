@@ -201,16 +201,31 @@ public class MkProTools {
                         List<String> allLines = Files.readAllLines(validated);
                         int totalLines = allLines.size();
 
-                        // Clamp start
-                        startLine = Math.max(1, startLine);
-                        // Default end: start + 500 or total
+                        if (totalLines == 0) {
+                            Map<String, Object> emptyResult = new java.util.HashMap<>();
+                            emptyResult.put("content", "");
+                            emptyResult.put("total_lines", 0);
+                            emptyResult.put("showing_lines", "0-0");
+                            return emptyResult;
+                        }
+
+                        // Clamp startLine between 1 and totalLines
+                        startLine = Math.max(1, Math.min(startLine, totalLines));
+
+                        // Clamp endLine
                         if (endLine < 0) {
                             endLine = Math.min(startLine + 499, totalLines);
+                        } else {
+                            endLine = Math.max(startLine, Math.min(endLine, totalLines));
                         }
-                        endLine = Math.min(endLine, totalLines);
 
-                        // Extract range
-                        List<String> lines = allLines.subList(startLine - 1, endLine);
+                        int fromIdx = Math.max(0, startLine - 1);
+                        int toIdx = Math.min(endLine, totalLines);
+                        if (fromIdx > toIdx) {
+                            fromIdx = toIdx;
+                        }
+
+                        List<String> lines = allLines.subList(fromIdx, toIdx);
                         String content = String.join("\n", lines);
 
                         Map<String, Object> result = new java.util.HashMap<>();

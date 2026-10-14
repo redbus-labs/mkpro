@@ -2,6 +2,7 @@ package com.mkpro.models;
 
 import com.google.adk.tools.BaseTool;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class AgentRequest {
     private String agentName;
@@ -11,6 +12,7 @@ public class AgentRequest {
     private String userPrompt;
     private List<BaseTool> tools;
     private String serverUrl; // Ollama endpoint URL (null = use default)
+    private Consumer<String> chunkConsumer;
 
     public AgentRequest(String agentName, String instruction, String modelName, Provider provider, String userPrompt, List<BaseTool> tools) {
         this.agentName = agentName;
@@ -32,6 +34,11 @@ public class AgentRequest {
         this.serverUrl = serverUrl;
     }
 
+    public AgentRequest(String agentName, String instruction, String modelName, Provider provider, String userPrompt, List<BaseTool> tools, String serverUrl, Consumer<String> chunkConsumer) {
+        this(agentName, instruction, modelName, provider, userPrompt, tools, serverUrl);
+        this.chunkConsumer = chunkConsumer;
+    }
+
     public AgentRequest(String userPrompt) {
         this.userPrompt = userPrompt;
     }
@@ -43,4 +50,6 @@ public class AgentRequest {
     public String getUserPrompt() { return userPrompt; }
     public List<BaseTool> getTools() { return tools; }
     public String getServerUrl() { return serverUrl; }
+    public Consumer<String> getChunkConsumer() { return chunkConsumer; }
+    public void setChunkConsumer(Consumer<String> chunkConsumer) { this.chunkConsumer = chunkConsumer; }
 }

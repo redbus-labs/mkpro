@@ -334,6 +334,7 @@ public class TerminalUI {
                                     isThinking.set(false);
                                     spinnerThread.interrupt();
                                     System.err.println(ANSI_RESET + "\n[Error] " + error.getMessage());
+                                    error.printStackTrace();
                                 }, () -> {
                                     // ON COMPLETE - Calculate stats
                                     long duration = System.currentTimeMillis() - startTime;

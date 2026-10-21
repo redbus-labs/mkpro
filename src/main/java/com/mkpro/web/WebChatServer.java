@@ -27,6 +27,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *   Client → Server: {"type": "user_input", "text": "..."}
  *   Server → Client: {"type": "stream_start", "agent": "Coordinator"}
  *   Server → Client: {"type": "stream_chunk", "text": "..."}
+ *   Server → Client: {"type": "tool_chunk", "toolName": "...", "jsonDelta": "..."}
+ *   Server → Client: {"type": "stream_error", "error": "..."}
  *   Server → Client: {"type": "stream_end"}
  *   Server → Client: {"type": "maker", "message": "..."}
  *   Server → Client: {"type": "routing", "message": "..."}
@@ -183,6 +185,23 @@ public class WebChatServer {
      */
     public void broadcastStreamChunk(String text) {
         broadcast(createMessage("stream_chunk").put("text", text));
+    }
+
+    /**
+     * Broadcast a tool call chunk (tool execution streaming).
+     */
+    public void broadcastToolChunk(String toolName, String jsonDelta) {
+        broadcast(createMessage("tool_chunk")
+            .put("toolName", toolName != null ? toolName : "")
+            .put("jsonDelta", jsonDelta != null ? jsonDelta : ""));
+    }
+
+    /**
+     * Broadcast a stream error event.
+     */
+    public void broadcastStreamError(String error) {
+        broadcast(createMessage("stream_error")
+            .put("error", error != null ? error : ""));
     }
 
     /**

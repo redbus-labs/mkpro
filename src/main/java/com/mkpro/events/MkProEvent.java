@@ -20,6 +20,8 @@ public class MkProEvent {
         MAKER_COMPLETE,      // Goal completed
         STREAM_START,        // Agent starts responding
         STREAM_CHUNK,        // Text chunk
+        STREAM_TOOL_CHUNK,   // Tool execution chunk
+        STREAM_ERROR,        // Live stream error
         STREAM_END,          // Response complete
         DELEGATION,          // Coordinator delegated to agent
         STEP_START,          // Step execution started
@@ -98,6 +100,24 @@ public class MkProEvent {
 
     public static MkProEvent streamChunk(String text) {
         return new MkProEvent(Type.STREAM_CHUNK, Map.of("text", text));
+    }
+
+    public static MkProEvent streamToolChunk(String sessionId, String agentName, String toolName, String jsonDelta) {
+        Map<String, String> map = new HashMap<>();
+        map.put("sessionId", sessionId != null ? sessionId : "");
+        map.put("agent", agentName != null ? agentName : "");
+        map.put("toolName", toolName != null ? toolName : "");
+        map.put("jsonDelta", jsonDelta != null ? jsonDelta : "");
+        return new MkProEvent(Type.STREAM_TOOL_CHUNK, Collections.unmodifiableMap(map));
+    }
+
+    public static MkProEvent streamError(String sessionId, String agentName, String errorMessage) {
+        Map<String, String> map = new HashMap<>();
+        map.put("sessionId", sessionId != null ? sessionId : "");
+        map.put("agent", agentName != null ? agentName : "");
+        map.put("error", errorMessage != null ? errorMessage : "");
+        map.put("errorMessage", errorMessage != null ? errorMessage : "");
+        return new MkProEvent(Type.STREAM_ERROR, Collections.unmodifiableMap(map));
     }
 
     public static MkProEvent streamEnd() {

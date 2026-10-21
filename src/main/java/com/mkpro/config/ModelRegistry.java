@@ -37,6 +37,7 @@ public class ModelRegistry {
     public static List<String> BEDROCK_MODELS = new ArrayList<>();
     public static List<String> OLLAMA_MODELS = new ArrayList<>();
     public static List<String> AZURE_MODELS = new ArrayList<>();
+    public static List<String> OPENAI_MODELS = new ArrayList<>();
 
     static {
         loadModels();
@@ -93,8 +94,7 @@ public class ModelRegistry {
 
     private static void setDefaultModels() {
         GEMINI_MODELS = new ArrayList<>(Arrays.asList(
-            "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite",
-            "gemini-3.1-pro-preview"
+            "gemini-4-argon", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"
         ));
         BEDROCK_MODELS = new ArrayList<>(Arrays.asList(
             "anthropic.claude-opus-5", "anthropic.claude-sonnet-5", "anthropic.claude-fable-5",
@@ -106,6 +106,9 @@ public class ModelRegistry {
         AZURE_MODELS = new ArrayList<>(Arrays.asList(
             "gpt-5.6", "gpt-5.4", "gpt-5.1", "gpt-5.1-mini",
             "gpt-5", "gpt-5-mini", "o4-mini", "o3-mini"
+        ));
+        OPENAI_MODELS = new ArrayList<>(Arrays.asList(
+            "google/gemma-4-E4B-it-qat-w4a16-ct", "gpt-4o", "gpt-4o-mini"
         ));
     }
 
@@ -287,6 +290,7 @@ public class ModelRegistry {
         all.addAll(BEDROCK_MODELS);
         all.addAll(OLLAMA_MODELS);
         all.addAll(AZURE_MODELS);
+        all.addAll(OPENAI_MODELS);
         return all;
     }
 }

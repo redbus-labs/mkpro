@@ -10,4 +10,5 @@ public enum Provider implements Serializable {
     AZURE,
     NVIDIA,
     JLAMA,
+    OPENAI,
 }

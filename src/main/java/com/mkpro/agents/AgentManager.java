@@ -402,6 +402,12 @@ public class AgentManager {
                     return new BedrockBaseLM(config.getModelName());
                 case AZURE:
                     return new AzureBaseLM(config.getModelName());
+                case OPENAI:
+                    com.mkpro.config.ConfigService cfg = new com.mkpro.config.ConfigService();
+                    String openAiUrl = cfg.getSetting("openai.base.url", "https://api.openai.com/v1");
+                    String openAiKey = cfg.getSetting("openai.api.key", System.getenv("OPENAI_API_KEY"));
+                    if (openAiKey == null) openAiKey = "";
+                    return new com.google.adk.models.OpenAiBaseLM(config.getModelName(), openAiUrl, openAiKey);
                 case SARVAM:
                     return new SarvamBaseLM(config.getModelName());
                 case NVIDIA:

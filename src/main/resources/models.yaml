@@ -1,6 +1,7 @@
 gemini:
-  # Flash Series (Speed, Agents & Coding)
-  - gemini-3.7-flash                        # Latest flagship — coding agents, agentic workflows (Aug 2026)
+  # Latest Argon & Flash Series
+  - gemini-4-argon
+  - gemini-3.8-flash
   - gemini-3.6-flash                        # Production-grade stable Flash (GA, Jul 2026)
   - gemini-3.5-flash-lite                   # Ultra-low cost, high-speed lightweight model
 
@@ -45,3 +46,11 @@ azure:
   # Reasoning / o-Series (Deep Think)
   - o4-mini                                 # Latest generation optimized reasoning mini model
   - o3-mini                                 # High-efficiency, low-latency reasoning model
+
+openai:
+  # Local vLLM instance
+  - google/gemma-4-E4B-it-qat-w4a16-ct      # Local Gemma-4 QAT model
+
+  # Standard OpenAI Models
+  - gpt-4o
+  - gpt-4o-mini

@@ -133,12 +133,12 @@ public class ConfigCommand implements Command {
         } else {
             providers.add("OLLAMA");
         }
-        providers.add("GEMINI");
-        providers.add("BEDROCK");
-        providers.add("SARVAM");
-        providers.add("AZURE");
-        providers.add("NVIDIA");
-        providers.add("JLAMA");
+        
+        for (Provider p : com.mkpro.models.Provider.values()) {
+            if (p != Provider.OLLAMA) {
+                providers.add(p.name());
+            }
+        }
         
         String providerChoice = ConsoleUtils.selectOption(context, "Select a provider:", providers);
         if (providerChoice == null) return;
@@ -250,6 +250,7 @@ public class ConfigCommand implements Command {
             case "BEDROCK": return ModelRegistry.BEDROCK_MODELS;
             case "AZURE": return ModelRegistry.AZURE_MODELS;
             case "OLLAMA": return ModelRegistry.OLLAMA_MODELS;
+            case "OPENAI": return com.mkpro.config.ModelRegistry.OPENAI_MODELS;
             case "JLAMA":
                 com.mkpro.models.JlamaModelRegistry registry = new com.mkpro.models.JlamaModelRegistry();
                 List<String> jlamaModels = new ArrayList<>();
@@ -306,6 +307,9 @@ public class ConfigCommand implements Command {
         } else if (provider == Provider.GEMINI) {
             // Gemini key may come from config.properties; warn only.
             // Actual validation happens via Gemini client.
+        } else if (provider == Provider.OPENAI) {
+            // simply return true since validation will fail downstream if the key is wrong anyway
+            return true;
         }
         return true;
     }

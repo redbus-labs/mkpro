@@ -51,11 +51,17 @@ public class LessonPromotionEngineTest {
     @Test
     @DisplayName("Constructor with FactEngine and CentralMemory assigns both fields")
     void testConstructorWithFactEngineAndCentralMemory() {
-        CentralMemory memory = new CentralMemory();
-        LessonPromotionEngine engine = new LessonPromotionEngine(factEngine, memory);
-        assertSame(factEngine, engine.getFactEngine());
-        assertSame(memory, engine.getMemory());
-        assertEquals(2, engine.getPromotionThreshold());
+        Path tempDir = Path.of(System.getProperty("java.io.tmpdir"), "mkpro_test_engine_" + System.nanoTime());
+        CentralMemory memory = new CentralMemory(tempDir.resolve("shared.db"), tempDir.resolve("local.db"));
+        try {
+            LessonPromotionEngine engine = new LessonPromotionEngine(factEngine, memory);
+            assertSame(factEngine, engine.getFactEngine());
+            assertSame(memory, engine.getMemory());
+            assertEquals(2, engine.getPromotionThreshold());
+        } finally {
+            memory.close();
+            deleteRecursively(tempDir.toFile());
+        }
     }
 
     @Test

@@ -50,6 +50,12 @@ public class WebSocketSink implements MkProEventListener {
             case STREAM_CHUNK -> {
                 webChatServer.broadcastStreamChunk(event.get("text"));
             }
+            case STREAM_TOOL_CHUNK -> {
+                webChatServer.broadcastToolChunk(event.get("toolName"), event.get("jsonDelta"));
+            }
+            case STREAM_ERROR -> {
+                webChatServer.broadcastStreamError(event.get("error"));
+            }
             case STREAM_END -> {
                 webChatServer.broadcastStreamEnd();
             }

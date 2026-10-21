@@ -48,8 +48,11 @@ azure:
   - o3-mini                                 # High-efficiency, low-latency reasoning model
 
 openai:
-  # Local vLLM instance
-  - google/gemma-4-E4B-it-qat-w4a16-ct      # Local Gemma-4 QAT model
+  # Local vLLM instances (Gemma QAT)
+  - google/gemma-4-31B-it-qat-w4a16-ct
+  - google/gemma-4-12B-it-qat-w4a16-ct
+  - google/gemma-4-e4B-it-qat-w4a16-ct
+  - google/gemma-4-e2B-it-qat-w4a16-ct
 
   # Standard OpenAI Models
   - gpt-4o

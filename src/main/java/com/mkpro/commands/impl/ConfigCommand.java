@@ -156,22 +156,29 @@ public class ConfigCommand implements Command {
         }
         if (providerStr == null) return;
 
-        List<String> models = getModelsForProvider(providerStr);
+        List<String> models = new ArrayList<>(getModelsForProvider(providerStr));
         // If a specific Ollama server was chosen, fetch models from that server
         if (serverName != null && providerStr.equals("OLLAMA")) {
             String serverUrl = OllamaCommand.resolveServerUrl(serverName, context.getCentralMemory());
             if (serverUrl != null) {
                 List<String> serverModels = com.mkpro.config.ModelRegistry.fetchModelsFromServer(serverUrl);
                 if (!serverModels.isEmpty()) {
-                    models = serverModels;
+                    models = new ArrayList<>(serverModels);
                 }
             }
         }
+        
+        // Add option for custom model
+        models.add("[Enter Custom Model manually]");
+        
         String model;
-        if (models.isEmpty()) {
+        if (models.size() == 1) { // Only the custom option
             model = context.getLineReader().readLine("Enter model name: ").trim();
         } else {
             model = ConsoleUtils.selectOption(context, "Select a model for " + providerStr + ":", models);
+            if ("[Enter Custom Model manually]".equals(model)) {
+                model = context.getLineReader().readLine("Enter custom model name: ").trim();
+            }
         }
         if (model == null || model.isEmpty()) return;
 

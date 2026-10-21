@@ -108,7 +108,12 @@ public class ModelRegistry {
             "gpt-5", "gpt-5-mini", "o4-mini", "o3-mini"
         ));
         OPENAI_MODELS = new ArrayList<>(Arrays.asList(
-            "google/gemma-4-E4B-it-qat-w4a16-ct", "gpt-4o", "gpt-4o-mini"
+            "google/gemma-4-31B-it-qat-w4a16-ct",
+            "google/gemma-4-12B-it-qat-w4a16-ct",
+            "google/gemma-4-e4B-it-qat-w4a16-ct",
+            "google/gemma-4-e2B-it-qat-w4a16-ct",
+            "gpt-4o",
+            "gpt-4o-mini"
         ));
     }
 

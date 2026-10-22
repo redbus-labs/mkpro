@@ -63,6 +63,8 @@ public class CentralMemory {
     private volatile List<McpServer> mcpServerCache = null;
     private volatile List<String> ollamaServerCache = null;
     private volatile String selectedOllamaServerCache = null;
+    private volatile List<String> openAiServerCache = null;
+    private volatile String selectedOpenAiServerCache = null;
     private volatile SshSandboxConfig sshSandboxConfigCache = null;
     private volatile boolean configCacheLoaded = false;
 
@@ -212,6 +214,15 @@ public class CentralMemory {
                 Map<String, String> selectedMap = db.hashMap("selected_ollama_server", Serializer.STRING, Serializer.STRING).createOrOpen();
                 selectedOllamaServerCache = selectedMap.getOrDefault("url", "");
 
+                // Load OpenAI servers
+                Map<String, List<String>> openAiMap = db.hashMap("openai_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
+                List<String> openAiList = openAiMap.get("list");
+                openAiServerCache = openAiList != null ? new ArrayList<>(openAiList) : new ArrayList<>();
+
+                // Load selected OpenAI server
+                Map<String, String> selectedOpenAiMap = db.hashMap("selected_openai_server", Serializer.STRING, Serializer.STRING).createOrOpen();
+                selectedOpenAiServerCache = selectedOpenAiMap.getOrDefault("url", "");
+
                 // Load SSH sandbox config
                 Map<String, SshSandboxConfig> sshMap = db.hashMap("ssh_sandbox_config", Serializer.STRING, Serializer.JAVA).createOrOpen();
                 sshSandboxConfigCache = sshMap.get("default");
@@ -231,6 +242,8 @@ public class CentralMemory {
         mcpServerCache = null;
         ollamaServerCache = null;
         selectedOllamaServerCache = null;
+        openAiServerCache = null;
+        selectedOpenAiServerCache = null;
         sshSandboxConfigCache = null;
         loadCacheFromShared();
     }
@@ -394,6 +407,12 @@ public class CentralMemory {
             Map<String, String> ollamaStrings = new java.util.LinkedHashMap<>();
             ollamaMap.forEach((k, v) -> ollamaStrings.put(k, v != null ? v.toString() : "null"));
             r.put("ollama_servers", ollamaStrings);
+
+            // OpenAI servers
+            Map<String, Object> openAiMap = db.hashMap("openai_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            Map<String, String> openAiStrings = new java.util.LinkedHashMap<>();
+            openAiMap.forEach((k, v) -> openAiStrings.put(k, v != null ? v.toString() : "null"));
+            r.put("openai_servers", openAiStrings);
 
             // Goals
             Map<String, Object> goalsMap = db.hashMap("project_goals", Serializer.STRING, Serializer.JAVA).createOrOpen();
@@ -908,6 +927,55 @@ public class CentralMemory {
     }
 
     // ==========================================================================
+    // CACHED PATH — OpenAI Servers (rare writes, cached reads)
+    // ==========================================================================
+
+    public List<String> getOpenAiServers() {
+        if (openAiServerCache != null) {
+            return new ArrayList<>(openAiServerCache);
+        }
+        List<String> result = withSharedDb(db -> {
+            Map<String, List<String>> openai_servers = db.hashMap("openai_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            List<String> list = openai_servers.get("list");
+            return list != null ? new ArrayList<>(list) : new ArrayList<>();
+        });
+        openAiServerCache = result;
+        return new ArrayList<>(result);
+    }
+
+    public void saveOpenAiServers(List<String> servers) {
+        withSharedDbVoid(db -> {
+            Map<String, List<String>> openai_servers = db.hashMap("openai_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            openai_servers.put("list", servers);
+            db.commit();
+        });
+        openAiServerCache = new ArrayList<>(servers);
+        notifyListeners("openai_servers", servers);
+    }
+
+    public String getSelectedOpenAiServer() {
+        if (selectedOpenAiServerCache != null) {
+            return selectedOpenAiServerCache;
+        }
+        String result = withSharedDb(db -> {
+            Map<String, String> selected = db.hashMap("selected_openai_server", Serializer.STRING, Serializer.STRING).createOrOpen();
+            return selected.getOrDefault("url", "");
+        });
+        selectedOpenAiServerCache = result;
+        return result;
+    }
+
+    public void saveSelectedOpenAiServer(String url) {
+        withSharedDbVoid(db -> {
+            Map<String, String> selected = db.hashMap("selected_openai_server", Serializer.STRING, Serializer.STRING).createOrOpen();
+            selected.put("url", url);
+            db.commit();
+        });
+        selectedOpenAiServerCache = url;
+        notifyListeners("selected_openai_server", url);
+    }
+
+    // ==========================================================================
     // CACHED PATH — SSH Sandbox Config (MapDB shared DB, cached reads)
     // ==========================================================================
 
@@ -1050,6 +1118,15 @@ public class CentralMemory {
                 Map<String, String> selected = db.hashMap("selected_ollama_server", Serializer.STRING, Serializer.STRING).createOrOpen();
                 selected.put("url", (String) value);
                 selectedOllamaServerCache = (String) value;
+            } else if (key.equals("openai_servers")) {
+                Map<String, List<String>> openai_servers = db.hashMap("openai_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
+                List<String> servers = (List<String>) value;
+                openai_servers.put("list", servers);
+                openAiServerCache = servers != null ? new ArrayList<>(servers) : new ArrayList<>();
+            } else if (key.equals("selected_openai_server")) {
+                Map<String, String> selected = db.hashMap("selected_openai_server", Serializer.STRING, Serializer.STRING).createOrOpen();
+                selected.put("url", (String) value);
+                selectedOpenAiServerCache = (String) value;
             } else if (key.equals("ssh_sandbox_config") || key.equals(StoreKeys.SSH_SANDBOX_CONFIG)) {
                 Map<String, SshSandboxConfig> sshMap = db.hashMap("ssh_sandbox_config", Serializer.STRING, Serializer.JAVA).createOrOpen();
                 SshSandboxConfig cfg = (SshSandboxConfig) value;

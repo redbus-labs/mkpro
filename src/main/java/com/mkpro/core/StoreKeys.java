@@ -14,6 +14,8 @@ public final class StoreKeys {
     public static final String AGENT_MEMORIES = "agent_memories";
     public static final String MCP_SERVERS = "mcp_servers";
     public static final String OLLAMA_SERVERS = "ollama_servers";
+    public static final String OPENAI_SERVERS = "openai_servers";
+    public static final String SELECTED_OPENAI_SERVER = "selected_openai_server";
     public static final String SSH_SANDBOX_CONFIG = "ssh_sandbox_config";
     public static final String FILTER_CONFIG = "filter_config";
 

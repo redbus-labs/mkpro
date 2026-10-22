@@ -3,6 +3,7 @@ package com.mkpro.commands.impl;
 import com.mkpro.commands.Command;
 import com.mkpro.core.MkProContext;
 import com.mkpro.models.AgentConfig;
+import com.mkpro.models.Provider;
 
 import java.util.Map;
 import java.util.List;
@@ -38,6 +39,22 @@ public class StatusCommand implements Command {
                 }
             }
         }
+
+        // OpenAI/vLLM Endpoints
+        List<String> openAiServers = context.getCentralMemory().getOpenAiServers();
+        System.out.println(ANSI_CYAN + "\nOpenAI/vLLM Endpoints:" + ANSI_RESET);
+        if (openAiServers.isEmpty()) {
+            System.out.println("  (none configured)");
+        } else {
+            for (String entry : openAiServers) {
+                String[] parts = entry.split("\\|");
+                if (parts.length >= 2) {
+                    String name = parts[0];
+                    String url = parts[1];
+                    System.out.println(ANSI_GREEN + "  ● " + name + ANSI_RESET + " → " + url);
+                }
+            }
+        }
         
         // Active Team Agents
         System.out.println(ANSI_CYAN + "\nActive Team Agents:" + ANSI_RESET);
@@ -61,7 +78,8 @@ public class StatusCommand implements Command {
             if (config != null) {
                 String serverInfo = "";
                 if (config.hasServerUrl()) {
-                    String serverName = resolveServerName(config.getServerUrl(), ollamaServers);
+                    List<String> targetServers = config.getProvider() == Provider.OPENAI ? openAiServers : ollamaServers;
+                    String serverName = resolveServerName(config.getServerUrl(), targetServers);
                     serverInfo = " @" + serverName;
                 }
                 // Get fallback info
@@ -104,11 +122,11 @@ public class StatusCommand implements Command {
 
     private String resolveServerName(String url, List<String> servers) {
         for (String entry : servers) {
-            int sep = entry.indexOf('|');
-            if (sep >= 0) {
-                String name = entry.substring(0, sep);
-                String serverUrl = entry.substring(sep + 1);
-                if (serverUrl.equals(url)) return name;
+            String[] parts = entry.split("\\|");
+            if (parts.length >= 2) {
+                String name = parts[0];
+                String serverUrl = parts[1];
+                if (serverUrl.equalsIgnoreCase(url)) return name;
             }
         }
         // Shorten URL if no name match

@@ -403,10 +403,8 @@ public class AgentManager {
                 case AZURE:
                     return new AzureBaseLM(config.getModelName());
                 case OPENAI:
-                    com.mkpro.config.ConfigService cfg = new com.mkpro.config.ConfigService();
-                    String openAiUrl = cfg.getSetting("openai.base.url", "https://api.openai.com/v1");
-                    String openAiKey = cfg.getSetting("openai.api.key", System.getenv("OPENAI_API_KEY"));
-                    if (openAiKey == null) openAiKey = "";
+                    String openAiUrl = resolveOpenAiUrl(config);
+                    String openAiKey = resolveOpenAiKey(config, openAiUrl);
                     return new com.google.adk.models.OpenAiBaseLM(config.getModelName(), openAiUrl, openAiKey);
                 case SARVAM:
                     return new SarvamBaseLM(config.getModelName());
@@ -448,6 +446,45 @@ public class AgentManager {
         }
         // 3. Default (from config.properties via constructor)
         return ollamaServerUrl;
+    }
+
+    /**
+     * Resolves the OpenAI/vLLM server URL for a given agent config.
+     * Priority: per-agent serverUrl > selected endpoint > first registered endpoint > config.properties default.
+     */
+    private String resolveOpenAiUrl(AgentConfig config) {
+        if (config != null && config.hasServerUrl()) {
+            return config.getServerUrl();
+        }
+        if (centralMemory != null) {
+            String selected = centralMemory.getSelectedOpenAiServer();
+            if (selected != null && !selected.isEmpty()) {
+                return selected;
+            }
+            List<String> servers = centralMemory.getOpenAiServers();
+            if (servers != null && !servers.isEmpty()) {
+                String first = servers.get(0);
+                String[] parts = first.split("\\|");
+                if (parts.length > 1 && !parts[1].isEmpty()) {
+                    return parts[1];
+                }
+            }
+        }
+        return new com.mkpro.config.ConfigService().getSetting("openai.base.url", "https://api.openai.com/v1");
+    }
+
+    /**
+     * Resolves the OpenAI/vLLM API key for a given agent config and resolved server URL.
+     */
+    private String resolveOpenAiKey(AgentConfig config, String resolvedUrl) {
+        if (centralMemory != null && resolvedUrl != null) {
+            String serverKey = com.mkpro.commands.impl.VllmCommand.resolveServerApiKey(resolvedUrl, centralMemory);
+            if (serverKey != null && !serverKey.isEmpty()) {
+                return serverKey;
+            }
+        }
+        String key = new com.mkpro.config.ConfigService().getSetting("openai.api.key", System.getenv("OPENAI_API_KEY"));
+        return key != null ? key : "";
     }
 
     public Runner createRunner(Map<String, AgentConfig> agentConfigs, String augmentedContext, int maxTurns) {
@@ -1142,7 +1179,7 @@ public class AgentManager {
                 try {
                     // Parse fallback — supports:
                     //   "model@PROVIDER"  e.g., gemini-2.0-flash@GEMINI, gpt-4o@AZURE
-                    //   "model@server"    e.g., codestral@gpu4090 (Ollama endpoint)
+                    //   "model@server"    e.g., codestral@gpu4090 (Ollama or OpenAI/vLLM endpoint)
                     //   "model"           plain model name (inherits primary provider)
                     String fallbackModel = fallback;
                     String fallbackServerUrl = null;
@@ -1158,9 +1195,21 @@ public class AgentManager {
                             fallbackProvider = Provider.valueOf(target.toUpperCase());
                             fallbackServerUrl = null; // Provider-based, no server URL
                         } catch (IllegalArgumentException e2) {
-                            // Not a provider — treat as Ollama server name
-                            fallbackProvider = Provider.OLLAMA;
-                            fallbackServerUrl = com.mkpro.commands.impl.OllamaCommand.resolveServerUrl(target, centralMemory);
+                            // Not a provider — check Ollama server first, then OpenAI/vLLM server
+                            String ollamaUrl = com.mkpro.commands.impl.OllamaCommand.resolveServerUrl(target, centralMemory);
+                            if (ollamaUrl != null) {
+                                fallbackProvider = Provider.OLLAMA;
+                                fallbackServerUrl = ollamaUrl;
+                            } else {
+                                String vllmUrl = com.mkpro.commands.impl.VllmCommand.resolveServerUrl(target, centralMemory);
+                                if (vllmUrl != null) {
+                                    fallbackProvider = Provider.OPENAI;
+                                    fallbackServerUrl = vllmUrl;
+                                } else {
+                                    fallbackProvider = Provider.OLLAMA;
+                                    fallbackServerUrl = null;
+                                }
+                            }
                         }
                     }
                     

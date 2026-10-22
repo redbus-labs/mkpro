@@ -27,6 +27,7 @@ public class ModelCommand implements Command {
             System.out.println("GEMINI: " + ModelRegistry.GEMINI_MODELS);
             System.out.println("BEDROCK: " + ModelRegistry.BEDROCK_MODELS);
             System.out.println("AZURE: " + ModelRegistry.AZURE_MODELS);
+            System.out.println("OPENAI: " + ModelRegistry.OPENAI_MODELS);
             System.out.println("OLLAMA: " + ModelRegistry.OLLAMA_MODELS);
         } else if (subCommand.equalsIgnoreCase("provider")) {
             if (args.length >= 4) {
@@ -155,6 +156,7 @@ public class ModelCommand implements Command {
             case "GEMINI": return ModelRegistry.GEMINI_MODELS;
             case "BEDROCK": return ModelRegistry.BEDROCK_MODELS;
             case "AZURE": return ModelRegistry.AZURE_MODELS;
+            case "OPENAI": return ModelRegistry.OPENAI_MODELS;
             case "OLLAMA": return ModelRegistry.OLLAMA_MODELS;
             default: return Arrays.asList();
         }

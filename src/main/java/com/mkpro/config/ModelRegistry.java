@@ -49,6 +49,9 @@ public class ModelRegistry {
         
         // Fetch Ollama models dynamically
         fetchOllamaModels();
+        
+        // Fetch OpenAI/vLLM models dynamically
+        fetchOpenAiModels();
 
         Path localFile = PathUtils.getBaseDocumentsPath().resolve(MODELS_FILE);
 
@@ -208,6 +211,72 @@ public class ModelRegistry {
         return Collections.emptyList();
     }
 
+    private static void fetchOpenAiModels() {
+        CompletableFuture.runAsync(() -> {
+            try {
+                com.mkpro.CentralMemory memory = com.mkpro.CentralMemory.getInstance();
+                ConfigService config = new ConfigService();
+                String defaultUrl = config.getSetting("openai.base.url", "https://api.openai.com/v1");
+                String defaultKey = config.getSetting("OPENAI_API_KEY", null);
+
+                List<String> newModels = new ArrayList<>(OPENAI_MODELS);
+
+                // Fetch from default
+                newModels.addAll(fetchOpenAiModelsFromServer(defaultUrl, defaultKey));
+
+                // Fetch from all registered vllm servers
+                for (String entry : memory.getOpenAiServers()) {
+                    String[] parts = entry.split("\\|");
+                    String url = parts[1];
+                    String key = (parts.length > 2) ? parts[2] : null;
+                    newModels.addAll(fetchOpenAiModelsFromServer(url, key));
+                }
+
+                OPENAI_MODELS = new ArrayList<>(new java.util.LinkedHashSet<>(newModels));
+            } catch (Exception e) {
+                logger.error("Error fetching OpenAI models: {}", e.getMessage());
+            }
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    public static List<String> fetchOpenAiModelsFromServer(String serverUrl, String apiKey) {
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .connectTimeout(Duration.ofSeconds(2))
+                    .build();
+
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(serverUrl + "/models"))
+                    .GET()
+                    .timeout(Duration.ofSeconds(5));
+            
+            if (apiKey != null && !apiKey.isEmpty()) {
+                builder.header("Authorization", "Bearer " + apiKey);
+            }
+
+            HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                Map<String, Object> data = mapper.readValue(response.body(), Map.class);
+                List<Map<String, Object>> list = (List<Map<String, Object>>) data.get("data");
+
+                if (list != null) {
+                    List<String> result = new ArrayList<>();
+                    for (Map<String, Object> m : list) {
+                        result.add((String) m.get("id"));
+                    }
+                    return result;
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("vLLM/OpenAI server not reachable at {}: {}", serverUrl, e.getMessage());
+        }
+        return Collections.emptyList();
+    }
+
     @SuppressWarnings("unchecked")
     private static void loadFromFile(Path file) throws IOException {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
@@ -215,7 +284,7 @@ public class ModelRegistry {
         if (data != null) {
             if (data.containsKey("gemini")) GEMINI_MODELS = (List<String>) data.get("gemini");
             if (data.containsKey("bedrock")) BEDROCK_MODELS = (List<String>) data.get("bedrock");
-            // Ollama is no longer loaded from file
+            // Ollama/OpenAI is no longer loaded from file
             if (data.containsKey("azure")) AZURE_MODELS = (List<String>) data.get("azure");
             logger.info("Successfully loaded models from {}", file);
         }

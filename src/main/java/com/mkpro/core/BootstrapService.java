@@ -659,20 +659,18 @@ public class BootstrapService {
      * All default servers start DISABLED; user must explicitly enable them via /mcp.
      */
     private void seedDefaultMcpServers(CentralMemory centralMemory) {
-        if (!centralMemory.getMcpServers().isEmpty()) {
-            return; // Already configured, don't overwrite
+        if (centralMemory.getMcpServers().isEmpty()) {
+            com.mkpro.models.McpServer context7 = new com.mkpro.models.McpServer(
+                "Context7", "https://mcp.context7.com/mcp", com.mkpro.models.McpServer.McpType.API);
+            context7.setEnabled(false); // Disabled by default — user opts in
+
+            com.mkpro.models.McpServer sequentialThinking = new com.mkpro.models.McpServer(
+                "SequentialThinking", "https://mcp-sequential-thinking.onrender.com/mcp", com.mkpro.models.McpServer.McpType.API);
+            sequentialThinking.setEnabled(false);
+
+            centralMemory.addMcpServer(context7);
+            centralMemory.addMcpServer(sequentialThinking);
         }
-
-        com.mkpro.models.McpServer context7 = new com.mkpro.models.McpServer(
-            "Context7", "https://mcp.context7.com/mcp", com.mkpro.models.McpServer.McpType.API);
-        context7.setEnabled(false); // Disabled by default — user opts in
-
-        com.mkpro.models.McpServer sequentialThinking = new com.mkpro.models.McpServer(
-            "SequentialThinking", "https://mcp-sequential-thinking.onrender.com/mcp", com.mkpro.models.McpServer.McpType.API);
-        sequentialThinking.setEnabled(false);
-
-        centralMemory.addMcpServer(context7);
-        centralMemory.addMcpServer(sequentialThinking);
 
         // Ensure default Ollama endpoint (localhost) is always present
         java.util.List<String> ollamaServers = new java.util.ArrayList<>(centralMemory.getOllamaServers());
@@ -680,6 +678,15 @@ public class BootstrapService {
         if (!hasLocal) {
             ollamaServers.add(0, "local|http://localhost:11434");
             centralMemory.saveOllamaServers(ollamaServers);
+        }
+
+        // Seed default OpenAI/vLLM endpoint if empty
+        java.util.List<String> openAiServers = new java.util.ArrayList<>(centralMemory.getOpenAiServers());
+        if (openAiServers.isEmpty()) {
+            ConfigService configService = new ConfigService();
+            String defaultOpenAiUrl = configService.getSetting("openai.base.url", "http://localhost:8000/v1");
+            openAiServers.add("vllm-local|" + defaultOpenAiUrl);
+            centralMemory.saveOpenAiServers(openAiServers);
         }
     }
 

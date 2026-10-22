@@ -54,14 +54,16 @@ public class ConfigCommand implements Command {
             
             System.out.println("Agent Configurations:");
             if (globalDefault != null) {
-                System.out.println(String.format(" - [Global Default]: %s (%s)", globalDefault.getModelName(), globalDefault.getProvider()));
+                String serverSuffix = formatServerSuffix(globalDefault, context);
+                System.out.println(String.format(" - [Global Default]: %s (%s)%s", globalDefault.getModelName(), globalDefault.getProvider(), serverSuffix));
             } else {
                 System.out.println(" - [Global Default]: Not set (using internal defaults)");
             }
 
             configs.forEach((agent, config) -> {
                 if (!agent.equals("default")) {
-                    System.out.println(String.format(" - %s: %s (%s)", agent, config.getModelName(), config.getProvider()));
+                    String serverSuffix = formatServerSuffix(config, context);
+                    System.out.println(String.format(" - %s: %s (%s)%s", agent, config.getModelName(), config.getProvider(), serverSuffix));
                 }
             });
         } else if (subCommand.equalsIgnoreCase("reset") && args.length >= 2) {
@@ -119,7 +121,7 @@ public class ConfigCommand implements Command {
         String agent = ConsoleUtils.selectOption(context, "Select agent to configure:", agents);
         if (agent == null) return;
 
-        // Build provider list with individual Ollama endpoints
+        // Build provider list with individual Ollama and OpenAI/vLLM endpoints
         List<String> providers = new ArrayList<>();
         List<String> ollamaServers = context.getCentralMemory().getOllamaServers();
         if (!ollamaServers.isEmpty()) {
@@ -135,7 +137,22 @@ public class ConfigCommand implements Command {
         }
         
         for (Provider p : com.mkpro.models.Provider.values()) {
-            if (p != Provider.OLLAMA) {
+            if (p == Provider.OLLAMA) {
+                continue;
+            } else if (p == Provider.OPENAI) {
+                List<String> openAiServers = context.getCentralMemory().getOpenAiServers();
+                if (openAiServers != null && !openAiServers.isEmpty()) {
+                    for (String entry : openAiServers) {
+                        int sep = entry.indexOf('|');
+                        if (sep >= 0) {
+                            String name = entry.substring(0, sep);
+                            providers.add("OPENAI [" + name + "]");
+                        }
+                    }
+                } else {
+                    providers.add("OPENAI");
+                }
+            } else {
                 providers.add(p.name());
             }
         }
@@ -143,11 +160,16 @@ public class ConfigCommand implements Command {
         String providerChoice = ConsoleUtils.selectOption(context, "Select a provider:", providers);
         if (providerChoice == null) return;
 
-        // Parse the provider choice — extract server name if OLLAMA [xxx]
+        // Parse the provider choice — extract server name if OLLAMA [xxx] or OPENAI [xxx]
         String providerStr;
         String serverName = null;
         if (providerChoice.startsWith("OLLAMA")) {
             providerStr = "OLLAMA";
+            if (providerChoice.contains("[")) {
+                serverName = providerChoice.substring(providerChoice.indexOf('[') + 1, providerChoice.indexOf(']'));
+            }
+        } else if (providerChoice.startsWith("OPENAI")) {
+            providerStr = "OPENAI";
             if (providerChoice.contains("[")) {
                 serverName = providerChoice.substring(providerChoice.indexOf('[') + 1, providerChoice.indexOf(']'));
             }
@@ -157,13 +179,28 @@ public class ConfigCommand implements Command {
         if (providerStr == null) return;
 
         List<String> models = new ArrayList<>(getModelsForProvider(providerStr));
-        // If a specific Ollama server was chosen, fetch models from that server
+        // If a specific Ollama or OpenAI/vLLM server was chosen, fetch models from that server
         if (serverName != null && providerStr.equals("OLLAMA")) {
             String serverUrl = OllamaCommand.resolveServerUrl(serverName, context.getCentralMemory());
             if (serverUrl != null) {
                 List<String> serverModels = com.mkpro.config.ModelRegistry.fetchModelsFromServer(serverUrl);
                 if (!serverModels.isEmpty()) {
                     models = new ArrayList<>(serverModels);
+                }
+            }
+        } else if (serverName != null && providerStr.equals("OPENAI")) {
+            String serverUrl = VllmCommand.resolveServerUrl(serverName, context.getCentralMemory());
+            String apiKey = VllmCommand.resolveServerApiKey(serverName, context.getCentralMemory());
+            if (serverUrl != null) {
+                List<String> serverModels = com.mkpro.config.ModelRegistry.fetchOpenAiModelsFromServer(serverUrl, apiKey);
+                if (!serverModels.isEmpty()) {
+                    List<String> combined = new ArrayList<>(serverModels);
+                    for (String defaultModel : com.mkpro.config.ModelRegistry.OPENAI_MODELS) {
+                        if (!combined.contains(defaultModel)) {
+                            combined.add(defaultModel);
+                        }
+                    }
+                    models = combined;
                 }
             }
         }
@@ -182,7 +219,7 @@ public class ConfigCommand implements Command {
         }
         if (model == null || model.isEmpty()) return;
 
-        // Append server name for Ollama per-endpoint routing
+        // Append server name for per-endpoint routing
         if (serverName != null && !model.contains("@")) {
             model = model + "@" + serverName;
         }
@@ -198,7 +235,7 @@ public class ConfigCommand implements Command {
                 return;
             }
             
-            // Parse model@server syntax for Ollama per-agent routing
+            // Parse model@server syntax for Ollama and OpenAI/vLLM per-agent routing
             String serverUrl = null;
             if (provider == Provider.OLLAMA && model.contains("@")) {
                 int atIdx = model.indexOf('@');
@@ -209,6 +246,17 @@ public class ConfigCommand implements Command {
                 serverUrl = OllamaCommand.resolveServerUrl(serverName, context.getCentralMemory());
                 if (serverUrl == null) {
                     System.out.println("Unknown Ollama server: '" + serverName + "'. Use '/ollama list' to see available servers.");
+                    return;
+                }
+            } else if (provider == Provider.OPENAI && model.contains("@")) {
+                int atIdx = model.indexOf('@');
+                String serverName = model.substring(atIdx + 1);
+                model = model.substring(0, atIdx);
+
+                // Resolve server name to URL
+                serverUrl = VllmCommand.resolveServerUrl(serverName, context.getCentralMemory());
+                if (serverUrl == null) {
+                    System.out.println("Unknown OpenAI/vLLM server: '" + serverName + "'. Use '/vllm list' to see available servers.");
                     return;
                 }
             }
@@ -249,6 +297,25 @@ public class ConfigCommand implements Command {
         } catch (IllegalArgumentException e) {
             System.out.println("Invalid provider: " + providerStr + ". Available: " + Arrays.toString(Provider.values()));
         }
+    }
+
+    private String formatServerSuffix(AgentConfig config, MkProContext context) {
+        if (config == null || !config.hasServerUrl()) {
+            return "";
+        }
+        String url = config.getServerUrl();
+        if (config.getProvider() == Provider.OPENAI) {
+            String name = VllmCommand.resolveServerName(url, context.getCentralMemory());
+            return " @ " + (name != null ? name : url);
+        } else if (config.getProvider() == Provider.OLLAMA) {
+            for (String entry : context.getCentralMemory().getOllamaServers()) {
+                int sep = entry.indexOf('|');
+                if (sep >= 0 && entry.substring(sep + 1).equalsIgnoreCase(url)) {
+                    return " @ " + entry.substring(0, sep);
+                }
+            }
+        }
+        return " @ " + url;
     }
 
     private List<String> getModelsForProvider(String provider) {
@@ -370,6 +437,9 @@ public class ConfigCommand implements Command {
             if (fallbackModel.contains("@")) {
                 String serverName = fallbackModel.substring(fallbackModel.indexOf('@') + 1);
                 String url = OllamaCommand.resolveServerUrl(serverName, context.getCentralMemory());
+                if (url == null) {
+                    url = VllmCommand.resolveServerUrl(serverName, context.getCentralMemory());
+                }
                 if (url == null && !fallbackModel.startsWith("gemini")) {
                     System.out.println("Warning: Server '" + serverName + "' not found in registered endpoints.");
                 }

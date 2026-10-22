@@ -27,10 +27,24 @@ public class FastRouteEvaluator {
         public static EvaluationResult noDispatch(String reason) {
             return new EvaluationResult(false, null, 0.0, TaskCategory.GENERAL, reason);
         }
+
+        public String formatRoutingGuidance() {
+            if (!shouldDirectDispatch || targetAgent == null) {
+                return null;
+            }
+            int pct = (int) Math.round(confidence * 100);
+            String catName = category != null ? category.name() : "GENERAL";
+            String toolSuffix = targetAgent.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
+            return String.format(
+                "[Routing Guidance: Recommended specialist agent is '%s' (category: %s, confidence: %d%%, reason: %s). " +
+                "Please coordinate and delegate to `ask_%s` as appropriate.]",
+                targetAgent, catName, pct, reason, toolSuffix
+            );
+        }
     }
 
     /**
-     * Evaluates whether an incoming user prompt qualifies for Direct Dispatch (bypassing Coordinator LLM).
+     * Evaluates whether an incoming user prompt qualifies for high-confidence routing guidance.
      */
     public static EvaluationResult evaluate(String input, MkProContext context) {
         if (input == null || input.trim().isEmpty() || context == null) {

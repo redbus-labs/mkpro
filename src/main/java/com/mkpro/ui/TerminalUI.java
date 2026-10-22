@@ -78,66 +78,40 @@ public class TerminalUI {
                         // Log user input for training data export
                         context.getActionLogger().log("USER", line);
 
-                        // Fast-route direct dispatch check prior to Coordinator turn
+                        // Fast-route evaluation prior to Coordinator turn
                         com.mkpro.routing.FastRouteEvaluator.EvaluationResult eval = 
                             com.mkpro.routing.FastRouteEvaluator.evaluate(line, context);
                         
                         if (eval.shouldDirectDispatch && eval.targetAgent != null) {
                             String targetAgent = eval.targetAgent;
-                            com.mkpro.models.AgentConfig agentCfg = context.getAgentConfigs() != null ? context.getAgentConfigs().get(targetAgent) : null;
-                            String modelName = agentCfg != null ? agentCfg.getModelName() : "default";
-
                             if (context.getEventBus() != null) {
-                                if (eval.category != null) {
+                                if ("direct_keyword_match".equals(eval.reason)) {
+                                    context.getEventBus().emit(com.mkpro.events.MkProEvent.routingKeywords(targetAgent));
+                                } else if (eval.category != null) {
                                     context.getEventBus().emit(com.mkpro.events.MkProEvent.routing(targetAgent, String.valueOf((int)(eval.confidence * 100)), eval.category.name()));
                                 }
-                                context.getEventBus().emit(com.mkpro.events.MkProEvent.delegation("Coordinator", targetAgent, eval.reason));
-                                context.getEventBus().emit(com.mkpro.events.MkProEvent.streamStart(targetAgent, modelName));
                             }
-
-                            StringBuilder termOutput = new StringBuilder();
-                            try {
-                                String resp = context.getAgentManager().executeDirectDispatch(targetAgent, line, chunk -> {
-                                    termOutput.append(chunk);
-                                    if (context.getEventBus() != null) {
-                                        context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk(chunk));
-                                    }
-                                });
-
+                            if (context.getMarkovRouter() != null && eval.category != null) {
+                                context.getMarkovRouter().recordTransition(eval.category, null, targetAgent);
+                            }
+                            String guidance = eval.formatRoutingGuidance();
+                            if (guidance != null) {
+                                line = line + "\n\n" + guidance;
+                            }
+                        } else {
+                            // Normal Markov / intent check when routing guidance is not triggered
+                            if (!isAutoContinue && context.getMarkovRouter() != null && context.getMarkovRouter().getTotalObservations() > 20) {
+                                com.mkpro.routing.IntentClassifier intentClassifier = new com.mkpro.routing.IntentClassifier();
+                                intentClassifier.setLearnedPatterns(context.getMarkovRouter().getLearnedPatterns());
+                                com.mkpro.routing.IntentClassifier.TaskCategory category = intentClassifier.classify(line);
+                                double intentConfidence = intentClassifier.classifyWithConfidence(line);
                                 if (context.getEventBus() != null) {
-                                    context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
+                                    context.getEventBus().emit(com.mkpro.events.MkProEvent.routingBelow("Coordinator", String.valueOf((int)(intentConfidence * 100))));
                                 }
-
-                                if (context.getMarkovRouter() != null && eval.category != null) {
-                                    context.getMarkovRouter().recordTransition(eval.category, null, targetAgent);
-                                }
-                                if (context.getMakerLoop() != null) {
-                                    context.getMakerLoop().onTurnComplete(targetAgent, java.util.Collections.emptyList(), true, resp != null ? resp : termOutput.toString());
-                                }
-                            } catch (Exception e) {
-                                System.err.println("Direct dispatch error for agent " + targetAgent + ": " + e.getMessage());
+                            } else if (!isAutoContinue && context.getMarkovRouter() != null) {
                                 if (context.getEventBus() != null) {
-                                    context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk("\n[Error executing " + targetAgent + ": " + e.getMessage() + "]"));
-                                    context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
+                                    context.getEventBus().emit(com.mkpro.events.MkProEvent.routingInactive(String.valueOf(context.getMarkovRouter().getTotalObservations())));
                                 }
-                            }
-                            System.out.println();
-                            continue; // Move to the next user input prompt
-                        }
-
-                        // Normal Markov / intent check when direct dispatch is not triggered
-                        boolean markovRouted = false;
-                        if (!isAutoContinue && context.getMarkovRouter() != null && context.getMarkovRouter().getTotalObservations() > 20) {
-                            com.mkpro.routing.IntentClassifier intentClassifier = new com.mkpro.routing.IntentClassifier();
-                            intentClassifier.setLearnedPatterns(context.getMarkovRouter().getLearnedPatterns());
-                            com.mkpro.routing.IntentClassifier.TaskCategory category = intentClassifier.classify(line);
-                            double intentConfidence = intentClassifier.classifyWithConfidence(line);
-                            if (context.getEventBus() != null) {
-                                context.getEventBus().emit(com.mkpro.events.MkProEvent.routingBelow("Coordinator", String.valueOf((int)(intentConfidence * 100))));
-                            }
-                        } else if (!isAutoContinue && context.getMarkovRouter() != null) {
-                            if (context.getEventBus() != null) {
-                                context.getEventBus().emit(com.mkpro.events.MkProEvent.routingInactive(String.valueOf(context.getMarkovRouter().getTotalObservations())));
                             }
                         }
 

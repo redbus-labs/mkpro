@@ -180,6 +180,14 @@ public class MkPro {
         registry.register(new VisualizeCommand());
         registry.register(new NetworkCommand());
         registry.register(new OllamaCommand());
+        VllmCommand vllmCommand = new VllmCommand();
+        registry.register(vllmCommand);
+        // Alias
+        registry.register(new com.mkpro.commands.Command() {
+            public void execute(String[] args, com.mkpro.core.MkProContext context) throws Exception { vllmCommand.execute(args, context); }
+            public String getName() { return "openai"; }
+            public String getDescription() { return "Alias for /vllm"; }
+        });
         registry.register(new HistoryCommand());
         registry.register(new KnowledgeCommand());
         registry.register(new WebCommand());
@@ -439,53 +447,43 @@ public class MkPro {
             String sender = context.getWebChatServer() != null ? context.getWebChatServer().getLastWebSender() : "web";
             context.getActionLogger().log("USER@" + sender, text);
 
-            // Markov routing (same as TerminalUI)
+            // Fast-route evaluation prior to Coordinator turn (same as TerminalUI)
             String line = text;
-            if (context.getMarkovRouter() != null && context.getMarkovRouter().getTotalObservations() > 20) {
-                com.mkpro.routing.IntentClassifier intentClassifier = new com.mkpro.routing.IntentClassifier();
-                intentClassifier.setLearnedPatterns(context.getMarkovRouter().getLearnedPatterns());
+            com.mkpro.routing.FastRouteEvaluator.EvaluationResult eval =
+                com.mkpro.routing.FastRouteEvaluator.evaluate(line, context);
 
-                com.mkpro.routing.IntentClassifier.TaskCategory category = intentClassifier.classify(line);
-                double intentConfidence = intentClassifier.classifyWithConfidence(line);
-
-                if (category == com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL) {
-                    com.mkpro.routing.IntentClassifier.TaskCategory learned = intentClassifier.classifyWithLearnedPatterns(line);
-                    if (learned != com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL) {
-                        category = learned;
-                        intentConfidence = 0.5;
+            if (eval.shouldDirectDispatch && eval.targetAgent != null) {
+                String targetAgent = eval.targetAgent;
+                if (context.getEventBus() != null) {
+                    if ("direct_keyword_match".equals(eval.reason)) {
+                        context.getEventBus().emit(com.mkpro.events.MkProEvent.routingKeywords(targetAgent));
+                    } else if (eval.category != null) {
+                        context.getEventBus().emit(com.mkpro.events.MkProEvent.routing(
+                            targetAgent, String.valueOf((int)(eval.confidence * 100)), eval.category.name()));
                     }
                 }
-
-                // YAML routing keywords
-                String directAgent = intentClassifier.classifyToAgent(line);
-                boolean markovRouted = false;
-                if (directAgent != null) {
-                    if (context.getEventBus() != null) context.getEventBus().emit(com.mkpro.events.MkProEvent.routingKeywords(directAgent));
-                    line = "Delegate to " + directAgent + ": " + line;
-                    markovRouted = true;
+                if (context.getMarkovRouter() != null && eval.category != null) {
+                    context.getMarkovRouter().recordTransition(eval.category, null, targetAgent);
                 }
-
-                if (!markovRouted) {
-                    boolean shouldTryRoute = (intentConfidence > 0.3 && category != com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL);
-                    if (shouldTryRoute) {
-                        com.mkpro.routing.MarkovRouter.RoutingDecision decision = context.getMarkovRouter().route(category, null);
-                        if (decision.shouldRoute && !"Coordinator".equals(decision.agent)) {
-                            if (context.getEventBus() != null) context.getEventBus().emit(
-                                com.mkpro.events.MkProEvent.routing(decision.agent, String.valueOf((int)(decision.confidence * 100)), category.name()));
-                            line = "Delegate to " + decision.agent + ": " + line;
-                            context.getMarkovRouter().recordTransition(category, null, decision.agent);
-                        } else {
-                            if (context.getEventBus() != null) context.getEventBus().emit(
-                                com.mkpro.events.MkProEvent.routingBelow(decision.agent, String.valueOf((int)(decision.confidence * 100))));
-                        }
-                    } else {
-                        if (context.getEventBus() != null) context.getEventBus().emit(
-                            com.mkpro.events.MkProEvent.routingBelow("Coordinator", String.valueOf((int)(intentConfidence * 100))));
+                String guidance = eval.formatRoutingGuidance();
+                if (guidance != null) {
+                    line = line + "\n\n" + guidance;
+                }
+            } else {
+                if (context.getMarkovRouter() != null && context.getMarkovRouter().getTotalObservations() > 20) {
+                    com.mkpro.routing.IntentClassifier intentClassifier = new com.mkpro.routing.IntentClassifier();
+                    intentClassifier.setLearnedPatterns(context.getMarkovRouter().getLearnedPatterns());
+                    double intentConfidence = intentClassifier.classifyWithConfidence(line);
+                    if (context.getEventBus() != null) {
+                        context.getEventBus().emit(com.mkpro.events.MkProEvent.routingBelow(
+                            "Coordinator", String.valueOf((int)(intentConfidence * 100))));
+                    }
+                } else if (context.getMarkovRouter() != null) {
+                    if (context.getEventBus() != null) {
+                        context.getEventBus().emit(com.mkpro.events.MkProEvent.routingInactive(
+                            String.valueOf(context.getMarkovRouter().getTotalObservations())));
                     }
                 }
-            } else if (context.getMarkovRouter() != null) {
-                if (context.getEventBus() != null) context.getEventBus().emit(
-                    com.mkpro.events.MkProEvent.routingInactive(String.valueOf(context.getMarkovRouter().getTotalObservations())));
             }
 
             // Maker: track goal

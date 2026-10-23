@@ -1077,7 +1077,7 @@
                 <div class="attachments-bar" id="attachments"></div>
                 <div class="input-row">
                     <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Attach file">📎</button>
-                    <input type="file" id="fileInput" multiple accept=".txt,.java,.py,.js,.ts,.json,.yaml,.yml,.md,.csv,.log,.xml,.html,.css,.sh,.bat,.sql,.groovy,.kt,.swift,.rs,.go,.c,.cpp,.h,.png,.jpg,.jpeg,.gif,.webp" onchange="handleFiles(event)" />
+                    <input type="file" id="fileInput" multiple accept=".txt,.java,.py,.js,.ts,.json,.yaml,.yml,.md,.csv,.log,.xml,.html,.css,.sh,.bat,.sql,.groovy,.kt,.swift,.rs,.go,.c,.cpp,.h,.png,.jpg,.jpeg,.gif,.webp,.wav,.mp3,.ogg,.flac,.m4a,.aac,.webm,.mp4" onchange="handleFiles(event)" />
                     <input type="text" id="input" placeholder="Type a message..." autocomplete="off" />
                     <button class="send-btn" id="send" onclick="sendMessage()">Send</button>
                 </div>
@@ -1295,15 +1295,25 @@
             const files = event.target.files;
             for (const file of files) {
                 const isImage = file.type.startsWith('image/');
+                const isAudio = file.type.startsWith('audio/') || /\.(wav|mp3|ogg|flac|m4a|aac)$/i.test(file.name);
+                const isVideo = file.type.startsWith('video/') || /\.(webm|mp4)$/i.test(file.name);
                 const reader = new FileReader();
 
-                if (isImage) {
+                if (isImage || isAudio || isVideo) {
+                    let mimeType = file.type;
+                    if (!mimeType) {
+                        const ext = (file.name.split('.').pop() || '').toLowerCase();
+                        const mimeMap = { wav: 'audio/wav', mp3: 'audio/mpeg', ogg: 'audio/ogg', flac: 'audio/flac', m4a: 'audio/mp4', aac: 'audio/aac', webm: 'video/webm', mp4: 'video/mp4' };
+                        mimeType = mimeMap[ext] || (isAudio ? 'audio/wav' : (isVideo ? 'video/mp4' : 'image/png'));
+                    }
                     reader.onload = (e) => {
                         pendingAttachments.push({
                             name: file.name,
                             content: e.target.result, // base64 data URL
-                            type: file.type,
-                            isImage: true
+                            type: mimeType,
+                            isImage: isImage,
+                            isAudio: isAudio,
+                            isVideo: isVideo
                         });
                         renderAttachments();
                     };
@@ -1327,7 +1337,7 @@
 
         function renderAttachments() {
             attachmentsBar.innerHTML = pendingAttachments.map((a, i) => {
-                const icon = a.isImage ? '🖼️' : (a.isPathOnly ? '📌' : '📄');
+                const icon = a.isImage ? '🖼️' : (a.isAudio ? '🎵' : (a.isVideo ? '🎬' : (a.isPathOnly ? '📌' : '📄')));
                 const label = a.isPathOnly ? a.path : a.name;
                 return `<div class="attachment-chip${a.isPathOnly ? ' path-only' : ''}">
                     ${icon} ${label}
@@ -1711,7 +1721,9 @@
                     name: a.name,
                     content: a.content,
                     type: a.type,
-                    isImage: a.isImage
+                    isImage: a.isImage,
+                    isAudio: a.isAudio,
+                    isVideo: a.isVideo
                 }));
             }
 

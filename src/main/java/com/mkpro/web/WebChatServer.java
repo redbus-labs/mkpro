@@ -365,18 +365,36 @@ public class WebChatServer {
                         String name = attachment.has("name") ? attachment.get("name").asText() : "file";
                         String content = attachment.has("content") ? attachment.get("content").asText() : "";
                         boolean isImage = attachment.has("isImage") && attachment.get("isImage").asBoolean();
+                        boolean isAudio = attachment.has("isAudio") && attachment.get("isAudio").asBoolean();
+                        boolean isVideo = attachment.has("isVideo") && attachment.get("isVideo").asBoolean();
+                        String mimeType = attachment.has("type") ? attachment.get("type").asText() : "";
 
-                        if (isImage) {
-                            // Extract base64 data from data URL (data:image/png;base64,...)
-                            String mimeType = attachment.has("type") ? attachment.get("type").asText() : "image/png";
+                        boolean isMedia = isImage || isAudio || isVideo
+                                || mimeType.startsWith("image/")
+                                || mimeType.startsWith("audio/")
+                                || mimeType.startsWith("video/")
+                                || content.startsWith("data:image/")
+                                || content.startsWith("data:audio/")
+                                || content.startsWith("data:video/");
+
+                        if (isMedia) {
+                            // Extract base64 data from data URL (data:image/png;base64,... or data:audio/wav;base64,...)
+                            if (mimeType.isEmpty()) {
+                                if (content.startsWith("data:") && content.contains(";")) {
+                                    mimeType = content.substring(5, content.indexOf(';'));
+                                } else {
+                                    mimeType = isAudio ? "audio/wav" : (isVideo ? "video/mp4" : "image/png");
+                                }
+                            }
                             if (content.startsWith("data:")) {
                                 int commaIdx = content.indexOf(',');
                                 if (commaIdx > 0) {
-                                    byte[] imageBytes = java.util.Base64.getDecoder().decode(content.substring(commaIdx + 1));
-                                    imageAttachments.add(new ImageAttachment(name, mimeType, imageBytes));
+                                    byte[] mediaBytes = java.util.Base64.getDecoder().decode(content.substring(commaIdx + 1));
+                                    imageAttachments.add(new ImageAttachment(name, mimeType, mediaBytes));
                                 }
                             }
-                            contextBuilder.append("[Attached image: ").append(name).append("]\n");
+                            String kind = mimeType.startsWith("audio/") ? "audio" : (mimeType.startsWith("video/") ? "video" : "image");
+                            contextBuilder.append("[Attached ").append(kind).append(": ").append(name).append("]\n");
                         } else {
                             // For text files, include content directly
                             contextBuilder.append("--- File: ").append(name).append(" ---\n");

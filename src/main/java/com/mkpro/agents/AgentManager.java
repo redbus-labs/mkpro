@@ -405,7 +405,7 @@ public class AgentManager {
                 case OPENAI:
                     String openAiUrl = resolveOpenAiUrl(config);
                     String openAiKey = resolveOpenAiKey(config, openAiUrl);
-                    return new com.google.adk.models.OpenAiBaseLM(config.getModelName(), openAiUrl, openAiKey);
+                    return new com.google.adk.models.OpenAiBaseLM(config.getModelName(), openAiUrl, openAiKey).withTruncation(100000, "left");//truncations hould be automated, lets keep it to 100K for now
                 case SARVAM:
                     return new SarvamBaseLM(config.getModelName());
                 case NVIDIA:

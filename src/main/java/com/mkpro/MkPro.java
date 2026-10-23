@@ -150,7 +150,8 @@ public class MkPro {
             restoreSessionPreferences(context, args, registry);
 
             // 6. Start the UI Loop
-            TerminalUI.start(context, registry);
+            TerminalUI ui = new TerminalUI(context, registry);
+            ui.start();
         } catch (Exception e) {
             System.err.println("\n" + ANSI_RED + "FATAL ERROR during startup:" + ANSI_RESET);
             System.err.println(ANSI_YELLOW + e.getMessage() + ANSI_RESET);
@@ -503,13 +504,23 @@ public class MkPro {
             StringBuilder responseBuilder = new StringBuilder();
             java.util.concurrent.atomic.AtomicBoolean firstChunk = new java.util.concurrent.atomic.AtomicBoolean(false);
 
+            // Stream knowledge monitor for web path
+            final com.mkpro.knowledge.StreamKnowledgeMonitor webStreamMonitor;
+            if (context.getKnowledgeScheduler() != null && context.getTopicIndex() != null) {
+                webStreamMonitor = new com.mkpro.knowledge.StreamKnowledgeMonitor(
+                    context.getKnowledgeScheduler(), context.getTopicIndex(), null); // No LLM callback for web (avoid runner contention)
+            } else {
+                webStreamMonitor = null;
+            }
+
             context.getRunner().runAsync(context.getCurrentSession().sessionKey(), message)
                 .blockingSubscribe(event -> {
                     event.content().ifPresent(content -> {
-                        content.parts().ifPresent(ps -> {
-                            for (com.google.genai.types.Part part : ps) {
+                        content.parts().ifPresent(parts -> {
+                            for (com.google.genai.types.Part part : parts) {
                                 part.text().ifPresent(t -> {
                                     if (firstChunk.compareAndSet(false, true)) {
+                                        // Check if delegation happened
                                         String delegated = com.mkpro.agents.AgentManager.lastDelegatedAgent;
                                         if (context.getEventBus() != null) {
                                             context.getEventBus().emit(com.mkpro.events.MkProEvent.streamStart(
@@ -517,6 +528,7 @@ public class MkPro {
                                         }
                                     }
                                     responseBuilder.append(t);
+                                    if (webStreamMonitor != null) webStreamMonitor.onChunk(t);
                                     if (context.getEventBus() != null) {
                                         context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk(t));
                                     }
@@ -533,9 +545,51 @@ public class MkPro {
                     if (context.getEventBus() != null) {
                         context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
                     }
+                    
+                    // Stream knowledge monitor: end
+                    if (webStreamMonitor != null) webStreamMonitor.onStreamEnd();
+
+                    // Log response
+                    if (responseBuilder.length() > 0) {
+                        String delegated = com.mkpro.agents.AgentManager.lastDelegatedAgent;
+                        String loggedResponse = responseBuilder.toString();
+                        if (delegated != null) {
+                            loggedResponse = ">> Delegating to " + delegated + "...\n" + loggedResponse;
+                        }
+                        context.getActionLogger().log("Coordinator", loggedResponse);
+
+                        // Maker: observe turn result + record tool usage
+                        if (context.getMakerEnabled() != null && context.getMakerEnabled().get() && context.getMakerLoop() != null) {
+                            String agentUsed = delegated != null ? delegated : "Coordinator";
+                            String response = responseBuilder.toString();
+                            java.util.List<String> toolsDetected = new java.util.ArrayList<>();
+                            if (response.contains("[Shell]") || response.contains("run_shell")) toolsDetected.add("shell");
+                            if (response.contains("file_write") || response.contains("Saved") || response.contains("saved")) toolsDetected.add("file_write");
+                            if (response.contains("file_read") || response.contains("[VectorSearch]")) toolsDetected.add("file_read");
+                            if (response.contains("[FetchURL]")) toolsDetected.add("fetch_url");
+                            if (response.contains("[Memory]")) toolsDetected.add("central_memory");
+                            if (response.contains("[Index]")) toolsDetected.add("index_codebase");
+
+                            boolean success = !response.contains("Error executing") && !response.contains("FAILED");
+                            context.getMakerLoop().onTurnComplete(agentUsed, toolsDetected, success, response);
+
+                            // Layer 2: record agent→tool transitions
+                            if (!toolsDetected.isEmpty() && context.getMarkovRouter() != null) {
+                                com.mkpro.routing.IntentClassifier.TaskCategory cat = context.getMakerLoop().getCurrentGoal() != null
+                                    ? context.getMakerLoop().getCurrentGoal().getCategory()
+                                    : com.mkpro.routing.IntentClassifier.TaskCategory.GENERAL;
+                                context.getMarkovRouter().recordToolUsage(agentUsed, cat, toolsDetected);
+                            }
+                        }
+
+                        com.mkpro.agents.AgentManager.lastDelegatedAgent = null;
+                    }
                 });
         } catch (Exception e) {
-            System.err.println("[Web] Error processing input: " + e.getMessage());
+            if (context.getWebChatServer() != null) {
+                context.getWebChatServer().broadcastStreamChunk("\n\n[Error: " + e.getMessage() + "]");
+                context.getWebChatServer().broadcastStreamEnd();
+            }
         }
     }
 }

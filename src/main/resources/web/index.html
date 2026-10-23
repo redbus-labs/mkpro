@@ -621,8 +621,160 @@
         .edit-proposal .btn-reject { background: var(--red); color: white; }
         .edit-proposal .btn-reject:hover { opacity: 0.9; }
         .edit-proposal .edit-countdown { font-size: 11px; color: var(--text-dim); margin-left: auto; }
-        .edit-proposal.resolved { opacity: 0.6; border-color: var(--surface2); }
-        .edit-proposal.resolved .edit-actions { display: none; }
+        .edit-proposal.resolved { border-color: var(--surface2); }
+        .edit-proposal.resolved .btn-approve,
+        .edit-proposal.resolved .btn-reject,
+        .edit-proposal.resolved .edit-countdown { display: none; }
+        .edit-proposal.resolved .edit-actions { display: flex; }
+        .btn-diff-action,
+        .diff-action-chip,
+        .resolution-badge-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            font-size: 0.76rem;
+            font-weight: 500;
+            line-height: 1.2;
+            border-radius: 6px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: var(--text-dim, #94a3b8);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            text-decoration: none;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .btn-diff-action:hover,
+        .diff-action-chip:hover,
+        .resolution-badge-btn:hover {
+            background: rgba(255, 255, 255, 0.09);
+            color: var(--text, #f8fafc);
+            border-color: rgba(255, 255, 255, 0.25);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        }
+        .btn-diff-action:active,
+        .diff-action-chip:active,
+        .resolution-badge-btn:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        [data-theme="light"] .btn-diff-action,
+        [data-theme="light"] .diff-action-chip,
+        [data-theme="light"] .resolution-badge-btn {
+            background: rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            color: var(--text-dim, #64748b);
+        }
+        [data-theme="light"] .btn-diff-action:hover,
+        [data-theme="light"] .diff-action-chip:hover,
+        [data-theme="light"] .resolution-badge-btn:hover {
+            background: rgba(0, 0, 0, 0.08);
+            color: var(--text, #0f172a);
+            border-color: rgba(0, 0, 0, 0.22);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .diff-chip-icon {
+            display: inline-block;
+            flex-shrink: 0;
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.2s ease, color 0.2s ease;
+        }
+
+        /* View Diff variant: subtle cyan/blue accent */
+        .btn-diff-action.chip-diff,
+        .diff-action-chip.chip-diff,
+        .resolution-badge-btn.chip-diff {
+            color: #93c5fd;
+        }
+        .btn-diff-action.chip-diff .diff-chip-icon-diff,
+        .diff-action-chip.chip-diff .diff-chip-icon-diff,
+        .resolution-badge-btn.chip-diff .diff-chip-icon-diff {
+            stroke: #38bdf8;
+        }
+        .btn-diff-action.chip-diff:hover,
+        .diff-action-chip.chip-diff:hover,
+        .resolution-badge-btn.chip-diff:hover {
+            border-color: rgba(56, 189, 248, 0.4);
+            background: rgba(56, 189, 248, 0.1);
+            color: #f0f9ff;
+        }
+        .btn-diff-action.chip-diff:hover .diff-chip-icon,
+        .diff-action-chip.chip-diff:hover .diff-chip-icon,
+        .resolution-badge-btn.chip-diff:hover .diff-chip-icon {
+            transform: scale(1.12);
+            stroke: #38bdf8;
+        }
+
+        /* Open File variant: subtle amber accent */
+        .btn-diff-action.chip-file,
+        .diff-action-chip.chip-file,
+        .resolution-badge-btn.chip-file {
+            color: #fde68a;
+        }
+        .btn-diff-action.chip-file .diff-chip-icon-file,
+        .diff-action-chip.chip-file .diff-chip-icon-file,
+        .resolution-badge-btn.chip-file .diff-chip-icon-file {
+            stroke: #fbbf24;
+        }
+        .btn-diff-action.chip-file:hover,
+        .diff-action-chip.chip-file:hover,
+        .resolution-badge-btn.chip-file:hover {
+            border-color: rgba(251, 191, 36, 0.4);
+            background: rgba(251, 191, 36, 0.1);
+            color: #fffbeb;
+        }
+        .btn-diff-action.chip-file:hover .diff-chip-icon,
+        .diff-action-chip.chip-file:hover .diff-chip-icon,
+        .resolution-badge-btn.chip-file:hover .diff-chip-icon {
+            transform: scale(1.12);
+            stroke: #fbbf24;
+        }
+
+        [data-theme="light"] .btn-diff-action.chip-diff,
+        [data-theme="light"] .diff-action-chip.chip-diff,
+        [data-theme="light"] .resolution-badge-btn.chip-diff {
+            color: #0284c7;
+        }
+        [data-theme="light"] .btn-diff-action.chip-diff .diff-chip-icon-diff,
+        [data-theme="light"] .diff-action-chip.chip-diff .diff-chip-icon-diff,
+        [data-theme="light"] .resolution-badge-btn.chip-diff .diff-chip-icon-diff {
+            stroke: #0284c7;
+        }
+        [data-theme="light"] .btn-diff-action.chip-diff:hover,
+        [data-theme="light"] .diff-action-chip.chip-diff:hover,
+        [data-theme="light"] .resolution-badge-btn.chip-diff:hover {
+            border-color: rgba(2, 132, 199, 0.35);
+            background: rgba(2, 132, 199, 0.08);
+            color: #0369a1;
+        }
+
+        [data-theme="light"] .btn-diff-action.chip-file,
+        [data-theme="light"] .diff-action-chip.chip-file,
+        [data-theme="light"] .resolution-badge-btn.chip-file {
+            color: #b45309;
+        }
+        [data-theme="light"] .btn-diff-action.chip-file .diff-chip-icon-file,
+        [data-theme="light"] .diff-action-chip.chip-file .diff-chip-icon-file,
+        [data-theme="light"] .resolution-badge-btn.chip-file .diff-chip-icon-file {
+            stroke: #d97706;
+        }
+        [data-theme="light"] .btn-diff-action.chip-file:hover,
+        [data-theme="light"] .diff-action-chip.chip-file:hover,
+        [data-theme="light"] .resolution-badge-btn.chip-file:hover {
+            border-color: rgba(217, 119, 6, 0.35);
+            background: rgba(217, 119, 6, 0.08);
+            color: #92400e;
+        }
+        .edit-resolution-card {
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            background: var(--surface);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
 
         /* Remote SSH Button & Status */
         .ssh-header-btn {
@@ -1118,6 +1270,7 @@
             breaks: true
         });
 
+        window.cachedEditDiffs = window.cachedEditDiffs || {};
         const chat = document.getElementById('chat');
         const input = document.getElementById('input');
         const sendBtn = document.getElementById('send');
@@ -1488,13 +1641,18 @@
                     handleStepCompleteEvent(msg);
                     break;
                 case 'edit_proposal':
+                    window.cachedEditDiffs = window.cachedEditDiffs || {};
+                    if (msg) {
+                        if (msg.id) window.cachedEditDiffs[msg.id] = msg.diff || [];
+                        if (msg.path) window.cachedEditDiffs[msg.path] = msg.diff || [];
+                    }
                     showEditProposal(msg);
                     break;
                 case 'edit_approved':
-                    resolveEditProposal(msg.id, true);
+                    resolveEditProposal(msg.id, true, msg.path);
                     break;
                 case 'edit_rejected':
-                    resolveEditProposal(msg.id, false);
+                    resolveEditProposal(msg.id, false, msg.path);
                     break;
                 case 'user_message':
                     // Message from another web user — show it (skip if it's our own)
@@ -1722,9 +1880,15 @@
         // ========== Edit Proposals (Diff Viewer) ==========
         function showEditProposal(msg) {
             hideLoader();
+            window.cachedEditDiffs = window.cachedEditDiffs || {};
+            if (msg) {
+                if (msg.id) window.cachedEditDiffs[msg.id] = msg.diff || [];
+                if (msg.path) window.cachedEditDiffs[msg.path] = msg.diff || [];
+            }
             const div = document.createElement('div');
             div.className = 'edit-proposal';
             div.id = 'proposal-' + msg.id;
+            div.dataset.path = msg.path || '';
 
             let diffHtml = '';
             for (const line of (msg.diff || [])) {
@@ -1776,16 +1940,113 @@
             });
         }
 
-        function resolveEditProposal(id, approved) {
+        function showReadOnlyDiffModal(path, diffOrId) {
+            let diffLines = Array.isArray(diffOrId) ? diffOrId : null;
+            if (!diffLines && window.cachedEditDiffs) {
+                if (typeof diffOrId === 'string' && diffOrId && window.cachedEditDiffs[diffOrId]) {
+                    diffLines = window.cachedEditDiffs[diffOrId];
+                } else if (path && window.cachedEditDiffs[path]) {
+                    diffLines = window.cachedEditDiffs[path];
+                }
+            }
+
+            const overlay = document.getElementById('readOnlyDiffModalOverlay');
+            const pathEl = document.getElementById('readOnlyDiffPath');
+            const contentEl = document.getElementById('readOnlyDiffContent');
+            if (!overlay || !pathEl || !contentEl) return;
+
+            pathEl.textContent = path || 'Target File';
+
+            let diffHtml = '';
+            if (diffLines && diffLines.length > 0) {
+                for (const line of diffLines) {
+                    const cls = line.type === 'ADDED' ? 'added' : line.type === 'REMOVED' ? 'removed' : 'info';
+                    const prefix = line.type === 'ADDED' ? '+ ' : line.type === 'REMOVED' ? '- ' : '  ';
+                    diffHtml += `<div class="diff-line ${cls}">${prefix}${escapeHtml(line.text || line.content || '')}</div>`;
+                }
+            } else {
+                diffHtml = '<div class="diff-line info">No diff snapshot available for this file edit.</div>';
+            }
+            contentEl.innerHTML = diffHtml;
+            overlay.classList.add('active');
+        }
+
+        function closeReadOnlyDiffModal() {
+            const overlay = document.getElementById('readOnlyDiffModalOverlay');
+            if (overlay) overlay.classList.remove('active');
+        }
+
+        function inspectFile(path, name) {
+            if (!path) return;
+            const fileName = name || path.split('/').pop() || 'file';
+            openPreview(path, fileName);
+        }
+
+        function appendEditResolutionBadge(path, approved, id) {
+            const card = document.createElement('div');
+            card.className = 'message system edit-resolution-card';
+            card.style.borderLeft = approved ? '3px solid var(--green)' : '3px solid var(--red)';
+            const statusText = approved ? 'Approved & Applied' : 'Rejected';
+            const statusIcon = approved ? '✓' : '✕';
+            const statusColor = approved ? 'var(--green)' : 'var(--red)';
+            const safePath = (path || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeId = (id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+            card.innerHTML = `
+                <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:12px; flex-wrap:wrap;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <strong style="color:${statusColor}">${statusIcon} File Edit ${statusText}:</strong>
+                        <code style="font-family:monospace; background:var(--surface2); padding:2px 6px; border-radius:4px;">${escapeHtml(path || 'target file')}</code>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <div style="display:inline-flex; align-items:center; gap:6px;">
+                            <button class="btn-diff-action diff-action-chip resolution-badge-btn chip-diff" onclick="showReadOnlyDiffModal('${safePath}', '${safeId}')" title="View Diff Snapshot">
+                                <svg class="diff-chip-icon diff-chip-icon-diff" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                <span>View Diff</span>
+                            </button>
+                            <button class="btn-diff-action diff-action-chip resolution-badge-btn chip-file" onclick="inspectFile('${safePath}')" title="Open File in Preview">
+                                <svg class="diff-chip-icon diff-chip-icon-file" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                <span>Open File</span>
+                            </button>
+                        </div>
+                        <span style="font-family:monospace; font-size:11px; opacity:0.6;">${getTimestamp()}</span>
+                    </div>
+                </div>
+            `;
+            chat.appendChild(card);
+            scrollToBottom();
+        }
+
+        function resolveEditProposal(id, approved, path) {
             const el = document.getElementById('proposal-' + id);
+            const targetPath = path || (el && el.dataset.path) || '';
             if (el) {
                 el.classList.add('resolved');
+                const actions = el.querySelector('.edit-actions');
+                if (actions) {
+                    const safePath = (targetPath || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const safeId = (id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    actions.innerHTML = `
+                        <span style="font-weight:600; color:${approved ? 'var(--green)' : 'var(--red)'}; margin-right:8px;">
+                            ${approved ? '✓ Approved & Applied' : '✕ Rejected'}
+                        </span>
+                        <button class="btn-diff-action diff-action-chip resolution-badge-btn chip-diff" onclick="showReadOnlyDiffModal('${safePath}', '${safeId}')" title="View Diff Snapshot">
+                            <svg class="diff-chip-icon diff-chip-icon-diff" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            <span>View Diff</span>
+                        </button>
+                        <button class="btn-diff-action diff-action-chip resolution-badge-btn chip-file" onclick="inspectFile('${safePath}')" title="Open File in Preview">
+                            <svg class="diff-chip-icon diff-chip-icon-file" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            <span>Open File</span>
+                        </button>
+                    `;
+                }
                 const header = el.querySelector('.edit-header');
                 if (header) {
-                    header.textContent += approved ? ' ✓ APPROVED' : ' ✕ REJECTED';
+                    header.textContent = (approved ? '✓ File Edit Approved & Applied: ' : '✕ File Edit Rejected: ') + (targetPath || 'target file');
                     header.style.color = approved ? 'var(--green)' : 'var(--red)';
                 }
             }
+            appendEditResolutionBadge(targetPath, approved, id);
         }
 
         // ========== Scroll-to-Load History ==========
@@ -2664,9 +2925,14 @@
             }
         }
 
-        // Global ESC handler for SSH modal
+        // Global ESC handler for SSH modal and diff modal
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
+                const diffModal = document.getElementById('readOnlyDiffModalOverlay');
+                if (diffModal && diffModal.classList.contains('active')) {
+                    closeReadOnlyDiffModal();
+                    return;
+                }
                 const overlay = document.getElementById('sshModalOverlay');
                 if (overlay && overlay.classList.contains('active')) {
                     closeSshModal();
@@ -2679,6 +2945,22 @@
         checkSshStatus();
 
     </script>
+
+    <!-- Read-Only Diff Inspection Modal -->
+    <div class="ssh-modal-overlay" id="readOnlyDiffModalOverlay" onclick="if(event.target===this) closeReadOnlyDiffModal()">
+        <div class="ssh-modal-card" style="max-width:750px; max-height:85vh;">
+            <div class="ssh-modal-header">
+                <h3>👁️ Diff Inspection: <span id="readOnlyDiffPath" style="font-family:monospace; font-size:12px; color:var(--text); font-weight:normal; margin-left:6px;"></span></h3>
+                <button class="ssh-modal-close-btn" onclick="closeReadOnlyDiffModal()" title="Close (Esc)">✕</button>
+            </div>
+            <div class="ssh-modal-body" style="padding:16px;">
+                <div id="readOnlyDiffContent" class="diff-view" style="max-height:60vh; overflow-y:auto; font-family:monospace; font-size:12px; line-height:1.6; background:var(--surface2); padding:12px; border-radius:6px;"></div>
+            </div>
+            <div class="ssh-modal-footer">
+                <button class="ssh-btn ssh-btn-cancel" onclick="closeReadOnlyDiffModal()">Close</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Sandbox Connection Modal -->
     <div class="ssh-modal-overlay" id="sshModalOverlay" onclick="if(event.target===this) closeSshModal()">

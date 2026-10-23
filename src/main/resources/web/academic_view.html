@@ -629,6 +629,145 @@
             display: none;
         }
 
+        /* Resolution Badge / Diff Action Chips */
+        .diff-action-chip,
+        .resolution-badge-btn,
+        .card-action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            font-size: 0.76rem;
+            font-weight: 500;
+            line-height: 1.2;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            color: var(--ink-secondary, #4A4F59);
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            text-decoration: none;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .diff-action-chip:hover,
+        .resolution-badge-btn:hover,
+        .card-action-btn:hover {
+            background: rgba(0, 0, 0, 0.08);
+            color: var(--ink, #1D1E20);
+            border-color: rgba(0, 0, 0, 0.22);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+        .diff-action-chip:active,
+        .resolution-badge-btn:active,
+        .card-action-btn:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        [data-theme="dark"] .diff-action-chip,
+        [data-theme="dark"] .resolution-badge-btn,
+        [data-theme="dark"] .card-action-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: var(--text-secondary, #94a3b8);
+        }
+        [data-theme="dark"] .diff-action-chip:hover,
+        [data-theme="dark"] .resolution-badge-btn:hover,
+        [data-theme="dark"] .card-action-btn:hover {
+            background: rgba(255, 255, 255, 0.09);
+            color: var(--text-primary, #f8fafc);
+            border-color: rgba(255, 255, 255, 0.25);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        }
+
+        .diff-chip-icon {
+            display: inline-block;
+            flex-shrink: 0;
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.2s ease, color 0.2s ease;
+        }
+
+        /* View Diff variant: subtle cyan/blue accent */
+        .diff-action-chip.chip-diff,
+        .resolution-badge-btn.chip-diff {
+            color: #0284c7;
+        }
+        .diff-action-chip.chip-diff .diff-chip-icon-diff,
+        .resolution-badge-btn.chip-diff .diff-chip-icon-diff {
+            stroke: #0284c7;
+        }
+        .diff-action-chip.chip-diff:hover,
+        .resolution-badge-btn.chip-diff:hover {
+            border-color: rgba(2, 132, 199, 0.35);
+            background: rgba(2, 132, 199, 0.08);
+            color: #0369a1;
+        }
+        .diff-action-chip.chip-diff:hover .diff-chip-icon,
+        .resolution-badge-btn.chip-diff:hover .diff-chip-icon {
+            transform: scale(1.12);
+            stroke: #0284c7;
+        }
+
+        [data-theme="dark"] .diff-action-chip.chip-diff,
+        [data-theme="dark"] .resolution-badge-btn.chip-diff {
+            color: #93c5fd;
+        }
+        [data-theme="dark"] .diff-action-chip.chip-diff .diff-chip-icon-diff,
+        [data-theme="dark"] .resolution-badge-btn.chip-diff .diff-chip-icon-diff {
+            stroke: #38bdf8;
+        }
+        [data-theme="dark"] .diff-action-chip.chip-diff:hover,
+        [data-theme="dark"] .resolution-badge-btn.chip-diff:hover {
+            border-color: rgba(56, 189, 248, 0.4);
+            background: rgba(56, 189, 248, 0.1);
+            color: #f0f9ff;
+        }
+        [data-theme="dark"] .diff-action-chip.chip-diff:hover .diff-chip-icon,
+        [data-theme="dark"] .resolution-badge-btn.chip-diff:hover .diff-chip-icon {
+            stroke: #38bdf8;
+        }
+
+        /* Open File variant: subtle amber accent */
+        .diff-action-chip.chip-file,
+        .resolution-badge-btn.chip-file {
+            color: #b45309;
+        }
+        .diff-action-chip.chip-file .diff-chip-icon-file,
+        .resolution-badge-btn.chip-file .diff-chip-icon-file {
+            stroke: #d97706;
+        }
+        .diff-action-chip.chip-file:hover,
+        .resolution-badge-btn.chip-file:hover {
+            border-color: rgba(217, 119, 6, 0.35);
+            background: rgba(217, 119, 6, 0.08);
+            color: #92400e;
+        }
+        .diff-action-chip.chip-file:hover .diff-chip-icon,
+        .resolution-badge-btn.chip-file:hover .diff-chip-icon {
+            transform: scale(1.12);
+            stroke: #d97706;
+        }
+
+        [data-theme="dark"] .diff-action-chip.chip-file,
+        [data-theme="dark"] .resolution-badge-btn.chip-file {
+            color: #fde68a;
+        }
+        [data-theme="dark"] .diff-action-chip.chip-file .diff-chip-icon-file,
+        [data-theme="dark"] .resolution-badge-btn.chip-file .diff-chip-icon-file {
+            stroke: #fbbf24;
+        }
+        [data-theme="dark"] .diff-action-chip.chip-file:hover,
+        [data-theme="dark"] .resolution-badge-btn.chip-file:hover {
+            border-color: rgba(251, 191, 36, 0.4);
+            background: rgba(251, 191, 36, 0.1);
+            color: #fffbeb;
+        }
+        [data-theme="dark"] .diff-action-chip.chip-file:hover .diff-chip-icon,
+        [data-theme="dark"] .resolution-badge-btn.chip-file:hover .diff-chip-icon {
+            stroke: #fbbf24;
+        }
+
         /* Tool Execution Accordions */
         .tool-call-accordion {
             border-radius: 8px;
@@ -1092,8 +1231,241 @@
             color: var(--muted);
         }
 
-        /* File Edit Approval Modal Popup */
-        #editApprovalModal {
+        /* Notes & Tasks Drawer Styles */
+        .drawer-section-title {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin: 14px 0 8px 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .drawer-section-title:first-child {
+            margin-top: 0;
+        }
+        .drawer-input-row {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+        .drawer-input {
+            width: 100%;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-family: inherit;
+            background: var(--surface-elevated);
+            color: var(--ink);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+            outline: none;
+            transition: border-color 0.15s;
+            box-sizing: border-box;
+        }
+        [data-theme="dark"] .drawer-input {
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .drawer-input:focus {
+            border-color: var(--accent);
+        }
+        .drawer-select {
+            padding: 6px 8px;
+            font-size: 11px;
+            font-family: inherit;
+            background: var(--surface-elevated);
+            color: var(--ink);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+            outline: none;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        [data-theme="dark"] .drawer-select {
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .drawer-select:focus {
+            border-color: var(--accent);
+        }
+        .btn {
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 6px 12px;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 11px;
+            border-radius: 5px;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #ffffff;
+        }
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+        .task-list, .notes-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+        .task-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            background: var(--surface-elevated);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            border-radius: 6px;
+            font-size: 12px;
+            transition: background 0.15s, opacity 0.15s;
+        }
+        [data-theme="dark"] .task-item {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .task-item:hover {
+            background: var(--surface-hover);
+        }
+        .task-checkbox {
+            cursor: pointer;
+            width: 14px;
+            height: 14px;
+            accent-color: var(--accent);
+            flex-shrink: 0;
+        }
+        .task-title {
+            flex: 1;
+            word-break: break-word;
+            line-height: 1.4;
+            color: var(--ink);
+        }
+        .task-item.done .task-title {
+            text-decoration: line-through;
+            color: var(--muted);
+        }
+        .task-item.done {
+            opacity: 0.65;
+        }
+        .task-priority-badge {
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            flex-shrink: 0;
+        }
+        .task-priority-high {
+            background: rgba(197, 48, 48, 0.15);
+            color: var(--danger);
+        }
+        .task-priority-medium {
+            background: rgba(192, 86, 33, 0.15);
+            color: var(--warning);
+        }
+        .task-priority-low {
+            background: rgba(44, 82, 130, 0.15);
+            color: var(--accent);
+        }
+        .task-del-btn, .note-del-btn {
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            padding: 2px 4px;
+            font-size: 11px;
+            border-radius: 4px;
+            opacity: 0.6;
+            transition: all 0.15s;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+        .task-del-btn:hover, .note-del-btn:hover {
+            opacity: 1;
+            color: var(--danger);
+            background: rgba(197, 48, 48, 0.1);
+        }
+        .note-editor-box {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 12px;
+            background: var(--surface-hover);
+            padding: 8px;
+            border-radius: 8px;
+        }
+        .note-card {
+            background: var(--surface-elevated);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            border-radius: 8px;
+            padding: 10px 12px;
+            box-shadow: var(--shadow-sm);
+            transition: box-shadow 0.15s;
+        }
+        [data-theme="dark"] .note-card {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .note-card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 3px;
+        }
+        .note-card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+            word-break: break-word;
+        }
+        .note-card-date {
+            font-size: 10px;
+            color: var(--muted);
+            margin-bottom: 6px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .note-tags-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 6px;
+        }
+        .note-tag-chip {
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            padding: 1px 6px;
+            border-radius: 4px;
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+        .note-card-content {
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--ink-secondary);
+            word-break: break-word;
+        }
+        .note-card-content pre {
+            margin: 4px 0;
+            font-size: 11px;
+        }
+        .note-card-content p {
+            margin: 2px 0;
+        }
+
+        /* File Edit Approval Modal Popup & Read-Only Diff Modal */
+        #editApprovalModal, #readOnlyDiffModal {
             position: fixed;
             inset: 0;
             background: rgba(0, 0, 0, 0.45);
@@ -1108,7 +1480,7 @@
             transition: opacity 0.2s ease;
         }
 
-        #editApprovalModal.active {
+        #editApprovalModal.active, #readOnlyDiffModal.active {
             display: flex !important;
             opacity: 1 !important;
         }
@@ -1991,6 +2363,104 @@
             color: var(--ink-secondary);
         }
 
+        /* Left-Side Sticky Notes & Tasks Panel */
+        :root {
+            --border: rgba(0, 0, 0, 0.08);
+        }
+        [data-theme="dark"] {
+            --border: rgba(255, 255, 255, 0.08);
+        }
+        #stickyNotesPanel {
+            position: fixed;
+            top: 68px;
+            left: 20px;
+            width: 320px;
+            max-height: calc(100vh - 92px);
+            z-index: 40;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-top: 4px solid #f59e0b;
+            border-radius: 12px;
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        #stickyNotesPanel.hidden {
+            display: none !important;
+        }
+        .sticky-panel-header {
+            padding: 10px 14px;
+            background: var(--surface-hover);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+        }
+        .sticky-filter-tabs {
+            display: flex;
+            gap: 4px;
+            padding: 6px 12px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+        }
+        .sticky-filter-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--muted);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .sticky-filter-btn:hover {
+            background: var(--surface-hover);
+            color: var(--ink);
+        }
+        .sticky-filter-btn.active {
+            background: rgba(245, 158, 11, 0.15);
+            color: #d97706;
+        }
+        [data-theme="dark"] .sticky-filter-btn.active {
+            background: rgba(245, 158, 11, 0.22);
+            color: #fbbf24;
+        }
+        .sticky-quick-add {
+            padding: 10px 12px;
+            background: var(--surface-hover);
+            border-bottom: 1px solid var(--border);
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .sticky-quick-add.open {
+            display: flex;
+        }
+        .sticky-panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .sticky-panel-body .note-card {
+            border-left: 3px solid #f59e0b;
+            background: rgba(245, 158, 11, 0.05);
+        }
+        @media (max-width: 1420px) {
+            body.sticky-notes-open .stream-container {
+                margin-left: 356px;
+                margin-right: auto;
+            }
+        }
     </style>
 </head>
 <body>
@@ -2028,6 +2498,7 @@
                     <span class="ssh-status-dot disconnected" id="sshStatusDot"></span>
                     <span>📦 Sandbox</span>
                 </button>
+                <button class="icon-btn" onclick="toggleStickyPanel()" title="Toggle Left Sticky Notes &amp; Tasks Panel">📌 Notes</button>
                 <button class="icon-btn" onclick="toggleDrawer()" title="Toggle Files &amp; Goals Drawer (Ctrl + B)">📁 Drawer</button>
                 <button class="icon-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle Theme">🌓</button>
                 <div style="display:inline-flex; align-items:center; margin-left:6px; font-size:12px; color:var(--muted);">
@@ -2044,6 +2515,59 @@
                 <div class="chat-bottom-spacer" id="chatBottomSpacer"></div>
             </div>
         </main>
+
+        <!-- Left-Side Sticky Notes & Tasks Panel -->
+        <aside id="stickyNotesPanel" class="sticky-notes-panel">
+            <div class="sticky-panel-header">
+                <span style="display:flex; align-items:center; gap:6px;">📌 Sticky Notes &amp; Tasks</span>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <button class="btn btn-sm btn-primary" onclick="toggleStickyAddForm()" style="padding:2px 8px; font-size:11px; background:#f59e0b; color:#fff;" title="Quick Add Note or Task">+ Add</button>
+                    <button class="drawer-close-btn" onclick="toggleStickyPanel()" title="Minimize Sticky Panel" style="font-size:14px; font-weight:bold; line-height:1; padding:2px 6px;">_</button>
+                </div>
+            </div>
+            <div class="sticky-filter-tabs">
+                <button class="sticky-filter-btn active" id="stickyFilterAll" onclick="switchStickyFilter('all')">All</button>
+                <button class="sticky-filter-btn" id="stickyFilterNotes" onclick="switchStickyFilter('notes')">Notes</button>
+                <button class="sticky-filter-btn" id="stickyFilterTasks" onclick="switchStickyFilter('tasks')">Tasks</button>
+            </div>
+            <div id="stickyQuickAddBox" class="sticky-quick-add">
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--muted);">Quick Add Task</div>
+                    <div class="drawer-input-row" style="margin-bottom:0;">
+                        <input id="stickyTaskInput" class="drawer-input" placeholder="New task..." onkeydown="if(event.key==='Enter') createStickyTask()" autocomplete="off" />
+                        <select id="stickyTaskPriority" class="drawer-select" title="Priority">
+                            <option value="medium" selected>Med</option>
+                            <option value="high">High</option>
+                            <option value="low">Low</option>
+                        </select>
+                        <button class="btn btn-sm btn-primary" onclick="createStickyTask()" style="white-space:nowrap;">+ Task</button>
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px; border-top:1px solid var(--border); padding-top:8px;">
+                    <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--muted);">Quick Add Note</div>
+                    <input id="stickyNoteTitle" class="drawer-input" placeholder="Note title..." autocomplete="off" />
+                    <textarea id="stickyNoteContent" class="drawer-input" rows="2" placeholder="Write sticky note (Markdown)..." style="resize:vertical;"></textarea>
+                    <div style="display:flex; gap:6px;">
+                        <input id="stickyNoteTags" class="drawer-input" placeholder="Tags (comma-sep)..." autocomplete="off" />
+                        <button class="btn btn-sm btn-primary" onclick="createStickyNote()" style="white-space:nowrap; background:#f59e0b; color:#fff;">+ Save Note</button>
+                    </div>
+                </div>
+            </div>
+            <div class="sticky-panel-body">
+                <div id="stickyTasksSection">
+                    <div class="drawer-section-title" style="margin-top:0;">📋 Tasks</div>
+                    <div class="task-list" id="stickyTasksContainer">
+                        <div style="color:var(--muted); font-size:12px;">Loading tasks...</div>
+                    </div>
+                </div>
+                <div id="stickyNotesSection">
+                    <div class="drawer-section-title">📝 Scratchpad Notes</div>
+                    <div class="notes-list" id="stickyNotesContainer">
+                        <div style="color:var(--muted); font-size:12px;">Loading notes...</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
 
         <!-- Floating Input Dock -->
         <div class="dock-wrapper">
@@ -2073,6 +2597,7 @@
                 <div class="drawer-tabs">
                     <button class="drawer-tab-btn active" id="tabBtnFiles" onclick="switchDrawerTab('files')">📁 Files</button>
                     <button class="drawer-tab-btn" id="tabBtnGoals" onclick="switchDrawerTab('goals')">🎯 Goals</button>
+                    <button class="drawer-tab-btn" id="tabBtnNotes" onclick="switchDrawerTab('notes')">📝 Notes & Tasks</button>
                 </div>
                 <button class="drawer-close-btn" onclick="toggleDrawer()" title="Close Drawer (Ctrl + B)">✕</button>
             </div>
@@ -2106,6 +2631,25 @@
                         <button class="btn-modal-reject" onclick="rejectEditProposal()">✕ Reject</button>
                         <button class="btn-modal-approve" onclick="approveEditProposal()">✓ Approve &amp; Apply</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Read-Only Diff Inspection Modal -->
+        <div id="readOnlyDiffModal" class="modal" onclick="if(event.target===this) closeReadOnlyDiffModal()">
+            <div class="edit-modal-card">
+                <div class="edit-modal-header">
+                    <div class="edit-modal-title-group">
+                        <span class="edit-modal-title">👁️ Diff Inspection</span>
+                        <span id="readOnlyDiffPath" class="edit-proposal-path">Target File</span>
+                    </div>
+                    <button class="inspector-close-btn" onclick="closeReadOnlyDiffModal()" title="Close (Esc)">✕</button>
+                </div>
+                <div class="edit-modal-body">
+                    <div id="readOnlyDiffContent" class="edit-diff-container"></div>
+                </div>
+                <div class="edit-modal-footer" style="justify-content:flex-end;">
+                    <button class="card-action-btn" onclick="closeReadOnlyDiffModal()" style="padding:6px 14px; font-size:12px;">Close</button>
                 </div>
             </div>
         </div>
@@ -2176,6 +2720,7 @@
         }
 
         // ========== State Management ==========
+        window.cachedEditDiffs = window.cachedEditDiffs || {};
         let ws = null;
         let localIdentity = null;
         let userAlias = localStorage.getItem('mkpro-username') || null;
@@ -2749,6 +3294,11 @@
 
                 // 9, 10, 11. visual diff edit proposals
                 case 'edit_proposal':
+                    window.cachedEditDiffs = window.cachedEditDiffs || {};
+                    if (msg) {
+                        if (msg.id) window.cachedEditDiffs[msg.id] = msg.diff || [];
+                        if (msg.path) window.cachedEditDiffs[msg.path] = msg.diff || [];
+                    }
                     showEditProposalModal(msg);
                     break;
                 case 'edit_approved':
@@ -3224,6 +3774,11 @@
         function showEditProposalModal(msg) {
             hideThinkingLoader();
             currentEditProposal = msg;
+            window.cachedEditDiffs = window.cachedEditDiffs || {};
+            if (msg) {
+                if (msg.id) window.cachedEditDiffs[msg.id] = msg.diff || [];
+                if (msg.path) window.cachedEditDiffs[msg.path] = msg.diff || [];
+            }
 
             const modal = document.getElementById('editApprovalModal');
             const pathEl = document.getElementById('editProposalPath');
@@ -3354,6 +3909,49 @@
             }
         }
 
+        function showReadOnlyDiffModal(path, diffOrId) {
+            let diffLines = Array.isArray(diffOrId) ? diffOrId : null;
+            if (!diffLines && window.cachedEditDiffs) {
+                if (typeof diffOrId === 'string' && diffOrId && window.cachedEditDiffs[diffOrId]) {
+                    diffLines = window.cachedEditDiffs[diffOrId];
+                } else if (path && window.cachedEditDiffs[path]) {
+                    diffLines = window.cachedEditDiffs[path];
+                }
+            }
+
+            const modal = document.getElementById('readOnlyDiffModal');
+            const pathEl = document.getElementById('readOnlyDiffPath');
+            const diffEl = document.getElementById('readOnlyDiffContent');
+            if (!modal || !pathEl || !diffEl) return;
+
+            pathEl.textContent = path || 'Target File';
+
+            let diffHtml = '';
+            if (diffLines && diffLines.length > 0) {
+                for (const line of diffLines) {
+                    let cls = 'context';
+                    let prefix = '  ';
+                    if (line.type === 'ADDED' || line.type === '+') {
+                        cls = 'added';
+                        prefix = '+ ';
+                    } else if (line.type === 'REMOVED' || line.type === '-') {
+                        cls = 'removed';
+                        prefix = '- ';
+                    }
+                    diffHtml += `<div class="diff-line-modal ${cls}">${prefix}${escapeHtml(line.text || line.content || '')}</div>`;
+                }
+            } else {
+                diffHtml = '<div class="diff-line-modal info">No diff snapshot available for this file edit.</div>';
+            }
+            diffEl.innerHTML = diffHtml;
+            modal.classList.add('active');
+        }
+
+        function closeReadOnlyDiffModal() {
+            const modal = document.getElementById('readOnlyDiffModal');
+            if (modal) modal.classList.remove('active');
+        }
+
         function appendEditResolutionBadge(path, approved, id) {
             const card = document.createElement('div');
             card.className = 'academic-card card-system';
@@ -3361,13 +3959,28 @@
             const statusText = approved ? 'Approved & Applied' : 'Rejected';
             const statusIcon = approved ? '✓' : '✕';
             const statusColor = approved ? 'var(--success)' : 'var(--danger)';
+            const safePath = (path || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeId = (id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
             card.innerHTML = `
-                <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
-                    <div>
+                <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:12px; flex-wrap:wrap;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                         <strong style="color:${statusColor}">${statusIcon} File Edit ${statusText}:</strong>
                         <code style="margin-left:6px; font-family:'JetBrains Mono',monospace;">${escapeHtml(path || 'target file')}</code>
                     </div>
-                    <span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted);">${getTimestamp()}</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <div style="display:inline-flex; align-items:center; gap:6px;">
+                            <button class="card-action-btn diff-action-chip resolution-badge-btn chip-diff" onclick="showReadOnlyDiffModal('${safePath}', '${safeId}')" title="View read-only diff inspection">
+                                <svg class="diff-chip-icon diff-chip-icon-diff" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                <span>View Diff</span>
+                            </button>
+                            <button class="card-action-btn diff-action-chip resolution-badge-btn chip-file" onclick="inspectFile('${safePath}')" title="Inspect file in drawer &amp; code editor">
+                                <svg class="diff-chip-icon diff-chip-icon-file" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                <span>Open File</span>
+                            </button>
+                        </div>
+                        <span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted);">${getTimestamp()}</span>
+                    </div>
                 </div>
             `;
             chatStream.appendChild(card);
@@ -3616,16 +4229,382 @@
 
         function switchDrawerTab(tab) {
             activeDrawerTab = tab;
-            document.getElementById('tabBtnFiles').classList.toggle('active', tab === 'files');
-            document.getElementById('tabBtnGoals').classList.toggle('active', tab === 'goals');
-            const body = document.getElementById('drawerBody');
+            const tabBtnFiles = document.getElementById('tabBtnFiles');
+            const tabBtnGoals = document.getElementById('tabBtnGoals');
+            const tabBtnNotes = document.getElementById('tabBtnNotes');
+            if (tabBtnFiles) tabBtnFiles.classList.toggle('active', tab === 'files');
+            if (tabBtnGoals) tabBtnGoals.classList.toggle('active', tab === 'goals');
+            if (tabBtnNotes) tabBtnNotes.classList.toggle('active', tab === 'notes');
+            renderDrawer();
+        }
 
-            if (tab === 'files') {
+        function renderDrawer() {
+            const body = document.getElementById('drawerBody');
+            if (!body) return;
+
+            if (activeDrawerTab === 'files') {
                 body.innerHTML = '<div style="color:var(--muted); font-size:12px;">Loading workspace directory...</div>';
                 loadDrawerDirectory('', body, 0);
-            } else if (tab === 'goals') {
+            } else if (activeDrawerTab === 'goals') {
                 body.innerHTML = '<div style="color:var(--muted); font-size:12px;">Loading active goals...</div>';
                 loadDrawerGoals(body);
+            } else if (activeDrawerTab === 'notes') {
+                renderNotesTab();
+            }
+        }
+
+        function renderNotesTab() {
+            const body = document.getElementById('drawerBody');
+            if (!body) return;
+            body.innerHTML = `
+                <div class="drawer-section-title">
+                    <span>📋 Tasks (To-Do)</span>
+                    <button class="card-action-btn" onclick="fetchTasks()" title="Refresh tasks" style="padding:2px 6px; font-size:11px;">🔄</button>
+                </div>
+                <div class="drawer-input-row">
+                    <input id="newTaskInput" class="drawer-input" placeholder="Add a new task (press Enter)..." onkeydown="if(event.key==='Enter') createTaskFromInput()" autocomplete="off" />
+                    <select id="newTaskPriority" class="drawer-select" title="Priority">
+                        <option value="medium" selected>Med</option>
+                        <option value="high">High</option>
+                        <option value="low">Low</option>
+                    </select>
+                    <button class="btn btn-sm btn-primary" onclick="createTaskFromInput()">+ Add</button>
+                </div>
+                <div id="tasksContainer" class="task-list">
+                    <div style="color:var(--muted); font-size:12px;">Loading tasks...</div>
+                </div>
+
+                <div class="drawer-section-title" style="margin-top:20px;">
+                    <span>📝 Notes (Scratchpad)</span>
+                    <button class="card-action-btn" onclick="fetchNotes()" title="Refresh notes" style="padding:2px 6px; font-size:11px;">🔄</button>
+                </div>
+                <div class="note-editor-box">
+                    <input id="newNoteTitle" class="drawer-input" placeholder="Title..." autocomplete="off" />
+                    <textarea id="newNoteContent" class="drawer-input" rows="3" placeholder="Write note or markdown snippet..." style="resize:vertical;"></textarea>
+                    <div style="display:flex; gap:6px;">
+                        <input id="newNoteTags" class="drawer-input" placeholder="Tags (comma-separated)..." autocomplete="off" />
+                        <button class="btn btn-sm btn-primary" onclick="createNoteFromInput()" style="white-space:nowrap;">💾 Save Note</button>
+                    </div>
+                </div>
+                <div id="notesContainer" class="notes-list">
+                    <div style="color:var(--muted); font-size:12px;">Loading notes...</div>
+                </div>
+            `;
+            fetchTasks();
+            fetchNotes();
+        }
+
+        async function fetchTasks() {
+            const container = document.getElementById('tasksContainer');
+            const stickyContainer = document.getElementById('stickyTasksContainer');
+            if (!container && !stickyContainer) return;
+            try {
+                const resp = await fetch('/api/tasks');
+                if (!resp.ok) throw new Error('Tasks request failed: ' + resp.status);
+                const tasks = await resp.json();
+                if (!Array.isArray(tasks) || tasks.length === 0) {
+                    const emptyHtml = '<div style="color:var(--muted); font-size:12px; font-style:italic;">No tasks yet.</div>';
+                    if (container) container.innerHTML = emptyHtml;
+                    if (stickyContainer) stickyContainer.innerHTML = emptyHtml;
+                    return;
+                }
+                const renderedHtml = tasks.map(task => {
+                    const isDone = (task.status || '').toUpperCase() === 'DONE';
+                    const prio = (task.priority || 'medium').toLowerCase();
+                    const prioClass = prio === 'high' ? 'task-priority-high' : (prio === 'low' ? 'task-priority-low' : 'task-priority-medium');
+                    const escapedId = escapeHtml(task.id || '');
+                    return `
+                        <div class="task-item ${isDone ? 'done' : ''}" id="task-item-${escapedId}">
+                            <input type="checkbox" class="task-checkbox" ${isDone ? 'checked' : ''} onchange="toggleTask('${escapedId}')" title="Mark ${isDone ? 'incomplete' : 'done'}" />
+                            <span class="task-title" title="${escapeHtml(task.title || '')}">${escapeHtml(task.title || '')}</span>
+                            <span class="task-priority-badge ${prioClass}">${escapeHtml(prio)}</span>
+                            <button class="task-del-btn" onclick="deleteTask('${escapedId}')" title="Delete task">🗑️</button>
+                        </div>
+                    `;
+                }).join('');
+                if (container) container.innerHTML = renderedHtml;
+                if (stickyContainer) stickyContainer.innerHTML = renderedHtml;
+            } catch (err) {
+                console.error('Error fetching tasks:', err);
+                const errHtml = '<div style="color:var(--muted); font-size:12px;">Failed to load tasks.</div>';
+                if (container) container.innerHTML = errHtml;
+                if (stickyContainer) stickyContainer.innerHTML = errHtml;
+            }
+        }
+
+        async function createTaskFromInput() {
+            const input = document.getElementById('newTaskInput');
+            if (!input) return;
+            const title = input.value.trim();
+            if (!title) return;
+
+            const prioSelect = document.getElementById('newTaskPriority');
+            const priority = prioSelect ? prioSelect.value : 'medium';
+
+            try {
+                const resp = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: title,
+                        priority: priority,
+                        status: 'TODO'
+                    })
+                });
+                if (resp.ok) {
+                    input.value = '';
+                    fetchTasks();
+                } else {
+                    console.error('Failed to create task:', await resp.text());
+                }
+            } catch (err) {
+                console.error('Error creating task:', err);
+            }
+        }
+
+        async function toggleTask(id) {
+            if (!id) return;
+            try {
+                const resp = await fetch('/api/tasks/' + encodeURIComponent(id) + '/toggle', {
+                    method: 'POST'
+                });
+                if (resp.ok) {
+                    fetchTasks();
+                } else {
+                    console.error('Failed to toggle task:', await resp.text());
+                }
+            } catch (err) {
+                console.error('Error toggling task:', err);
+            }
+        }
+
+        async function deleteTask(id) {
+            if (!id) return;
+            try {
+                const resp = await fetch('/api/tasks/' + encodeURIComponent(id), {
+                    method: 'DELETE'
+                });
+                if (resp.ok) {
+                    fetchTasks();
+                } else {
+                    console.error('Failed to delete task:', await resp.text());
+                }
+            } catch (err) {
+                console.error('Error deleting task:', err);
+            }
+        }
+
+        async function fetchNotes() {
+            const container = document.getElementById('notesContainer');
+            const stickyContainer = document.getElementById('stickyNotesContainer');
+            if (!container && !stickyContainer) return;
+            try {
+                const resp = await fetch('/api/notes');
+                if (!resp.ok) throw new Error('Notes request failed: ' + resp.status);
+                const notes = await resp.json();
+                if (!Array.isArray(notes) || notes.length === 0) {
+                    const emptyHtml = '<div style="color:var(--muted); font-size:12px; font-style:italic;">No notes yet.</div>';
+                    if (container) container.innerHTML = emptyHtml;
+                    if (stickyContainer) stickyContainer.innerHTML = emptyHtml;
+                    return;
+                }
+                const renderedHtml = notes.map(note => {
+                    const escapedId = escapeHtml(note.id || '');
+                    let dateStr = '';
+                    if (note.createdAt) {
+                        try {
+                            const d = new Date(note.createdAt);
+                            if (!isNaN(d.getTime())) {
+                                dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
+                                          d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            }
+                        } catch(e) {}
+                    }
+                    const tagsHtml = (note.tags && Array.isArray(note.tags) && note.tags.length > 0)
+                        ? `<div class="note-tags-row">${note.tags.map(t => `<span class="note-tag-chip">#${escapeHtml(t)}</span>`).join('')}</div>`
+                        : '';
+                    const formattedContent = typeof formatMarkdown === 'function' && note.content
+                        ? formatMarkdown(note.content)
+                        : escapeHtml(note.content || '');
+                    return `
+                        <div class="note-card" id="note-card-${escapedId}">
+                            <div class="note-card-header">
+                                <span class="note-card-title">${escapeHtml(note.title || 'Untitled Note')}</span>
+                                <button class="note-del-btn" onclick="deleteNote('${escapedId}')" title="Delete note">🗑️</button>
+                            </div>
+                            ${dateStr ? `<div class="note-card-date">${escapeHtml(dateStr)}</div>` : ''}
+                            ${tagsHtml}
+                            <div class="note-card-content">${formattedContent}</div>
+                        </div>
+                    `;
+                }).join('');
+                if (container) container.innerHTML = renderedHtml;
+                if (stickyContainer) stickyContainer.innerHTML = renderedHtml;
+            } catch (err) {
+                console.error('Error fetching notes:', err);
+                const errHtml = '<div style="color:var(--muted); font-size:12px;">Failed to load notes.</div>';
+                if (container) container.innerHTML = errHtml;
+                if (stickyContainer) stickyContainer.innerHTML = errHtml;
+            }
+        }
+
+        // ========== Left Sticky Notes & Tasks Panel Controllers ==========
+        function toggleStickyPanel() {
+            const panel = document.getElementById('stickyNotesPanel');
+            if (!panel) return;
+            const isHidden = panel.classList.toggle('hidden');
+            document.body.classList.toggle('sticky-notes-open', !isHidden);
+            localStorage.setItem('mkpro-sticky-panel-hidden', isHidden ? '1' : '0');
+            if (!isHidden) {
+                fetchTasks();
+                fetchNotes();
+            }
+        }
+
+        function toggleStickyAddForm() {
+            const box = document.getElementById('stickyQuickAddBox');
+            if (!box) return;
+            box.classList.toggle('open');
+        }
+
+        function switchStickyFilter(mode) {
+            const tasksSec = document.getElementById('stickyTasksSection');
+            const notesSec = document.getElementById('stickyNotesSection');
+            const btnAll = document.getElementById('stickyFilterAll');
+            const btnNotes = document.getElementById('stickyFilterNotes');
+            const btnTasks = document.getElementById('stickyFilterTasks');
+
+            if (btnAll) btnAll.classList.toggle('active', mode === 'all');
+            if (btnNotes) btnNotes.classList.toggle('active', mode === 'notes');
+            if (btnTasks) btnTasks.classList.toggle('active', mode === 'tasks');
+
+            if (tasksSec) tasksSec.style.display = (mode === 'all' || mode === 'tasks') ? 'block' : 'none';
+            if (notesSec) notesSec.style.display = (mode === 'all' || mode === 'notes') ? 'block' : 'none';
+        }
+
+        async function createStickyTask() {
+            const input = document.getElementById('stickyTaskInput');
+            if (!input) return;
+            const title = input.value.trim();
+            if (!title) return;
+
+            const prioSelect = document.getElementById('stickyTaskPriority');
+            const priority = prioSelect ? prioSelect.value : 'medium';
+
+            try {
+                const resp = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: title,
+                        priority: priority,
+                        status: 'TODO'
+                    })
+                });
+                if (resp.ok) {
+                    input.value = '';
+                    fetchTasks();
+                } else {
+                    console.error('Failed to create sticky task:', await resp.text());
+                }
+            } catch (err) {
+                console.error('Error creating sticky task:', err);
+            }
+        }
+
+        async function createStickyNote() {
+            const titleInput = document.getElementById('stickyNoteTitle');
+            const contentInput = document.getElementById('stickyNoteContent');
+            const tagsInput = document.getElementById('stickyNoteTags');
+            if (!contentInput && !titleInput) return;
+
+            const title = titleInput ? titleInput.value.trim() : '';
+            const content = contentInput ? contentInput.value.trim() : '';
+            if (!title && !content) return;
+
+            let tags = [];
+            if (tagsInput && tagsInput.value.trim()) {
+                tags = tagsInput.value.split(',')
+                    .map(t => t.trim().replace(/^#/, ''))
+                    .filter(t => t.length > 0);
+            }
+
+            try {
+                const resp = await fetch('/api/notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: title || 'Untitled Note',
+                        content: content,
+                        tags: tags
+                    })
+                });
+                if (resp.ok) {
+                    if (titleInput) titleInput.value = '';
+                    if (contentInput) contentInput.value = '';
+                    if (tagsInput) tagsInput.value = '';
+                    fetchNotes();
+                } else {
+                    console.error('Failed to create sticky note:', await resp.text());
+                }
+            } catch (err) {
+                console.error('Error creating sticky note:', err);
+            }
+        }
+
+        async function createNoteFromInput() {
+            const titleInput = document.getElementById('newNoteTitle');
+            const contentInput = document.getElementById('newNoteContent');
+            const tagsInput = document.getElementById('newNoteTags');
+            if (!contentInput && !titleInput) return;
+
+            const title = titleInput ? titleInput.value.trim() : '';
+            const content = contentInput ? contentInput.value.trim() : '';
+            if (!title && !content) return;
+
+            let tags = [];
+            if (tagsInput && tagsInput.value.trim()) {
+                tags = tagsInput.value.split(',')
+                    .map(t => t.trim().replace(/^#/, ''))
+                    .filter(t => t.length > 0);
+            }
+
+            try {
+                const resp = await fetch('/api/notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: title || 'Untitled Note',
+                        content: content,
+                        tags: tags
+                    })
+                });
+                if (resp.ok) {
+                    if (titleInput) titleInput.value = '';
+                    if (contentInput) contentInput.value = '';
+                    if (tagsInput) tagsInput.value = '';
+                    fetchNotes();
+                } else {
+                    console.error('Failed to create note:', await resp.text());
+                }
+            } catch (err) {
+                console.error('Error creating note:', err);
+            }
+        }
+
+        async function deleteNote(id) {
+            if (!id) return;
+            try {
+                const resp = await fetch('/api/notes/' + encodeURIComponent(id), {
+                    method: 'DELETE'
+                });
+                if (resp.ok) {
+                    fetchNotes();
+                } else {
+                    console.error('Failed to delete note:', await resp.text());
+                }
+            } catch (err) {
+                console.error('Error deleting note:', err);
             }
         }
 
@@ -4187,6 +5166,16 @@
 
         // ========== Inspector Modal Lifecycle Controller ==========
         async function inspectFile(path, name) {
+            // Automatically slide open the slide drawer if not already open
+            const drawer = document.getElementById('slideDrawer');
+            const backdrop = document.getElementById('drawerBackdrop');
+            if (drawer && !drawer.classList.contains('open')) {
+                drawer.classList.add('open');
+                if (backdrop) backdrop.classList.add('open');
+                switchDrawerTab('files');
+                updateDrawerTelemetry();
+            }
+
             activeInspectorPath = path;
             activeInspectorName = name || path.split('/').pop() || 'file';
             activeInspectorSource = '';
@@ -4400,6 +5389,11 @@
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
+                const readOnlyDiff = document.getElementById('readOnlyDiffModal');
+                if (readOnlyDiff && readOnlyDiff.classList.contains('active')) {
+                    closeReadOnlyDiffModal();
+                    return;
+                }
                 const editModal = document.getElementById('editApprovalModal');
                 if (editModal && editModal.classList.contains('active')) {
                     closeEditModal();
@@ -4420,9 +5414,9 @@
         // Initialize WebSocket on Load
         connect();
     
-        // ========================================================================
+        // =========================================================
         // Remote SSH Credentials & Management Module (Academic View)
-        // ========================================================================
+        // =========================================================
         const SSH_CONFIG_KEY = 'mkpro-ssh-config';
 
         async function loadSshConfig() {
@@ -4803,6 +5797,18 @@
         // Periodic SSH status check every 15s
         setInterval(checkSshStatus, 15000);
         checkSshStatus();
+
+        // Initialize Left Sticky Notes & Tasks Panel on startup
+        (function initStickyNotesPanel() {
+            const hiddenPref = localStorage.getItem('mkpro-sticky-panel-hidden') === '1';
+            const panel = document.getElementById('stickyNotesPanel');
+            if (panel) {
+                panel.classList.toggle('hidden', hiddenPref);
+                document.body.classList.toggle('sticky-notes-open', !hiddenPref);
+            }
+            fetchTasks();
+            fetchNotes();
+        })();
 
     </script>
 

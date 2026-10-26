@@ -344,6 +344,11 @@ public class MkPro {
         processWebInput(context, text);
     }
 
+    public static void processWebInputWithImagesPublic(com.mkpro.core.MkProContext context, String text,
+                                                         java.util.List<com.mkpro.web.WebChatServer.ImageAttachment> images) {
+        processWebInputWithImages(context, text, images);
+    }
+
     /**
      * Process web input that includes image attachments (multimodal).
      * Builds a Content with both text and inline image parts for vision-capable models.
@@ -359,6 +364,7 @@ public class MkPro {
             java.util.List<com.google.genai.types.Part> parts = new java.util.ArrayList<>();
             parts.add(com.google.genai.types.Part.fromText(text));
 
+            com.mkpro.agents.AgentManager.currentTurnMediaParts.clear();
             for (com.mkpro.web.WebChatServer.ImageAttachment img : images) {
                 com.google.genai.types.Part imagePart = com.google.genai.types.Part.builder()
                     .inlineData(com.google.genai.types.Blob.builder()
@@ -367,6 +373,7 @@ public class MkPro {
                         .build())
                     .build();
                 parts.add(imagePart);
+                com.mkpro.agents.AgentManager.currentTurnMediaParts.add(imagePart);
             }
 
             com.google.genai.types.Content message = com.google.genai.types.Content.builder()
@@ -404,16 +411,19 @@ public class MkPro {
                         });
                     });
                 }, error -> {
+                    com.mkpro.agents.AgentManager.currentTurnMediaParts.clear();
                     if (context.getEventBus() != null) {
                         context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk("\n\n[Error: " + error.getMessage() + "]"));
                         context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
                     }
                 }, () -> {
+                    com.mkpro.agents.AgentManager.currentTurnMediaParts.clear();
                     if (context.getEventBus() != null) {
                         context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
                     }
                 });
         } catch (Exception e) {
+            com.mkpro.agents.AgentManager.currentTurnMediaParts.clear();
             System.err.println("[Web] Error processing image input: " + e.getMessage());
         }
     }

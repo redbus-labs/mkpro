@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Enumeration;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -21,6 +22,10 @@ public class ConfigService {
     public static final String PROP_GEMINI_KEY = "gemini.api.key";
     public static final String PROP_OLLAMA_URL = "ollama.server.url";
     public static final String PROP_TEAM = "active.team";
+    public static final String PROP_OPENAI_URL = "openai.base.url";
+    public static final String PROP_OPENAI_KEY = "openai.api.key";
+    public static final String PROP_OPENAI_MAX_CONTEXT = "openai.max.context.tokens";
+    public static final int DEFAULT_OPENAI_MAX_CONTEXT = 100000;
 
     private final Properties properties;
     private final Path configPath;
@@ -216,6 +221,37 @@ public class ConfigService {
 
     public String getSetting(String key, String defaultValue) {
         return properties.getProperty(key, defaultValue);
+    }
+
+    public int getOpenAiMaxContext(String providerName, int defaultVal) {
+        if (providerName != null && !providerName.isBlank()) {
+            String trimmed = providerName.trim();
+            String propKey = "openai.provider." + trimmed + ".max.context.tokens";
+            String envKey = "OPENAI_PROVIDER_" + trimmed.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "_") + "_MAX_CONTEXT_TOKENS";
+            String val = properties.getProperty(propKey);
+            if (val == null || val.isBlank()) {
+                val = System.getenv(envKey);
+            }
+            if (val != null && !val.isBlank()) {
+                try {
+                    return Integer.parseInt(val.trim());
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+
+        String globalVal = properties.getProperty(PROP_OPENAI_MAX_CONTEXT);
+        if (globalVal == null || globalVal.isBlank()) {
+            globalVal = System.getenv("OPENAI_MAX_CONTEXT_TOKENS");
+        }
+        if (globalVal != null && !globalVal.isBlank()) {
+            try {
+                return Integer.parseInt(globalVal.trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        return defaultVal;
     }
 
     public void saveSetting(String key, String value) {

@@ -73,6 +73,8 @@ public class AgentManager {
     /** Last agent delegated to — visible to TerminalUI for Maker tracking */
     public static volatile String lastDelegatedAgent = null;
     public static volatile java.util.List<String> lastToolsUsed = new java.util.ArrayList<>();
+    /** Media parts (inline images/audio) attached to the current turn, forwarded to delegated sub-agents */
+    public static volatile java.util.List<com.google.genai.types.Part> currentTurnMediaParts = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     private static final String BASE_AGENT_POLICY =
     "Authority:\n" +
@@ -405,7 +407,10 @@ public class AgentManager {
                 case OPENAI:
                     String openAiUrl = resolveOpenAiUrl(config);
                     String openAiKey = resolveOpenAiKey(config, openAiUrl);
-                    return new com.google.adk.models.OpenAiBaseLM(config.getModelName(), openAiUrl, openAiKey).withTruncation(100000, "left");//truncations hould be automated, lets keep it to 100K for now
+                    int maxContext = resolveOpenAiMaxContext(config, openAiUrl);
+                    return new com.google.adk.models.OpenAiBaseLM(config.getModelName(), openAiUrl, openAiKey)
+                            .withMaxContextTokens(maxContext)
+                            .withTruncation(maxContext, "left");
                 case SARVAM:
                     return new SarvamBaseLM(config.getModelName());
                 case NVIDIA:
@@ -485,6 +490,13 @@ public class AgentManager {
         }
         String key = new com.mkpro.config.ConfigService().getSetting("openai.api.key", System.getenv("OPENAI_API_KEY"));
         return key != null ? key : "";
+    }
+
+    /**
+     * Resolves the OpenAI/vLLM max context token limit for a given agent config and resolved server URL.
+     */
+    private int resolveOpenAiMaxContext(AgentConfig config, String resolvedUrl) {
+        return com.mkpro.commands.impl.VllmCommand.resolveServerMaxContext(resolvedUrl, centralMemory);
     }
 
     public Runner createRunner(Map<String, AgentConfig> agentConfigs, String augmentedContext, int maxTurns) {
@@ -783,6 +795,11 @@ public class AgentManager {
                 peersContext.append("Usage: ask_peer_agent(agent=\"Architect\", peer=\"project-name\", question=\"...\")\n");
                 coordInstruction += peersContext.toString();
             }
+
+            coordInstruction += "\n\n── MULTIMODAL VISION & AUDIO ──\n"
+                + "When the user attaches inline images or audio in the conversation turn, you HAVE direct multimodal vision/audio access to them in the current message parts.\n"
+                + "- Do NOT claim you cannot see attached images or ask for a file path when inline image/audio attachments are present in your prompt.\n"
+                + "- You may analyze and answer questions about inline images/audio directly, or if you delegate to a specialist sub-agent, the inline attachments are automatically forwarded to them as well.";
             
             coordInstruction = com.mkpro.utils.InstructionSanitizer.sanitize(coordInstruction);
             LlmAgent coordinator = LlmAgent.builder()
@@ -1308,7 +1325,12 @@ public class AgentManager {
         Session subSession = SessionHelper.createSession(subRunner.sessionService(), request.getAgentName()).blockingGet();
         String sessId = (subSession != null && subSession.id() != null) ? subSession.id() : "default-session";
 
-        Content content = Content.builder().role("user").parts(List.of(Part.fromText(request.getUserPrompt()))).build();
+        List<Part> subParts = new ArrayList<>();
+        subParts.add(Part.fromText(request.getUserPrompt()));
+        if (currentTurnMediaParts != null && !currentTurnMediaParts.isEmpty()) {
+            subParts.addAll(currentTurnMediaParts);
+        }
+        Content content = Content.builder().role("user").parts(subParts).build();
 
         subRunner.runAsync(request.getAgentName(), subSession.id(), content)
             .blockingForEach(event -> {

@@ -4,6 +4,7 @@ import com.mkpro.commands.Command;
 import com.mkpro.core.MkProContext;
 import com.mkpro.models.AgentConfig;
 import com.mkpro.models.Provider;
+import com.mkpro.models.notes.NoteItem;
 import com.mkpro.utils.ConsoleUtils;
 import com.mkpro.config.ModelRegistry;
 
@@ -16,14 +17,20 @@ import java.util.ArrayList;
 public class ConfigCommand implements Command {
     @Override
     public void execute(String[] args, MkProContext context) throws Exception {
+        boolean globalScope = false;
+        if (args.length > 0 && args[0].equalsIgnoreCase("global")) {
+            globalScope = true;
+            args = Arrays.copyOfRange(args, 1, args.length);
+        }
+
         if (args.length == 0) {
-            startInteractiveFlow(context);
+            startInteractiveFlow(context, globalScope);
             return;
         }
 
         String subCommand = args[0];
 
-        // Support legacy main/master syntax: /config <agent> <provider> [model]
+        // Support legacy main/master syntax: /config [global] <agent> <provider> [model]
         if (!subCommand.equalsIgnoreCase("list") && !subCommand.equalsIgnoreCase("set") 
                 && !subCommand.equalsIgnoreCase("reset") && !subCommand.equalsIgnoreCase("fallback")) {
             if (args.length >= 2) {
@@ -39,47 +46,97 @@ public class ConfigCommand implements Command {
                         model = "llama3";
                     }
                 }
-                applyConfig(agent, providerStr, model, context);
+                applyConfig(agent, providerStr, model, context, globalScope);
                 return;
             } else {
-                System.out.println("Usage: config [list | set <agent> <provider> <model> | reset <agent>]");
-                System.out.println("Or legacy: config <agent> <provider> [model]");
+                System.out.println("Usage: config [global] [list | set <agent> <provider> <model> | reset <agent|notes|all>]");
+                System.out.println("Or legacy: config [global] <agent> <provider> [model]");
                 return;
             }
         }
 
         if (subCommand.equalsIgnoreCase("list")) {
-            Map<String, AgentConfig> configs = context.getCentralMemory().getAllAgentConfigs();
+            Map<String, AgentConfig> configs = globalScope
+                    ? context.getCentralMemory().getGlobalAgentConfigs()
+                    : context.getCentralMemory().getAllAgentConfigs();
             AgentConfig globalDefault = configs.get("default");
             
-            System.out.println("Agent Configurations:");
+            System.out.println(globalScope ? "Global Agent Configurations:" : "Agent Configurations:");
             if (globalDefault != null) {
                 String serverSuffix = formatServerSuffix(globalDefault, context);
-                System.out.println(String.format(" - [Global Default]: %s (%s)%s", globalDefault.getModelName(), globalDefault.getProvider(), serverSuffix));
+                String scopeTag = (!globalScope && context.getCentralMemory().hasExplicitProjectAgentConfig("default")) ? " [project]" : " [global]";
+                System.out.println(String.format(" - [Default]: %s (%s)%s%s", globalDefault.getModelName(), globalDefault.getProvider(), serverSuffix, scopeTag));
             } else {
-                System.out.println(" - [Global Default]: Not set (using internal defaults)");
+                System.out.println(" - [Default]: Not set (using internal defaults)");
             }
 
+            boolean isGlobalList = globalScope;
             configs.forEach((agent, config) -> {
                 if (!agent.equals("default")) {
                     String serverSuffix = formatServerSuffix(config, context);
-                    System.out.println(String.format(" - %s: %s (%s)%s", agent, config.getModelName(), config.getProvider(), serverSuffix));
+                    String scopeTag = (!isGlobalList && context.getCentralMemory().hasExplicitProjectAgentConfig(agent)) ? " [project]" : " [global]";
+                    System.out.println(String.format(" - %s: %s (%s)%s%s", agent, config.getModelName(), config.getProvider(), serverSuffix, scopeTag));
                 }
             });
+
+            List<NoteItem> projectNotes = context.getCentralMemory().getProjectNotes();
+            List<NoteItem> globalNotes = context.getCentralMemory().getGlobalNotes();
+            if (globalScope) {
+                System.out.println(String.format("Global Notes (%d):", globalNotes.size()));
+                for (NoteItem note : globalNotes) {
+                    System.out.println(String.format(" - %s [global]", note.getTitle() != null ? note.getTitle() : note.getId()));
+                }
+            } else {
+                System.out.println(String.format("Notes Summary: Project Notes (%d), Global Notes (%d)", projectNotes.size(), globalNotes.size()));
+                for (NoteItem note : projectNotes) {
+                    System.out.println(String.format(" - %s [project]", note.getTitle() != null ? note.getTitle() : note.getId()));
+                }
+                for (NoteItem note : globalNotes) {
+                    System.out.println(String.format(" - %s [global]", note.getTitle() != null ? note.getTitle() : note.getId()));
+                }
+            }
         } else if (subCommand.equalsIgnoreCase("reset") && args.length >= 2) {
             String agent = args[1];
-            context.getCentralMemory().deleteAgentConfig(agent);
-            context.getAgentConfigs().remove(agent);
-            System.out.println("Reset configuration for " + agent + ". It will now fall back to the Global Default.");
+            if ("notes".equalsIgnoreCase(agent)) {
+                if (globalScope) {
+                    context.getCentralMemory().clearGlobalNotes();
+                    System.out.println("Reset ALL [GLOBAL] notes.");
+                } else {
+                    context.getCentralMemory().clearProjectNotes();
+                    System.out.println("Reset ALL [PROJECT] notes for current project.");
+                }
+                return;
+            }
+            if (globalScope) {
+                if ("all".equalsIgnoreCase(agent)) {
+                    for (String globalAgent : new ArrayList<>(context.getCentralMemory().getGlobalAgentConfigs().keySet())) {
+                        context.getCentralMemory().deleteGlobalAgentConfig(globalAgent);
+                    }
+                    System.out.println("Reset ALL [GLOBAL] agent configurations.");
+                } else {
+                    context.getCentralMemory().deleteGlobalAgentConfig(agent);
+                    System.out.println("Reset [GLOBAL] configuration for " + agent + ".");
+                }
+            } else {
+                if ("all".equalsIgnoreCase(agent)) {
+                    context.getCentralMemory().clearProjectAgentConfigs();
+                    System.out.println("Reset ALL [PROJECT] agent configurations. Project will now fall back to Global Configurations.");
+                } else {
+                    context.getCentralMemory().deleteAgentConfig(agent);
+                    System.out.println("Reset [PROJECT] configuration for " + agent + ". It will now fall back to Global Configuration.");
+                }
+            }
+            context.getAgentConfigs().clear();
+            context.getAgentConfigs().putAll(context.getCentralMemory().getAllAgentConfigs());
             context.rebuildRunner(); // Rebuild cleanly to apply resets
         } else if (subCommand.equalsIgnoreCase("set")) {
             if (args.length >= 4) {
                 String agent = args[1];
                 String providerStr = args[2];
                 String model = args[3];
-                applyConfig(agent, providerStr, model, context);
+                applyConfig(agent, providerStr, model, context, globalScope);
             } else {
-                startInteractiveFlow(context);
+                startInteractiveFlow(context, globalScope);
             }
         } else if (subCommand.equalsIgnoreCase("fallback")) {
             if (args.length < 3) {
@@ -93,11 +150,11 @@ public class ConfigCommand implements Command {
             String fallbackModel = args[2];
             setFallbackModel(agent, fallbackModel, context);
         } else {
-            System.out.println("Usage: config [list | set <agent> <provider> <model> | fallback <agent> <model> | reset <agent>]");
+            System.out.println("Usage: config [global] [list | set <agent> <provider> <model> | fallback <agent> <model> | reset <agent|notes|all>]");
         }
     }
 
-    private void startInteractiveFlow(MkProContext context) {
+    private void startInteractiveFlow(MkProContext context, boolean globalScope) {
         // Retrieve dynamically active agents from the loaded Team definitions in AgentManager
         List<String> agents = new ArrayList<>();
         agents.add("default");
@@ -118,7 +175,8 @@ public class ConfigCommand implements Command {
         agents.add(0, "default");
         agents.add(0, "All Agents");
         
-        String agent = ConsoleUtils.selectOption(context, "Select agent to configure:", agents);
+        String scopePrompt = globalScope ? " [GLOBAL]" : " [PROJECT]";
+        String agent = ConsoleUtils.selectOption(context, "Select agent to configure" + scopePrompt + ":", agents);
         if (agent == null) return;
 
         // Build provider list with individual Ollama and OpenAI/vLLM endpoints
@@ -224,10 +282,10 @@ public class ConfigCommand implements Command {
             model = model + "@" + serverName;
         }
 
-        applyConfig(agent, providerStr, model, context);
+        applyConfig(agent, providerStr, model, context, globalScope);
     }
 
-    private void applyConfig(String agent, String providerStr, String model, MkProContext context) {
+    private void applyConfig(String agent, String providerStr, String model, MkProContext context, boolean globalScope) {
         try {
             Provider provider = Provider.valueOf(providerStr.toUpperCase());
 
@@ -262,11 +320,15 @@ public class ConfigCommand implements Command {
             }
             
             AgentConfig config = new AgentConfig(provider, model, serverUrl);
+            String scopeLabel = globalScope ? "[GLOBAL]" : "[PROJECT]";
             
             if ("All Agents".equalsIgnoreCase(agent)) {
                 // Save for default
-                context.getCentralMemory().saveAgentConfig("default", config);
-                context.getAgentConfigs().put("default", config);
+                if (globalScope) {
+                    context.getCentralMemory().saveGlobalAgentConfig("default", config);
+                } else {
+                    context.getCentralMemory().saveAgentConfig("default", config);
+                }
                 
                 // Get all active dynamic team agents to ensure updates are broadcast to all team roles
                 List<String> activeAgents = new ArrayList<>();
@@ -280,18 +342,26 @@ public class ConfigCommand implements Command {
                 // Save for all individual active agents
                 for (String agentName : activeAgents) {
                     if (!agentName.equalsIgnoreCase("default") && !agentName.equalsIgnoreCase("All Agents")) {
-                        context.getCentralMemory().saveAgentConfig(agentName, config);
-                        context.getAgentConfigs().put(agentName, config);
+                        if (globalScope) {
+                            context.getCentralMemory().saveGlobalAgentConfig(agentName, config);
+                        } else {
+                            context.getCentralMemory().saveAgentConfig(agentName, config);
+                        }
                     }
                 }
-                System.out.println("Updated config for ALL agents to " + model + " (" + provider + ")");
+                System.out.println("Updated " + scopeLabel + " config for ALL agents to " + model + " (" + provider + ")");
             } else {
-                context.getCentralMemory().saveAgentConfig(agent, config);
-                context.getAgentConfigs().put(agent, config);
-                System.out.println("Updated config for " + agent + " to " + model + " (" + provider + ")");
+                if (globalScope) {
+                    context.getCentralMemory().saveGlobalAgentConfig(agent, config);
+                } else {
+                    context.getCentralMemory().saveAgentConfig(agent, config);
+                }
+                System.out.println("Updated " + scopeLabel + " config for " + agent + " to " + model + " (" + provider + ")");
             }
             
-            // Re-create the runner cleanly and seamlessly swap sessions
+            // Reload effective merged configs and re-create the runner cleanly
+            context.getAgentConfigs().clear();
+            context.getAgentConfigs().putAll(context.getCentralMemory().getAllAgentConfigs());
             context.rebuildRunner();
             
         } catch (IllegalArgumentException e) {
@@ -457,6 +527,6 @@ public class ConfigCommand implements Command {
 
     @Override
     public String getDescription() {
-        return "Manage agent configurations (list, set, reset).";
+        return "Manage agent configurations (project-scoped by default, or 'config global ...' for global fallback).";
     }
 }

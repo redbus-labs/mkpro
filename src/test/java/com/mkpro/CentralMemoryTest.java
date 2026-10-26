@@ -136,6 +136,25 @@ public class CentralMemoryTest {
     }
 
     @Test
+    void projectScopedAgentConfigOverridesGlobalAndFallsBackOnDelete() {
+        AgentConfig globalConfig = new AgentConfig(Provider.GEMINI, "gemini-1.5-pro");
+        AgentConfig projectConfig = new AgentConfig(Provider.OLLAMA, "qwen2.5-coder");
+
+        memory.saveGlobalAgentConfig("Coder", globalConfig);
+        assertFalse(memory.hasExplicitProjectAgentConfig("Coder"));
+        assertEquals("gemini-1.5-pro", memory.getAgentConfig("Coder").getModelName());
+
+        memory.saveAgentConfig("Coder", projectConfig);
+        assertTrue(memory.hasExplicitProjectAgentConfig("Coder"));
+        assertEquals("qwen2.5-coder", memory.getAgentConfig("Coder").getModelName());
+        assertEquals("qwen2.5-coder", memory.getAllAgentConfigs().get("Coder").getModelName());
+
+        memory.deleteAgentConfig("Coder");
+        assertFalse(memory.hasExplicitProjectAgentConfig("Coder"));
+        assertEquals("gemini-1.5-pro", memory.getAgentConfig("Coder").getModelName());
+    }
+
+    @Test
     void configCacheServedWithoutDbAccess() {
         // Save a config
         memory.saveAgentConfig("Architect", new AgentConfig(Provider.BEDROCK, "claude-3"));

@@ -288,12 +288,84 @@ public class CentralMemory {
     // CACHED READS — Agent Configs (served from cache, written to shared)
     // ==========================================================================
 
+    public static String getCurrentProjectPath() {
+        return PathUtils.getProjectPath().toAbsolutePath().normalize().toString();
+    }
+
+    public static String getProjectKeyPrefix(String projectPath) {
+        if (projectPath == null || projectPath.isBlank()) {
+            return getCurrentProjectPath() + "::";
+        }
+        return Path.of(projectPath).toAbsolutePath().normalize().toString() + "::";
+    }
+
+    public static String getCurrentProjectKeyPrefix() {
+        return getCurrentProjectPath() + "::";
+    }
+
+    public boolean hasProjectAgentConfig(String agentName) {
+        String prefix = getCurrentProjectKeyPrefix();
+        return configCache.containsKey(prefix + agentName) || configCache.containsKey(prefix + "default");
+    }
+
+    public boolean hasExplicitProjectAgentConfig(String agentName) {
+        return configCache.containsKey(getCurrentProjectKeyPrefix() + agentName);
+    }
+
+    public Map<String, AgentConfig> getGlobalAgentConfigs() {
+        Map<String, AgentConfig> globals = new HashMap<>();
+        configCache.forEach((key, value) -> {
+            if (!key.contains("::")) {
+                globals.put(key, value);
+            }
+        });
+        return globals;
+    }
+
+    public Map<String, AgentConfig> getProjectAgentConfigs() {
+        String prefix = getCurrentProjectKeyPrefix();
+        Map<String, AgentConfig> projectConfigs = new HashMap<>();
+        configCache.forEach((key, value) -> {
+            if (key.startsWith(prefix)) {
+                projectConfigs.put(key.substring(prefix.length()), value);
+            }
+        });
+        return projectConfigs;
+    }
+
+    public AgentConfig getAgentConfig(String agentName) {
+        String prefix = getCurrentProjectKeyPrefix();
+        AgentConfig config = configCache.get(prefix + agentName);
+        if (config != null) {
+            return config;
+        }
+        config = configCache.get(prefix + "default");
+        if (config != null) {
+            return config;
+        }
+        config = configCache.get(agentName);
+        if (config != null) {
+            return config;
+        }
+        return configCache.get("default");
+    }
+
     public AgentConfig getAgentConfigs(String agentName) {
-        return configCache.get(agentName);
+        return getAgentConfig(agentName);
     }
 
     public List<AgentConfig> getAgentConfigs(String agentName, String projectPath) {
-        AgentConfig config = getAgentConfigs(agentName);
+        if (projectPath != null && !projectPath.isBlank()) {
+            String normalizedPrefix = getProjectKeyPrefix(projectPath);
+            AgentConfig scoped = configCache.get(normalizedPrefix + agentName);
+            if (scoped == null) {
+                scoped = configCache.get(normalizedPrefix + "default");
+            }
+            if (scoped != null) {
+                return Collections.singletonList(scoped);
+            }
+        }
+        AgentConfig config = getAgentConfig(agentName);
         if (config != null) {
             return Collections.singletonList(config);
         }
@@ -312,18 +384,40 @@ public class CentralMemory {
     }
 
     public void saveAgentConfig(String agentName, AgentConfig config) {
+        String scopedKey = agentName.contains("::") ? agentName : getCurrentProjectKeyPrefix() + agentName;
         // Write to shared DB
+        withSharedDbVoid(db -> {
+            Map<String, AgentConfig> agent_configs = db.hashMap("agent_configs", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            agent_configs.put(scopedKey, config);
+            db.commit();
+        });
+        // Update local cache
+        configCache.put(scopedKey, config);
+        notifyListeners("agent_config:" + scopedKey, config);
+    }
+
+    public void saveGlobalAgentConfig(String agentName, AgentConfig config) {
         withSharedDbVoid(db -> {
             Map<String, AgentConfig> agent_configs = db.hashMap("agent_configs", Serializer.STRING, Serializer.JAVA).createOrOpen();
             agent_configs.put(agentName, config);
             db.commit();
         });
-        // Update local cache
         configCache.put(agentName, config);
         notifyListeners("agent_config:" + agentName, config);
     }
 
     public void deleteAgentConfig(String agentName) {
+        String scopedKey = agentName.contains("::") ? agentName : getCurrentProjectKeyPrefix() + agentName;
+        withSharedDbVoid(db -> {
+            Map<String, AgentConfig> agent_configs = db.hashMap("agent_configs", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            agent_configs.remove(scopedKey);
+            db.commit();
+        });
+        configCache.remove(scopedKey);
+        notifyListeners("agent_config_deleted:" + scopedKey, null);
+    }
+
+    public void deleteGlobalAgentConfig(String agentName) {
         withSharedDbVoid(db -> {
             Map<String, AgentConfig> agent_configs = db.hashMap("agent_configs", Serializer.STRING, Serializer.JAVA).createOrOpen();
             agent_configs.remove(agentName);
@@ -331,6 +425,24 @@ public class CentralMemory {
         });
         configCache.remove(agentName);
         notifyListeners("agent_config_deleted:" + agentName, null);
+    }
+
+    public void clearProjectAgentConfigs() {
+        String prefix = getCurrentProjectKeyPrefix();
+        List<String> keysToRemove = configCache.keySet().stream()
+                .filter(k -> k.startsWith(prefix))
+                .collect(Collectors.toList());
+        withSharedDbVoid(db -> {
+            Map<String, AgentConfig> agent_configs = db.hashMap("agent_configs", Serializer.STRING, Serializer.JAVA).createOrOpen();
+            for (String key : keysToRemove) {
+                agent_configs.remove(key);
+            }
+            db.commit();
+        });
+        for (String key : keysToRemove) {
+            configCache.remove(key);
+            notifyListeners("agent_config_deleted:" + key, null);
+        }
     }
 
     public void saveAgentConfig(String agentName, String modelName, String provider, String systemPrompt, String projectPath) {
@@ -345,7 +457,10 @@ public class CentralMemory {
     }
 
     public Map<String, AgentConfig> getAllAgentConfigs() {
-        return new HashMap<>(configCache);
+        Map<String, AgentConfig> effective = new HashMap<>(getGlobalAgentConfigs());
+        Map<String, AgentConfig> projectConfigs = getProjectAgentConfigs();
+        effective.putAll(projectConfigs);
+        return effective;
     }
 
     // ==========================================================================
@@ -682,22 +797,176 @@ public class CentralMemory {
         }
     }
 
-    public List<NoteItem> getAllNotes() {
+    private NoteItem deserializeNoteWithKeyMetadata(String key, String json) {
+        if (json == null) {
+            return null;
+        }
+        try {
+            NoteItem note = objectMapper.readValue(json, NoteItem.class);
+            if (note != null) {
+                if (key != null && key.contains("::")) {
+                    int idx = key.indexOf("::");
+                    String prefixPath = key.substring(0, idx);
+                    String rawId = key.substring(idx + 2);
+                    if (note.getId() == null || note.getId().isBlank() || note.getId().contains("::")) {
+                        note.setId(rawId);
+                    }
+                    if (note.getProjectPath() == null || note.getProjectPath().isBlank() || "global".equalsIgnoreCase(note.getProjectPath())) {
+                        note.setProjectPath(prefixPath);
+                    }
+                    note.setProjectScoped(true);
+                } else {
+                    if (note.getId() == null || note.getId().isBlank()) {
+                        note.setId(key);
+                    }
+                    if (note.getProjectPath() == null || note.getProjectPath().isBlank()) {
+                        note.setProjectPath("global");
+                    }
+                    note.setProjectScoped(!"global".equalsIgnoreCase(note.getProjectPath()));
+                }
+            }
+            return note;
+        } catch (Exception e) {
+            logger.error("Failed to deserialize note for key {}: {}", key, json, e);
+            return null;
+        }
+    }
+
+    public List<NoteItem> getProjectNotes() {
+        return getProjectNotes(getCurrentProjectPath());
+    }
+
+    public List<NoteItem> getProjectNotes(String projectPath) {
+        String prefix = getProjectKeyPrefix(projectPath);
+        String normalizedPath = prefix.substring(0, prefix.length() - 2);
         try {
             List<NoteItem> notes = withSharedDb(db -> {
                 Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
                 List<NoteItem> list = new ArrayList<>();
-                for (String json : map.values()) {
-                    try {
-                        NoteItem note = objectMapper.readValue(json, NoteItem.class);
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    if (entry.getKey().startsWith(prefix)) {
+                        NoteItem note = deserializeNoteWithKeyMetadata(entry.getKey(), entry.getValue());
                         if (note != null) {
+                            note.setProjectPath(normalizedPath);
+                            note.setProjectScoped(true);
                             list.add(note);
                         }
-                    } catch (Exception e) {
-                        logger.error("Failed to deserialize note: {}", json, e);
                     }
                 }
                 return list;
+            });
+            return notes != null ? notes : Collections.emptyList();
+        } catch (Exception e) {
+            logger.error("Failed to retrieve project notes for {}", projectPath, e);
+            return Collections.emptyList();
+        }
+    }
+
+    public List<NoteItem> getGlobalNotes() {
+        try {
+            List<NoteItem> notes = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<NoteItem> list = new ArrayList<>();
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    if (!entry.getKey().contains("::")) {
+                        NoteItem note = deserializeNoteWithKeyMetadata(entry.getKey(), entry.getValue());
+                        if (note != null) {
+                            note.setProjectPath("global");
+                            note.setProjectScoped(false);
+                            list.add(note);
+                        }
+                    }
+                }
+                return list;
+            });
+            return notes != null ? notes : Collections.emptyList();
+        } catch (Exception e) {
+            logger.error("Failed to retrieve global notes", e);
+            return Collections.emptyList();
+        }
+    }
+
+    public Map<String, List<NoteItem>> getNotesGroupedByProject() {
+        String currentProject = getCurrentProjectPath();
+        try {
+            Map<String, List<NoteItem>> grouped = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                Map<String, List<NoteItem>> temp = new LinkedHashMap<>();
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    NoteItem note = deserializeNoteWithKeyMetadata(entry.getKey(), entry.getValue());
+                    if (note != null) {
+                        String groupKey = (note.getProjectPath() == null || note.getProjectPath().isBlank() || "global".equalsIgnoreCase(note.getProjectPath()))
+                                ? "global"
+                                : note.getProjectPath();
+                        temp.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(note);
+                    }
+                }
+                // Order map so currentProject comes first, then other projects, then "global"
+                Map<String, List<NoteItem>> ordered = new LinkedHashMap<>();
+                if (temp.containsKey(currentProject)) {
+                    ordered.put(currentProject, temp.get(currentProject));
+                }
+                for (Map.Entry<String, List<NoteItem>> e : temp.entrySet()) {
+                    if (!e.getKey().equals(currentProject) && !"global".equalsIgnoreCase(e.getKey())) {
+                        ordered.put(e.getKey(), e.getValue());
+                    }
+                }
+                if (temp.containsKey("global")) {
+                    ordered.put("global", temp.get("global"));
+                }
+                return ordered;
+            });
+            return grouped != null ? grouped : Collections.emptyMap();
+        } catch (Exception e) {
+            logger.error("Failed to retrieve notes grouped by project", e);
+            return Collections.emptyMap();
+        }
+    }
+
+    public List<NoteItem> getAllNotes() {
+        String currentProject = getCurrentProjectPath();
+        String currentPrefix = currentProject + "::";
+        try {
+            List<NoteItem> notes = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<NoteItem> currentProjectList = new ArrayList<>();
+                Set<String> currentProjectIds = new HashSet<>();
+                List<NoteItem> otherProjectsList = new ArrayList<>();
+                List<NoteItem> globalList = new ArrayList<>();
+
+                // First pass: collect current project notes and other project notes
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    String key = entry.getKey();
+                    if (key.startsWith(currentPrefix)) {
+                        NoteItem note = deserializeNoteWithKeyMetadata(key, entry.getValue());
+                        if (note != null) {
+                            currentProjectList.add(note);
+                            currentProjectIds.add(note.getId());
+                        }
+                    } else if (key.contains("::")) {
+                        NoteItem note = deserializeNoteWithKeyMetadata(key, entry.getValue());
+                        if (note != null) {
+                            otherProjectsList.add(note);
+                        }
+                    }
+                }
+
+                // Second pass: collect global notes (current project's note takes precedence if sharing exact same raw ID)
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    String key = entry.getKey();
+                    if (!key.contains("::")) {
+                        NoteItem note = deserializeNoteWithKeyMetadata(key, entry.getValue());
+                        if (note != null && !currentProjectIds.contains(note.getId())) {
+                            globalList.add(note);
+                        }
+                    }
+                }
+
+                List<NoteItem> combined = new ArrayList<>(currentProjectList.size() + otherProjectsList.size() + globalList.size());
+                combined.addAll(currentProjectList);
+                combined.addAll(otherProjectsList);
+                combined.addAll(globalList);
+                return combined;
             });
             return notes != null ? notes : Collections.emptyList();
         } catch (Exception e) {
@@ -710,19 +979,29 @@ public class CentralMemory {
         if (id == null || id.isBlank()) {
             return null;
         }
+        String rawId = id.contains("::") ? id.substring(id.indexOf("::") + 2) : id;
         try {
             return withSharedDb(db -> {
                 Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
-                String json = map.get(id);
-                if (json == null) {
-                    return null;
+                // 1. Check current project prefix + rawId (or exact id if it already has ::)
+                String primaryKey = id.contains("::") ? id : getCurrentProjectKeyPrefix() + rawId;
+                String json = map.get(primaryKey);
+                if (json != null) {
+                    return deserializeNoteWithKeyMetadata(primaryKey, json);
                 }
-                try {
-                    return objectMapper.readValue(json, NoteItem.class);
-                } catch (Exception e) {
-                    logger.error("Failed to deserialize note for id: {}", id, e);
-                    return null;
+                // 2. Fall back to raw id (global key)
+                json = map.get(rawId);
+                if (json != null) {
+                    return deserializeNoteWithKeyMetadata(rawId, json);
                 }
+                // 3. Check if any entry in map has key ending with "::" + rawId
+                String suffix = "::" + rawId;
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    if (entry.getKey().endsWith(suffix)) {
+                        return deserializeNoteWithKeyMetadata(entry.getKey(), entry.getValue());
+                    }
+                }
+                return null;
             });
         } catch (Exception e) {
             logger.error("Failed to retrieve note for id: {}", id, e);
@@ -738,11 +1017,32 @@ public class CentralMemory {
             if (note.getId() == null || note.getId().isBlank()) {
                 note.setId(UUID.randomUUID().toString());
             }
+            String rawId = note.getId();
+            if (rawId.contains("::")) {
+                rawId = rawId.substring(rawId.indexOf("::") + 2);
+                note.setId(rawId);
+            }
+
+            final String storeKey;
+            if (note.isProjectScoped()) {
+                String projPath = note.getProjectPath();
+                if (projPath == null || projPath.isBlank() || "global".equalsIgnoreCase(projPath)) {
+                    projPath = getCurrentProjectPath();
+                } else {
+                    projPath = Path.of(projPath).toAbsolutePath().normalize().toString();
+                }
+                note.setProjectPath(projPath);
+                storeKey = getProjectKeyPrefix(projPath) + rawId;
+            } else {
+                note.setProjectPath("global");
+                storeKey = rawId;
+            }
+
             note.setUpdatedAt(System.currentTimeMillis());
             String json = objectMapper.writeValueAsString(note);
             withSharedDb(db -> {
                 Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
-                map.put(note.getId(), json);
+                map.put(storeKey, json);
                 db.commit();
                 return null;
             });
@@ -754,14 +1054,42 @@ public class CentralMemory {
         }
     }
 
+    public NoteItem saveGlobalNote(NoteItem note) {
+        if (note == null) {
+            return null;
+        }
+        note.setProjectScoped(false);
+        note.setProjectPath("global");
+        return saveNote(note);
+    }
+
     public boolean deleteNote(String id) {
         if (id == null || id.isBlank()) {
             return false;
         }
+        String rawId = id.contains("::") ? id.substring(id.indexOf("::") + 2) : id;
         try {
             Boolean removed = withSharedDb(db -> {
                 Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
-                boolean exists = map.remove(id) != null;
+                boolean exists = false;
+                if (map.remove(getCurrentProjectKeyPrefix() + rawId) != null) {
+                    exists = true;
+                }
+                if (map.remove(rawId) != null) {
+                    exists = true;
+                }
+                if (id.contains("::") && map.remove(id) != null) {
+                    exists = true;
+                }
+                String suffix = "::" + rawId;
+                List<String> otherKeys = map.keySet().stream()
+                        .filter(k -> k.endsWith(suffix))
+                        .collect(Collectors.toList());
+                for (String k : otherKeys) {
+                    if (map.remove(k) != null) {
+                        exists = true;
+                    }
+                }
                 if (exists) {
                     db.commit();
                 }
@@ -769,12 +1097,65 @@ public class CentralMemory {
             });
             boolean result = Boolean.TRUE.equals(removed);
             if (result) {
-                notifyListeners("note_deleted:" + id, null);
+                notifyListeners("note_deleted:" + rawId, null);
             }
             return result;
         } catch (Exception e) {
             logger.error("Failed to delete note: {}", id, e);
             return false;
+        }
+    }
+
+    public void clearProjectNotes() {
+        String prefix = getCurrentProjectKeyPrefix();
+        try {
+            List<String> removedIds = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<String> keysToRemove = map.keySet().stream()
+                        .filter(k -> k.startsWith(prefix))
+                        .collect(Collectors.toList());
+                List<String> ids = new ArrayList<>();
+                for (String key : keysToRemove) {
+                    map.remove(key);
+                    ids.add(key.substring(prefix.length()));
+                }
+                if (!keysToRemove.isEmpty()) {
+                    db.commit();
+                }
+                return ids;
+            });
+            if (removedIds != null) {
+                for (String rawId : removedIds) {
+                    notifyListeners("note_deleted:" + rawId, null);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Failed to clear project notes", e);
+        }
+    }
+
+    public void clearGlobalNotes() {
+        try {
+            List<String> removedIds = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<String> keysToRemove = map.keySet().stream()
+                        .filter(k -> !k.contains("::"))
+                        .collect(Collectors.toList());
+                for (String key : keysToRemove) {
+                    map.remove(key);
+                }
+                if (!keysToRemove.isEmpty()) {
+                    db.commit();
+                }
+                return keysToRemove;
+            });
+            if (removedIds != null) {
+                for (String rawId : removedIds) {
+                    notifyListeners("note_deleted:" + rawId, null);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Failed to clear global notes", e);
         }
     }
 

@@ -4421,7 +4421,8 @@
                     if (stickyContainer) stickyContainer.innerHTML = emptyHtml;
                     return;
                 }
-                const renderedHtml = notes.map(note => {
+
+                const renderNoteCard = (note) => {
                     const escapedId = escapeHtml(note.id || '');
                     let dateStr = '';
                     if (note.createdAt) {
@@ -4450,7 +4451,43 @@
                             <div class="note-card-content">${formattedContent}</div>
                         </div>
                     `;
+                };
+
+                const groups = new Map();
+                notes.forEach(note => {
+                    const isGlobal = note.projectScoped === false ||
+                        (note.projectPath && note.projectPath.toLowerCase() === 'global') ||
+                        (note.projectName && note.projectName.toLowerCase() === 'global');
+                    const projName = isGlobal
+                        ? 'Global'
+                        : (note.projectName || (note.projectPath ? note.projectPath.split(/[\\/]/).filter(Boolean).pop() : 'Project'));
+                    const groupKey = isGlobal ? 'global' : (note.projectPath || projName);
+                    if (!groups.has(groupKey)) {
+                        groups.set(groupKey, {
+                            isGlobal: isGlobal,
+                            projectName: projName,
+                            projectPath: note.projectPath || '',
+                            items: []
+                        });
+                    }
+                    groups.get(groupKey).items.push(note);
+                });
+
+                const renderedHtml = Array.from(groups.values()).map(group => {
+                    const headerLabel = group.isGlobal ? '🌐 Global' : `📁 ${escapeHtml(group.projectName)}`;
+                    return `
+                        <div class="note-project-group" style="margin-bottom:10px;">
+                            <div class="note-project-header" style="font-size:11px; font-weight:600; color:var(--accent); padding:4px 6px; margin-bottom:6px; background:var(--surface-hover); border-radius:5px; display:flex; align-items:center; justify-content:space-between;" title="${escapeHtml(group.projectPath || group.projectName)}">
+                                <span>${headerLabel}</span>
+                                <span style="font-size:10px; color:var(--muted); font-family:'JetBrains Mono',monospace;">${group.items.length}</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:6px;">
+                                ${group.items.map(renderNoteCard).join('')}
+                            </div>
+                        </div>
+                    `;
                 }).join('');
+
                 if (container) container.innerHTML = renderedHtml;
                 if (stickyContainer) stickyContainer.innerHTML = renderedHtml;
             } catch (err) {

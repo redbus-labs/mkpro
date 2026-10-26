@@ -81,8 +81,15 @@ public class WebCommand implements Command {
 
             // Wire input handler (process web messages via runner)
             final com.mkpro.core.MkProContext ctx = context;
-            webServer.setInputHandler(text -> {
-                new Thread(() -> com.mkpro.MkPro.processWebInputPublic(ctx, text), "web-input").start();
+            webServer.setInputHandler(new com.mkpro.web.WebChatServer.WebInputHandler() {
+                @Override
+                public void onWebInput(String text) {
+                    new Thread(() -> com.mkpro.MkPro.processWebInputPublic(ctx, text), "web-input").start();
+                }
+                @Override
+                public void onWebInputWithImages(String text, java.util.List<com.mkpro.web.WebChatServer.ImageAttachment> images) {
+                    new Thread(() -> com.mkpro.MkPro.processWebInputWithImagesPublic(ctx, text, images), "web-input").start();
+                }
             });
 
             // Wire command registry

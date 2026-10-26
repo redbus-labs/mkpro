@@ -3,6 +3,7 @@ package com.mkpro.models.notes;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.Serializable;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -26,6 +27,12 @@ public class NoteItem implements Serializable {
     @JsonProperty("pinned")
     private boolean pinned = false;
 
+    @JsonProperty("projectPath")
+    private String projectPath;
+
+    @JsonProperty("projectScoped")
+    private boolean projectScoped = true;
+
     @JsonProperty("createdAt")
     private long createdAt;
 
@@ -45,6 +52,20 @@ public class NoteItem implements Serializable {
         this.content = content;
     }
 
+    public NoteItem(String id, String title, String content, boolean projectScoped) {
+        this(id, title, content);
+        this.projectScoped = projectScoped;
+        if (!projectScoped) {
+            this.projectPath = "global";
+        }
+    }
+
+    public NoteItem(String id, String title, String content, String projectPath) {
+        this(id, title, content);
+        this.projectPath = projectPath;
+        this.projectScoped = projectPath != null && !projectPath.isBlank() && !"global".equalsIgnoreCase(projectPath);
+    }
+
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
 
@@ -59,6 +80,25 @@ public class NoteItem implements Serializable {
 
     public boolean isPinned() { return pinned; }
     public void setPinned(boolean pinned) { this.pinned = pinned; }
+
+    public String getProjectPath() { return projectPath; }
+    public void setProjectPath(String projectPath) { this.projectPath = projectPath; }
+
+    public boolean isProjectScoped() { return projectScoped; }
+    public void setProjectScoped(boolean projectScoped) { this.projectScoped = projectScoped; }
+
+    @JsonProperty("projectName")
+    public String getProjectName() {
+        if (projectPath == null || projectPath.isBlank() || "global".equalsIgnoreCase(projectPath)) {
+            return "Global";
+        }
+        try {
+            Path fileName = Path.of(projectPath).getFileName();
+            return fileName != null ? fileName.toString() : projectPath;
+        } catch (Exception e) {
+            return projectPath;
+        }
+    }
 
     public long getCreatedAt() { return createdAt; }
     public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
@@ -85,6 +125,8 @@ public class NoteItem implements Serializable {
                 "id='" + id + '\'' +
                 ", title='" + title + '\'' +
                 ", pinned=" + pinned +
+                ", projectPath='" + projectPath + '\'' +
+                ", projectScoped=" + projectScoped +
                 '}';
     }
 }

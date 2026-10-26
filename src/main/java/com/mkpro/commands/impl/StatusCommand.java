@@ -90,8 +90,9 @@ public class StatusCommand implements Command {
                         fallbackInfo = " → fallback: " + def.getFallbackModel();
                     }
                 }
-                System.out.println(ANSI_GREEN + String.format(" - %s: %s (%s%s)%s", 
-                    agent, config.getModelName(), config.getProvider(), serverInfo, fallbackInfo) + ANSI_RESET);
+                String scopeTag = context.getCentralMemory().hasExplicitProjectAgentConfig(agent) ? " [project]" : " [global]";
+                System.out.println(ANSI_GREEN + String.format(" - %s: %s (%s%s)%s%s", 
+                    agent, config.getModelName(), config.getProvider(), serverInfo, scopeTag, fallbackInfo) + ANSI_RESET);
             } else {
                 String model = "llama3";
                 String provider = "OLLAMA";
@@ -103,11 +104,13 @@ public class StatusCommand implements Command {
                     }
                 }
                 AgentConfig globalDefault = configs.get("default");
+                String scopeTag = " [default]";
                 if (globalDefault != null) {
                     model = globalDefault.getModelName();
                     provider = globalDefault.getProvider().name();
+                    scopeTag = context.getCentralMemory().hasProjectAgentConfig(agent) ? " [project]" : " [global]";
                 }
-                System.out.println(ANSI_YELLOW + String.format(" - %s: %s (%s) [default]", agent, model, provider) + ANSI_RESET);
+                System.out.println(ANSI_YELLOW + String.format(" - %s: %s (%s)%s", agent, model, provider, scopeTag) + ANSI_RESET);
             }
         }
         

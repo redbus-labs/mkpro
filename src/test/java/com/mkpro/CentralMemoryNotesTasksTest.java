@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * 1. TaskItem & NoteItem creation and getters/setters.
  * 2. CentralMemory CRUD operations for tasks (getAllTasks, saveTask, getTask, toggleTask, deleteTask).
  * 3. CentralMemory CRUD operations for notes (getAllNotes, saveNote, getNote, deleteNote).
+ * 4. Project-scoped and project-grouped notes (saveNote, saveGlobalNote, getNote fallback,
+ *    getProjectNotes, getGlobalNotes, getNotesGroupedByProject, clearProjectNotes, clearGlobalNotes).
  */
 public class CentralMemoryNotesTasksTest {
 
@@ -143,6 +146,8 @@ public class CentralMemoryNotesTasksTest {
         assertNotNull(defaultNote.getTags());
         assertTrue(defaultNote.getTags().isEmpty());
         assertFalse(defaultNote.isPinned());
+        assertTrue(defaultNote.isProjectScoped());
+        assertEquals("Global", defaultNote.getProjectName());
         assertTrue(defaultNote.getCreatedAt() >= before && defaultNote.getCreatedAt() <= after);
         assertTrue(defaultNote.getUpdatedAt() >= before && defaultNote.getUpdatedAt() <= after);
 
@@ -153,6 +158,19 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("Discussed roadmap", paramNote.getContent());
         assertNotNull(paramNote.getTags());
         assertFalse(paramNote.isPinned());
+        assertTrue(paramNote.isProjectScoped());
+
+        // Scoped constructors
+        NoteItem globalConstructed = new NoteItem("note-g", "Global Note", "Content", false);
+        assertFalse(globalConstructed.isProjectScoped());
+        assertEquals("global", globalConstructed.getProjectPath());
+        assertEquals("Global", globalConstructed.getProjectName());
+
+        Path customProjPath = tempDir.resolve("my-awesome-project");
+        NoteItem pathConstructed = new NoteItem("note-p", "Project Note", "Content", customProjPath.toString());
+        assertTrue(pathConstructed.isProjectScoped());
+        assertEquals(customProjPath.toString(), pathConstructed.getProjectPath());
+        assertEquals("my-awesome-project", pathConstructed.getProjectName());
 
         // Getters and Setters
         paramNote.setId("note-updated");
@@ -185,7 +203,7 @@ public class CentralMemoryNotesTasksTest {
         assertEquals(noteA, noteB);
         assertEquals(noteA.hashCode(), noteB.hashCode());
         assertNotEquals(noteA, noteC);
-        assertEquals(noteA, noteA);
+        assertEquals(noteA, taskOrNoteSelf(noteA));
         assertNotEquals(noteA, null);
         assertNotEquals(noteA, "some string");
 
@@ -194,6 +212,10 @@ public class CentralMemoryNotesTasksTest {
         assertTrue(str.contains("note-updated"));
         assertTrue(str.contains("Updated Meeting Notes"));
         assertTrue(str.contains("pinned=true"));
+    }
+
+    private NoteItem taskOrNoteSelf(NoteItem n) {
+        return n;
     }
 
     // ==========================================================================
@@ -393,7 +415,98 @@ public class CentralMemoryNotesTasksTest {
     }
 
     // ==========================================================================
-    // 5. Listener & Remote Sync Operations for Tasks and Notes
+    // 5. Project-Scoped and Project-Grouped Notes
+    // ==========================================================================
+
+    @Test
+    @DisplayName("CentralMemory: Project-scoped & Global notes (saveNote, saveGlobalNote, fallback, grouping, clearing)")
+    void testProjectScopedAndGroupedNotes() {
+        String currentProjectPath = CentralMemory.getCurrentProjectPath();
+        String otherProjectPath = tempDir.resolve("other-project").toAbsolutePath().normalize().toString();
+
+        // 1. Save a current project note
+        NoteItem projNote = new NoteItem("note-proj-1", "Current Project Note", "Scoped to current project");
+        memory.saveNote(projNote);
+
+        // 2. Save a global note
+        NoteItem globalNote = new NoteItem("note-global-1", "Global Note", "Shared across all projects");
+        memory.saveGlobalNote(globalNote);
+
+        // 3. Save a note for another project
+        NoteItem otherProjNote = new NoteItem("note-other-1", "Other Project Note", "Scoped to other-project", otherProjectPath);
+        memory.saveNote(otherProjNote);
+
+        // Verify getProjectNotes() returns only current project's notes
+        List<NoteItem> currentProjectNotes = memory.getProjectNotes();
+        assertEquals(1, currentProjectNotes.size());
+        assertEquals("note-proj-1", currentProjectNotes.get(0).getId());
+        assertEquals(currentProjectPath, currentProjectNotes.get(0).getProjectPath());
+        assertTrue(currentProjectNotes.get(0).isProjectScoped());
+
+        // Verify getProjectNotes(otherProjectPath) returns other project's notes
+        List<NoteItem> otherProjectNotes = memory.getProjectNotes(otherProjectPath);
+        assertEquals(1, otherProjectNotes.size());
+        assertEquals("note-other-1", otherProjectNotes.get(0).getId());
+        assertEquals(otherProjectPath, otherProjectNotes.get(0).getProjectPath());
+        assertEquals("other-project", otherProjectNotes.get(0).getProjectName());
+
+        // Verify getGlobalNotes() returns only global notes
+        List<NoteItem> globalNotes = memory.getGlobalNotes();
+        assertEquals(1, globalNotes.size());
+        assertEquals("note-global-1", globalNotes.get(0).getId());
+        assertEquals("global", globalNotes.get(0).getProjectPath());
+        assertEquals("Global", globalNotes.get(0).getProjectName());
+        assertFalse(globalNotes.get(0).isProjectScoped());
+
+        // Verify getNote() precedence: project lookup -> global fallback -> other project lookup
+        NoteItem sharedIdGlobal = new NoteItem("shared-id", "Global Fallback Title", "Global Content");
+        memory.saveGlobalNote(sharedIdGlobal);
+        assertEquals("Global Fallback Title", memory.getNote("shared-id").getTitle());
+
+        NoteItem sharedIdProject = new NoteItem("shared-id", "Project Override Title", "Project Content");
+        memory.saveNote(sharedIdProject);
+        // Project note overrides global note for current project
+        assertEquals("Project Override Title", memory.getNote("shared-id").getTitle());
+
+        // Other project note is also retrievable by ID
+        NoteItem fetchedOther = memory.getNote("note-other-1");
+        assertNotNull(fetchedOther);
+        assertEquals("Other Project Note", fetchedOther.getTitle());
+
+        // Verify getNotesGroupedByProject()
+        Map<String, List<NoteItem>> grouped = memory.getNotesGroupedByProject();
+        assertTrue(grouped.containsKey(currentProjectPath));
+        assertTrue(grouped.containsKey(otherProjectPath));
+        assertTrue(grouped.containsKey("global"));
+        assertEquals(2, grouped.get(currentProjectPath).size()); // note-proj-1 and shared-id
+        assertEquals(1, grouped.get(otherProjectPath).size());   // note-other-1
+        assertEquals(2, grouped.get("global").size());           // note-global-1 and shared-id
+
+        // Verify getAllNotes() orders current project notes first and deduplicates shared-id with current project taking precedence
+        List<NoteItem> allNotes = memory.getAllNotes();
+        assertEquals(4, allNotes.size()); // 2 current project + 1 other project + 1 non-overridden global
+        assertEquals(currentProjectPath, allNotes.get(0).getProjectPath());
+        assertEquals(currentProjectPath, allNotes.get(1).getProjectPath());
+
+        // Verify clearProjectNotes() removes only current project notes
+        memory.clearProjectNotes();
+        assertTrue(memory.getProjectNotes().isEmpty());
+        assertEquals(1, memory.getProjectNotes(otherProjectPath).size());
+        assertEquals(2, memory.getGlobalNotes().size());
+        // Now getNote("shared-id") falls back to the global note!
+        NoteItem fallbackAfterClear = memory.getNote("shared-id");
+        assertNotNull(fallbackAfterClear);
+        assertEquals("Global Fallback Title", fallbackAfterClear.getTitle());
+
+        // Verify clearGlobalNotes() removes only global notes
+        memory.clearGlobalNotes();
+        assertTrue(memory.getGlobalNotes().isEmpty());
+        assertNull(memory.getNote("shared-id"));
+        assertEquals(1, memory.getProjectNotes(otherProjectPath).size());
+    }
+
+    // ==========================================================================
+    // 6. Listener & Remote Sync Operations for Tasks and Notes
     // ==========================================================================
 
     @Test

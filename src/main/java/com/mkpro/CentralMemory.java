@@ -661,22 +661,176 @@ public class CentralMemory {
     // SHARED PATH — Tasks & Notes (shared DB, JSON serialized)
     // ==========================================================================
 
-    public List<TaskItem> getAllTasks() {
+    private TaskItem deserializeTaskWithKeyMetadata(String key, String json) {
+        if (json == null) {
+            return null;
+        }
+        try {
+            TaskItem task = objectMapper.readValue(json, TaskItem.class);
+            if (task != null) {
+                if (key != null && key.contains("::")) {
+                    int idx = key.indexOf("::");
+                    String prefixPath = key.substring(0, idx);
+                    String rawId = key.substring(idx + 2);
+                    if (task.getId() == null || task.getId().isBlank() || task.getId().contains("::")) {
+                        task.setId(rawId);
+                    }
+                    if (task.getProjectPath() == null || task.getProjectPath().isBlank() || "global".equalsIgnoreCase(task.getProjectPath())) {
+                        task.setProjectPath(prefixPath);
+                    }
+                    task.setProjectScoped(true);
+                } else {
+                    if (task.getId() == null || task.getId().isBlank()) {
+                        task.setId(key);
+                    }
+                    if (task.getProjectPath() == null || task.getProjectPath().isBlank()) {
+                        task.setProjectPath("global");
+                    }
+                    task.setProjectScoped(!"global".equalsIgnoreCase(task.getProjectPath()));
+                }
+            }
+            return task;
+        } catch (Exception e) {
+            logger.error("Failed to deserialize task for key {}: {}", key, json, e);
+            return null;
+        }
+    }
+
+    public List<TaskItem> getProjectTasks() {
+        return getProjectTasks(getCurrentProjectPath());
+    }
+
+    public List<TaskItem> getProjectTasks(String projectPath) {
+        String prefix = getProjectKeyPrefix(projectPath);
+        String normalizedPath = prefix.substring(0, prefix.length() - 2);
         try {
             List<TaskItem> tasks = withSharedDb(db -> {
                 Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
                 List<TaskItem> list = new ArrayList<>();
-                for (String json : map.values()) {
-                    try {
-                        TaskItem task = objectMapper.readValue(json, TaskItem.class);
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    if (entry.getKey().startsWith(prefix)) {
+                        TaskItem task = deserializeTaskWithKeyMetadata(entry.getKey(), entry.getValue());
                         if (task != null) {
+                            task.setProjectPath(normalizedPath);
+                            task.setProjectScoped(true);
                             list.add(task);
                         }
-                    } catch (Exception e) {
-                        logger.error("Failed to deserialize task: {}", json, e);
                     }
                 }
                 return list;
+            });
+            return tasks != null ? tasks : Collections.emptyList();
+        } catch (Exception e) {
+            logger.error("Failed to retrieve project tasks for {}", projectPath, e);
+            return Collections.emptyList();
+        }
+    }
+
+    public List<TaskItem> getGlobalTasks() {
+        try {
+            List<TaskItem> tasks = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<TaskItem> list = new ArrayList<>();
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    if (!entry.getKey().contains("::")) {
+                        TaskItem task = deserializeTaskWithKeyMetadata(entry.getKey(), entry.getValue());
+                        if (task != null) {
+                            task.setProjectPath("global");
+                            task.setProjectScoped(false);
+                            list.add(task);
+                        }
+                    }
+                }
+                return list;
+            });
+            return tasks != null ? tasks : Collections.emptyList();
+        } catch (Exception e) {
+            logger.error("Failed to retrieve global tasks", e);
+            return Collections.emptyList();
+        }
+    }
+
+    public Map<String, List<TaskItem>> getTasksGroupedByProject() {
+        String currentProject = getCurrentProjectPath();
+        try {
+            Map<String, List<TaskItem>> grouped = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                Map<String, List<TaskItem>> temp = new LinkedHashMap<>();
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    TaskItem task = deserializeTaskWithKeyMetadata(entry.getKey(), entry.getValue());
+                    if (task != null) {
+                        String groupKey = (task.getProjectPath() == null || task.getProjectPath().isBlank() || "global".equalsIgnoreCase(task.getProjectPath()))
+                                ? "global"
+                                : task.getProjectPath();
+                        temp.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(task);
+                    }
+                }
+                // Order map so currentProject comes first, then other projects, then "global"
+                Map<String, List<TaskItem>> ordered = new LinkedHashMap<>();
+                if (temp.containsKey(currentProject)) {
+                    ordered.put(currentProject, temp.get(currentProject));
+                }
+                for (Map.Entry<String, List<TaskItem>> e : temp.entrySet()) {
+                    if (!e.getKey().equals(currentProject) && !"global".equalsIgnoreCase(e.getKey())) {
+                        ordered.put(e.getKey(), e.getValue());
+                    }
+                }
+                if (temp.containsKey("global")) {
+                    ordered.put("global", temp.get("global"));
+                }
+                return ordered;
+            });
+            return grouped != null ? grouped : Collections.emptyMap();
+        } catch (Exception e) {
+            logger.error("Failed to retrieve tasks grouped by project", e);
+            return Collections.emptyMap();
+        }
+    }
+
+    public List<TaskItem> getAllTasks() {
+        String currentProject = getCurrentProjectPath();
+        String currentPrefix = currentProject + "::";
+        try {
+            List<TaskItem> tasks = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<TaskItem> currentProjectList = new ArrayList<>();
+                Set<String> currentProjectIds = new HashSet<>();
+                List<TaskItem> otherProjectsList = new ArrayList<>();
+                List<TaskItem> globalList = new ArrayList<>();
+
+                // First pass: collect current project tasks and other project tasks
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    String key = entry.getKey();
+                    if (key.startsWith(currentPrefix)) {
+                        TaskItem task = deserializeTaskWithKeyMetadata(key, entry.getValue());
+                        if (task != null) {
+                            currentProjectList.add(task);
+                            currentProjectIds.add(task.getId());
+                        }
+                    } else if (key.contains("::")) {
+                        TaskItem task = deserializeTaskWithKeyMetadata(key, entry.getValue());
+                        if (task != null) {
+                            otherProjectsList.add(task);
+                        }
+                    }
+                }
+
+                // Second pass: collect global tasks (current project's task takes precedence if sharing exact same raw ID)
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    String key = entry.getKey();
+                    if (!key.contains("::")) {
+                        TaskItem task = deserializeTaskWithKeyMetadata(key, entry.getValue());
+                        if (task != null && !currentProjectIds.contains(task.getId())) {
+                            globalList.add(task);
+                        }
+                    }
+                }
+
+                List<TaskItem> combined = new ArrayList<>(currentProjectList.size() + otherProjectsList.size() + globalList.size());
+                combined.addAll(currentProjectList);
+                combined.addAll(otherProjectsList);
+                combined.addAll(globalList);
+                return combined;
             });
             return tasks != null ? tasks : Collections.emptyList();
         } catch (Exception e) {
@@ -689,19 +843,29 @@ public class CentralMemory {
         if (id == null || id.isBlank()) {
             return null;
         }
+        String rawId = id.contains("::") ? id.substring(id.indexOf("::") + 2) : id;
         try {
             return withSharedDb(db -> {
                 Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
-                String json = map.get(id);
-                if (json == null) {
-                    return null;
+                // 1. Check current project prefix + rawId (or exact id if it already has ::)
+                String primaryKey = id.contains("::") ? id : getCurrentProjectKeyPrefix() + rawId;
+                String json = map.get(primaryKey);
+                if (json != null) {
+                    return deserializeTaskWithKeyMetadata(primaryKey, json);
                 }
-                try {
-                    return objectMapper.readValue(json, TaskItem.class);
-                } catch (Exception e) {
-                    logger.error("Failed to deserialize task for id: {}", id, e);
-                    return null;
+                // 2. Fall back to raw id (global key)
+                json = map.get(rawId);
+                if (json != null) {
+                    return deserializeTaskWithKeyMetadata(rawId, json);
                 }
+                // 3. Check if any entry in map has key ending with "::" + rawId
+                String suffix = "::" + rawId;
+                for (Map.Entry<String, String> entry : map.entrySet()) {
+                    if (entry.getKey().endsWith(suffix)) {
+                        return deserializeTaskWithKeyMetadata(entry.getKey(), entry.getValue());
+                    }
+                }
+                return null;
             });
         } catch (Exception e) {
             logger.error("Failed to retrieve task for id: {}", id, e);
@@ -717,11 +881,32 @@ public class CentralMemory {
             if (task.getId() == null || task.getId().isBlank()) {
                 task.setId(UUID.randomUUID().toString());
             }
+            String rawId = task.getId();
+            if (rawId.contains("::")) {
+                rawId = rawId.substring(rawId.indexOf("::") + 2);
+                task.setId(rawId);
+            }
+
+            final String storeKey;
+            if (task.isProjectScoped()) {
+                String projPath = task.getProjectPath();
+                if (projPath == null || projPath.isBlank() || "global".equalsIgnoreCase(projPath)) {
+                    projPath = getCurrentProjectPath();
+                } else {
+                    projPath = Path.of(projPath).toAbsolutePath().normalize().toString();
+                }
+                task.setProjectPath(projPath);
+                storeKey = getProjectKeyPrefix(projPath) + rawId;
+            } else {
+                task.setProjectPath("global");
+                storeKey = rawId;
+            }
+
             task.setUpdatedAt(System.currentTimeMillis());
             String json = objectMapper.writeValueAsString(task);
             withSharedDb(db -> {
                 Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
-                map.put(task.getId(), json);
+                map.put(storeKey, json);
                 db.commit();
                 return null;
             });
@@ -733,14 +918,42 @@ public class CentralMemory {
         }
     }
 
+    public TaskItem saveGlobalTask(TaskItem task) {
+        if (task == null) {
+            return null;
+        }
+        task.setProjectScoped(false);
+        task.setProjectPath("global");
+        return saveTask(task);
+    }
+
     public boolean deleteTask(String id) {
         if (id == null || id.isBlank()) {
             return false;
         }
+        String rawId = id.contains("::") ? id.substring(id.indexOf("::") + 2) : id;
         try {
             Boolean removed = withSharedDb(db -> {
                 Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
-                boolean exists = map.remove(id) != null;
+                boolean exists = false;
+                if (map.remove(getCurrentProjectKeyPrefix() + rawId) != null) {
+                    exists = true;
+                }
+                if (map.remove(rawId) != null) {
+                    exists = true;
+                }
+                if (id.contains("::") && map.remove(id) != null) {
+                    exists = true;
+                }
+                String suffix = "::" + rawId;
+                List<String> otherKeys = map.keySet().stream()
+                        .filter(k -> k.endsWith(suffix))
+                        .collect(Collectors.toList());
+                for (String k : otherKeys) {
+                    if (map.remove(k) != null) {
+                        exists = true;
+                    }
+                }
                 if (exists) {
                     db.commit();
                 }
@@ -748,7 +961,7 @@ public class CentralMemory {
             });
             boolean result = Boolean.TRUE.equals(removed);
             if (result) {
-                notifyListeners("task_deleted:" + id, null);
+                notifyListeners("task_deleted:" + rawId, null);
             }
             return result;
         } catch (Exception e) {
@@ -761,15 +974,38 @@ public class CentralMemory {
         if (id == null || id.isBlank()) {
             return null;
         }
+        String rawId = id.contains("::") ? id.substring(id.indexOf("::") + 2) : id;
         try {
             TaskItem updatedTask = withSharedDb(db -> {
                 Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
-                String json = map.get(id);
-                if (json == null) {
+                String targetKey = null;
+                String json = null;
+
+                String primaryKey = id.contains("::") ? id : getCurrentProjectKeyPrefix() + rawId;
+                json = map.get(primaryKey);
+                if (json != null) {
+                    targetKey = primaryKey;
+                } else {
+                    json = map.get(rawId);
+                    if (json != null) {
+                        targetKey = rawId;
+                    } else {
+                        String suffix = "::" + rawId;
+                        for (Map.Entry<String, String> entry : map.entrySet()) {
+                            if (entry.getKey().endsWith(suffix)) {
+                                targetKey = entry.getKey();
+                                json = entry.getValue();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (targetKey == null || json == null) {
                     return null;
                 }
                 try {
-                    TaskItem task = objectMapper.readValue(json, TaskItem.class);
+                    TaskItem task = deserializeTaskWithKeyMetadata(targetKey, json);
                     if (task == null) {
                         return null;
                     }
@@ -779,7 +1015,7 @@ public class CentralMemory {
                         task.setStatus("DONE");
                     }
                     task.setUpdatedAt(System.currentTimeMillis());
-                    map.put(id, objectMapper.writeValueAsString(task));
+                    map.put(targetKey, objectMapper.writeValueAsString(task));
                     db.commit();
                     return task;
                 } catch (Exception e) {
@@ -794,6 +1030,59 @@ public class CentralMemory {
         } catch (Exception e) {
             logger.error("Failed to toggle task: {}", id, e);
             return null;
+        }
+    }
+
+    public void clearProjectTasks() {
+        String prefix = getCurrentProjectKeyPrefix();
+        try {
+            List<String> removedIds = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<String> keysToRemove = map.keySet().stream()
+                        .filter(k -> k.startsWith(prefix))
+                        .collect(Collectors.toList());
+                List<String> ids = new ArrayList<>();
+                for (String key : keysToRemove) {
+                    map.remove(key);
+                    ids.add(key.substring(prefix.length()));
+                }
+                if (!keysToRemove.isEmpty()) {
+                    db.commit();
+                }
+                return ids;
+            });
+            if (removedIds != null) {
+                for (String rawId : removedIds) {
+                    notifyListeners("task_deleted:" + rawId, null);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Failed to clear project tasks", e);
+        }
+    }
+
+    public void clearGlobalTasks() {
+        try {
+            List<String> removedIds = withSharedDb(db -> {
+                Map<String, String> map = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
+                List<String> keysToRemove = map.keySet().stream()
+                        .filter(k -> !k.contains("::"))
+                        .collect(Collectors.toList());
+                for (String key : keysToRemove) {
+                    map.remove(key);
+                }
+                if (!keysToRemove.isEmpty()) {
+                    db.commit();
+                }
+                return keysToRemove;
+            });
+            if (removedIds != null) {
+                for (String rawId : removedIds) {
+                    notifyListeners("task_deleted:" + rawId, null);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Failed to clear global tasks", e);
         }
     }
 

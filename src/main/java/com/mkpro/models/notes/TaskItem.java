@@ -3,6 +3,7 @@ package com.mkpro.models.notes;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.Serializable;
+import java.nio.file.Path;
 import java.util.Objects;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -24,6 +25,12 @@ public class TaskItem implements Serializable {
     @JsonProperty("dueDate")
     private String dueDate;
 
+    @JsonProperty("projectPath")
+    private String projectPath;
+
+    @JsonProperty("projectScoped")
+    private boolean projectScoped = true;
+
     @JsonProperty("createdAt")
     private long createdAt;
 
@@ -44,6 +51,20 @@ public class TaskItem implements Serializable {
         if (priority != null) this.priority = priority;
     }
 
+    public TaskItem(String id, String title, String status, String priority, boolean projectScoped) {
+        this(id, title, status, priority);
+        this.projectScoped = projectScoped;
+        if (!projectScoped) {
+            this.projectPath = "global";
+        }
+    }
+
+    public TaskItem(String id, String title, String status, String priority, String projectPath) {
+        this(id, title, status, priority);
+        this.projectPath = projectPath;
+        this.projectScoped = projectPath != null && !projectPath.isBlank() && !"global".equalsIgnoreCase(projectPath);
+    }
+
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
 
@@ -58,6 +79,25 @@ public class TaskItem implements Serializable {
 
     public String getDueDate() { return dueDate; }
     public void setDueDate(String dueDate) { this.dueDate = dueDate; }
+
+    public String getProjectPath() { return projectPath; }
+    public void setProjectPath(String projectPath) { this.projectPath = projectPath; }
+
+    public boolean isProjectScoped() { return projectScoped; }
+    public void setProjectScoped(boolean projectScoped) { this.projectScoped = projectScoped; }
+
+    @JsonProperty("projectName")
+    public String getProjectName() {
+        if (projectPath == null || projectPath.isBlank() || "global".equalsIgnoreCase(projectPath)) {
+            return "Global";
+        }
+        try {
+            Path fileName = Path.of(projectPath).getFileName();
+            return fileName != null ? fileName.toString() : projectPath;
+        } catch (Exception e) {
+            return projectPath;
+        }
+    }
 
     public long getCreatedAt() { return createdAt; }
     public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
@@ -85,6 +125,8 @@ public class TaskItem implements Serializable {
                 ", title='" + title + '\'' +
                 ", status='" + status + '\'' +
                 ", priority='" + priority + '\'' +
+                ", projectPath='" + projectPath + '\'' +
+                ", projectScoped=" + projectScoped +
                 '}';
     }
 }

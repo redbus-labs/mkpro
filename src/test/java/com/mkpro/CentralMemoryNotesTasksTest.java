@@ -22,8 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 1. TaskItem & NoteItem creation and getters/setters.
  * 2. CentralMemory CRUD operations for tasks (getAllTasks, saveTask, getTask, toggleTask, deleteTask).
  * 3. CentralMemory CRUD operations for notes (getAllNotes, saveNote, getNote, deleteNote).
- * 4. Project-scoped and project-grouped notes (saveNote, saveGlobalNote, getNote fallback,
- *    getProjectNotes, getGlobalNotes, getNotesGroupedByProject, clearProjectNotes, clearGlobalNotes).
+ * 4. Project-scoped and project-grouped notes & tasks.
  */
 public class CentralMemoryNotesTasksTest {
 
@@ -76,6 +75,8 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("TODO", defaultTask.getStatus());
         assertEquals("medium", defaultTask.getPriority());
         assertNull(defaultTask.getDueDate());
+        assertTrue(defaultTask.isProjectScoped());
+        assertEquals("Global", defaultTask.getProjectName());
         assertTrue(defaultTask.getCreatedAt() >= before && defaultTask.getCreatedAt() <= after);
         assertTrue(defaultTask.getUpdatedAt() >= before && defaultTask.getUpdatedAt() <= after);
 
@@ -86,6 +87,19 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("IN_PROGRESS", paramTask.getStatus());
         assertEquals("high", paramTask.getPriority());
         assertNull(paramTask.getDueDate());
+        assertTrue(paramTask.isProjectScoped());
+
+        // Scoped constructors
+        TaskItem globalConstructed = new TaskItem("task-g", "Global Task", "TODO", "low", false);
+        assertFalse(globalConstructed.isProjectScoped());
+        assertEquals("global", globalConstructed.getProjectPath());
+        assertEquals("Global", globalConstructed.getProjectName());
+
+        Path customProjPath = tempDir.resolve("my-awesome-project");
+        TaskItem pathConstructed = new TaskItem("task-p", "Project Task", "TODO", "high", customProjPath.toString());
+        assertTrue(pathConstructed.isProjectScoped());
+        assertEquals(customProjPath.toString(), pathConstructed.getProjectPath());
+        assertEquals("my-awesome-project", pathConstructed.getProjectName());
 
         // Null status/priority fallback to defaults
         TaskItem nullDefaultsTask = new TaskItem("task-2", "Another Feature", null, null);
@@ -506,7 +520,103 @@ public class CentralMemoryNotesTasksTest {
     }
 
     // ==========================================================================
-    // 6. Listener & Remote Sync Operations for Tasks and Notes
+    // 6. Project-Scoped and Project-Grouped Tasks
+    // ==========================================================================
+
+    @Test
+    @DisplayName("CentralMemory: Project-scoped & Global tasks (saveTask, saveGlobalTask, fallback, toggleTask, grouping, clearing)")
+    void testProjectScopedAndGroupedTasks() {
+        String currentProjectPath = CentralMemory.getCurrentProjectPath();
+        String otherProjectPath = tempDir.resolve("other-task-project").toAbsolutePath().normalize().toString();
+
+        // 1. Save a current project task
+        TaskItem projTask = new TaskItem("task-proj-1", "Current Project Task", "TODO", "high");
+        memory.saveTask(projTask);
+
+        // 2. Save a global task
+        TaskItem globalTask = new TaskItem("task-global-1", "Global Task", "TODO", "medium");
+        memory.saveGlobalTask(globalTask);
+
+        // 3. Save a task for another project
+        TaskItem otherProjTask = new TaskItem("task-other-1", "Other Project Task", "TODO", "low", otherProjectPath);
+        memory.saveTask(otherProjTask);
+
+        // Verify getProjectTasks() returns only current project's tasks
+        List<TaskItem> currentProjectTasks = memory.getProjectTasks();
+        assertEquals(1, currentProjectTasks.size());
+        assertEquals("task-proj-1", currentProjectTasks.get(0).getId());
+        assertEquals(currentProjectPath, currentProjectTasks.get(0).getProjectPath());
+        assertTrue(currentProjectTasks.get(0).isProjectScoped());
+
+        // Verify getProjectTasks(otherProjectPath) returns other project's tasks
+        List<TaskItem> otherProjectTasks = memory.getProjectTasks(otherProjectPath);
+        assertEquals(1, otherProjectTasks.size());
+        assertEquals("task-other-1", otherProjectTasks.get(0).getId());
+        assertEquals(otherProjectPath, otherProjectTasks.get(0).getProjectPath());
+        assertEquals("other-task-project", otherProjectTasks.get(0).getProjectName());
+
+        // Verify getGlobalTasks() returns only global tasks
+        List<TaskItem> globalTasks = memory.getGlobalTasks();
+        assertEquals(1, globalTasks.size());
+        assertEquals("task-global-1", globalTasks.get(0).getId());
+        assertEquals("global", globalTasks.get(0).getProjectPath());
+        assertEquals("Global", globalTasks.get(0).getProjectName());
+        assertFalse(globalTasks.get(0).isProjectScoped());
+
+        // Verify toggleTask works across current project, global, and other projects while preserving projectPath
+        TaskItem toggledOther = memory.toggleTask("task-other-1");
+        assertNotNull(toggledOther);
+        assertEquals("DONE", toggledOther.getStatus());
+        assertEquals(otherProjectPath, toggledOther.getProjectPath());
+
+        TaskItem toggledGlobal = memory.toggleTask("task-global-1");
+        assertNotNull(toggledGlobal);
+        assertEquals("DONE", toggledGlobal.getStatus());
+        assertEquals("global", toggledGlobal.getProjectPath());
+
+        // Verify getTask() precedence: project lookup -> global fallback -> other project lookup
+        TaskItem sharedIdGlobal = new TaskItem("shared-task-id", "Global Fallback Task", "TODO", "low");
+        memory.saveGlobalTask(sharedIdGlobal);
+        assertEquals("Global Fallback Task", memory.getTask("shared-task-id").getTitle());
+
+        TaskItem sharedIdProject = new TaskItem("shared-task-id", "Project Override Task", "TODO", "high");
+        memory.saveTask(sharedIdProject);
+        assertEquals("Project Override Task", memory.getTask("shared-task-id").getTitle());
+
+        // Verify getTasksGroupedByProject()
+        Map<String, List<TaskItem>> grouped = memory.getTasksGroupedByProject();
+        assertTrue(grouped.containsKey(currentProjectPath));
+        assertTrue(grouped.containsKey(otherProjectPath));
+        assertTrue(grouped.containsKey("global"));
+        assertEquals(2, grouped.get(currentProjectPath).size()); // task-proj-1 and shared-task-id
+        assertEquals(1, grouped.get(otherProjectPath).size());   // task-other-1
+        assertEquals(2, grouped.get("global").size());           // task-global-1 and shared-task-id
+
+        // Verify getAllTasks() orders current project tasks first and deduplicates shared-task-id with current project taking precedence
+        List<TaskItem> allTasks = memory.getAllTasks();
+        assertEquals(4, allTasks.size()); // 2 current project + 1 other project + 1 non-overridden global
+        assertEquals(currentProjectPath, allTasks.get(0).getProjectPath());
+        assertEquals(currentProjectPath, allTasks.get(1).getProjectPath());
+
+        // Verify clearProjectTasks() removes only current project tasks
+        memory.clearProjectTasks();
+        assertTrue(memory.getProjectTasks().isEmpty());
+        assertEquals(1, memory.getProjectTasks(otherProjectPath).size());
+        assertEquals(2, memory.getGlobalTasks().size());
+        // Now getTask("shared-task-id") falls back to the global task
+        TaskItem fallbackAfterClear = memory.getTask("shared-task-id");
+        assertNotNull(fallbackAfterClear);
+        assertEquals("Global Fallback Task", fallbackAfterClear.getTitle());
+
+        // Verify clearGlobalTasks() removes only global tasks
+        memory.clearGlobalTasks();
+        assertTrue(memory.getGlobalTasks().isEmpty());
+        assertNull(memory.getTask("shared-task-id"));
+        assertEquals(1, memory.getProjectTasks(otherProjectPath).size());
+    }
+
+    // ==========================================================================
+    // 7. Listener & Remote Sync Operations for Tasks and Notes
     // ==========================================================================
 
     @Test

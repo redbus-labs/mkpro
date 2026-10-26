@@ -5,6 +5,7 @@ import com.mkpro.core.MkProContext;
 import com.mkpro.models.AgentConfig;
 import com.mkpro.models.Provider;
 import com.mkpro.models.notes.NoteItem;
+import com.mkpro.models.notes.TaskItem;
 import com.mkpro.utils.ConsoleUtils;
 import com.mkpro.config.ModelRegistry;
 
@@ -49,7 +50,7 @@ public class ConfigCommand implements Command {
                 applyConfig(agent, providerStr, model, context, globalScope);
                 return;
             } else {
-                System.out.println("Usage: config [global] [list | set <agent> <provider> <model> | reset <agent|notes|all>]");
+                System.out.println("Usage: config [global] [list | set <agent> <provider> <model> | reset <agent|notes|tasks|all>]");
                 System.out.println("Or legacy: config [global] <agent> <provider> [model]");
                 return;
             }
@@ -95,6 +96,23 @@ public class ConfigCommand implements Command {
                     System.out.println(String.format(" - %s [global]", note.getTitle() != null ? note.getTitle() : note.getId()));
                 }
             }
+
+            List<TaskItem> projectTasks = context.getCentralMemory().getProjectTasks();
+            List<TaskItem> globalTasks = context.getCentralMemory().getGlobalTasks();
+            if (globalScope) {
+                System.out.println(String.format("Global Tasks (%d):", globalTasks.size()));
+                for (TaskItem task : globalTasks) {
+                    System.out.println(String.format(" - %s (%s) [global]", task.getTitle() != null ? task.getTitle() : task.getId(), task.getStatus()));
+                }
+            } else {
+                System.out.println(String.format("Tasks Summary: Project Tasks (%d), Global Tasks (%d)", projectTasks.size(), globalTasks.size()));
+                for (TaskItem task : projectTasks) {
+                    System.out.println(String.format(" - %s (%s) [project]", task.getTitle() != null ? task.getTitle() : task.getId(), task.getStatus()));
+                }
+                for (TaskItem task : globalTasks) {
+                    System.out.println(String.format(" - %s (%s) [global]", task.getTitle() != null ? task.getTitle() : task.getId(), task.getStatus()));
+                }
+            }
         } else if (subCommand.equalsIgnoreCase("reset") && args.length >= 2) {
             String agent = args[1];
             if ("notes".equalsIgnoreCase(agent)) {
@@ -104,6 +122,16 @@ public class ConfigCommand implements Command {
                 } else {
                     context.getCentralMemory().clearProjectNotes();
                     System.out.println("Reset ALL [PROJECT] notes for current project.");
+                }
+                return;
+            }
+            if ("tasks".equalsIgnoreCase(agent)) {
+                if (globalScope) {
+                    context.getCentralMemory().clearGlobalTasks();
+                    System.out.println("Reset ALL [GLOBAL] tasks.");
+                } else {
+                    context.getCentralMemory().clearProjectTasks();
+                    System.out.println("Reset ALL [PROJECT] tasks for current project.");
                 }
                 return;
             }
@@ -150,7 +178,7 @@ public class ConfigCommand implements Command {
             String fallbackModel = args[2];
             setFallbackModel(agent, fallbackModel, context);
         } else {
-            System.out.println("Usage: config [global] [list | set <agent> <provider> <model> | fallback <agent> <model> | reset <agent|notes|all>]");
+            System.out.println("Usage: config [global] [list | set <agent> <provider> <model> | fallback <agent> <model> | reset <agent|notes|tasks|all>]");
         }
     }
 

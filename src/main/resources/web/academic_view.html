@@ -4321,7 +4321,8 @@
                     if (stickyContainer) stickyContainer.innerHTML = emptyHtml;
                     return;
                 }
-                const renderedHtml = tasks.map(task => {
+
+                const renderTaskRow = (task) => {
                     const isDone = (task.status || '').toUpperCase() === 'DONE';
                     const prio = (task.priority || 'medium').toLowerCase();
                     const prioClass = prio === 'high' ? 'task-priority-high' : (prio === 'low' ? 'task-priority-low' : 'task-priority-medium');
@@ -4334,7 +4335,43 @@
                             <button class="task-del-btn" onclick="deleteTask('${escapedId}')" title="Delete task">🗑️</button>
                         </div>
                     `;
+                };
+
+                const groups = new Map();
+                tasks.forEach(t => {
+                    const isGlobal = t.projectScoped === false ||
+                        (t.projectPath && t.projectPath.toLowerCase() === 'global') ||
+                        (t.projectName && t.projectName.toLowerCase() === 'global');
+                    const projName = isGlobal
+                        ? 'Global'
+                        : (t.projectName || (t.projectPath ? t.projectPath.split(/[\\/]/).filter(Boolean).pop() : 'Project'));
+                    const groupKey = isGlobal ? 'global' : (t.projectPath || projName);
+                    if (!groups.has(groupKey)) {
+                        groups.set(groupKey, {
+                            isGlobal: isGlobal,
+                            projectName: projName,
+                            projectPath: t.projectPath || '',
+                            items: []
+                        });
+                    }
+                    groups.get(groupKey).items.push(t);
+                });
+
+                const renderedHtml = Array.from(groups.values()).map(group => {
+                    const headerLabel = group.isGlobal ? '🌐 Global' : `📁 ${escapeHtml(group.projectName)}`;
+                    return `
+                        <div class="note-project-group" style="margin-bottom:10px;">
+                            <div class="note-project-header" style="font-size:11px; font-weight:600; color:var(--accent); padding:4px 6px; margin-bottom:6px; background:var(--surface-hover); border-radius:5px; display:flex; align-items:center; justify-content:space-between;" title="${escapeHtml(group.projectPath || group.projectName)}">
+                                <span>${headerLabel}</span>
+                                <span style="font-size:10px; color:var(--muted); font-family:'JetBrains Mono',monospace;">${group.items.length}</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:6px;">
+                                ${group.items.map(renderTaskRow).join('')}
+                            </div>
+                        </div>
+                    `;
                 }).join('');
+
                 if (container) container.innerHTML = renderedHtml;
                 if (stickyContainer) stickyContainer.innerHTML = renderedHtml;
             } catch (err) {

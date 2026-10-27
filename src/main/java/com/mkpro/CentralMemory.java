@@ -494,7 +494,120 @@ public class CentralMemory {
      * Dump all shared stores as a map of storeName → map of key→value (as strings).
      * Used by the web MapDB browser for visualization/debugging.
      */
-    public Map<String, Map<String, String>> dumpAllStores() {
+    
+    /**
+     * Resolves @ mentions of Notes or Tasks in the input string.
+     */
+    public String resolveNoteMentions(String input) {
+        if (input == null || !input.contains("@")) {
+            return input;
+        }
+
+        List<NoteItem> allNotes = getAllNotes();
+        List<TaskItem> allTasks = getAllTasks();
+        if (allNotes.isEmpty() && allTasks.isEmpty()) {
+            return input;
+        }
+
+        Set<String> resolvedNoteIds = new LinkedHashSet<>();
+        Set<String> resolvedTaskIds = new LinkedHashSet<>();
+        StringBuilder appended = new StringBuilder();
+
+        java.util.regex.Pattern bracketPattern = java.util.regex.Pattern.compile("@\\[(?:(Note|Task):\\s*)?([^\\]]+)\\]", java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.regex.Matcher bracketMatcher = bracketPattern.matcher(input);
+        while (bracketMatcher.find()) {
+            String typeHint = bracketMatcher.group(1);
+            String query = bracketMatcher.group(2).trim();
+            resolveSingleMention(query, typeHint, allNotes, allTasks, resolvedNoteIds, resolvedTaskIds, appended);
+        }
+
+        java.util.regex.Pattern wordPattern = java.util.regex.Pattern.compile("(?:^|\\s)@([a-zA-Z0-9_-]{2,})");
+        java.util.regex.Matcher wordMatcher = wordPattern.matcher(input);
+        while (wordMatcher.find()) {
+            String query = wordMatcher.group(1).trim();
+            resolveSingleMention(query, null, allNotes, allTasks, resolvedNoteIds, resolvedTaskIds, appended);
+        }
+
+        if (appended.length() == 0) {
+            return input;
+        }
+        return input + appended.toString();
+    }
+
+    private void resolveSingleMention(String query, String typeHint, List<NoteItem> allNotes, List<TaskItem> allTasks,
+                                      Set<String> resolvedNoteIds, Set<String> resolvedTaskIds, StringBuilder appended) {
+        if (query == null || query.isEmpty()) {
+            return;
+        }
+        String querySlug = slugifyTitle(query);
+
+        if (typeHint == null || "Note".equalsIgnoreCase(typeHint)) {
+            for (NoteItem note : allNotes) {
+                String title = note.getTitle() != null ? note.getTitle().trim() : "";
+                String id = note.getId() != null ? note.getId().trim() : "";
+                String titleSlug = slugifyTitle(title);
+
+                if (title.equalsIgnoreCase(query)
+                        || (!titleSlug.isEmpty() && titleSlug.equalsIgnoreCase(querySlug))
+                        || id.equalsIgnoreCase(query)) {
+                    String uniqueKey = !id.isEmpty() ? id : title;
+                    if (resolvedNoteIds.add(uniqueKey)) {
+                        appended.append("\n\n--- Referenced Note: ")
+                                .append(note.getTitle())
+                                .append(" [Project: ")
+                                .append(note.getProjectName())
+                                .append("] ---\n")
+                                .append(note.getContent() != null ? note.getContent() : "")
+                                .append("\n--- End Note: ")
+                                .append(note.getTitle())
+                                .append(" ---");
+                    }
+                }
+            }
+        }
+
+        if (typeHint == null || "Task".equalsIgnoreCase(typeHint)) {
+            for (TaskItem task : allTasks) {
+                String title = task.getTitle() != null ? task.getTitle().trim() : "";
+                String id = task.getId() != null ? task.getId().trim() : "";
+                String titleSlug = slugifyTitle(title);
+
+                if (title.equalsIgnoreCase(query)
+                        || (!titleSlug.isEmpty() && titleSlug.equalsIgnoreCase(querySlug))
+                        || id.equalsIgnoreCase(query)) {
+                    String uniqueKey = !id.isEmpty() ? id : title;
+                    if (resolvedTaskIds.add(uniqueKey)) {
+                        appended.append("\n\n--- Referenced Task: ")
+                                .append(task.getTitle())
+                                .append(" [Status: ")
+                                .append(task.getStatus())
+                                .append(", Priority: ")
+                                .append(task.getPriority())
+                                .append(", Project: ")
+                                .append(task.getProjectName())
+                                .append("] ---\nTask: ")
+                                .append(task.getTitle())
+                                .append(" (Status: ")
+                                .append(task.getStatus())
+                                .append(", Priority: ")
+                                .append(task.getPriority())
+                                .append(")\n--- End Task: ")
+                                .append(task.getTitle())
+                                .append(" ---");
+                    }
+                }
+            }
+        }
+    }
+
+    private String slugifyTitle(String title) {
+        if (title == null) {
+            return "";
+        }
+        return title.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
+    }
+
+public Map<String, Map<String, String>> dumpAllStores() {
         Map<String, Map<String, String>> result = new java.util.LinkedHashMap<>();
         
         // Shared stores
@@ -1696,26 +1809,28 @@ public class CentralMemory {
 
     public void saveFilterConfig(FilterConfig config) {
         if (config == null) return;
+        String scopedKey = getCurrentProjectKeyPrefix() + "current";
         withSharedDbVoid(db -> {
             Map<String, FilterConfig> map = db.hashMap("filter_config", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            map.put("current", config);
+            map.put(scopedKey, config);
             db.commit();
         });
-        put(StoreKeys.FILTER_CONFIG, config);
+        put(getCurrentProjectKeyPrefix() + StoreKeys.FILTER_CONFIG, config);
         notifyListeners(StoreKeys.FILTER_CONFIG, config);
     }
 
     public FilterConfig getFilterConfig() {
+        String scopedKey = getCurrentProjectKeyPrefix() + "current";
         FilterConfig cfg = withSharedDb(db -> {
             Map<String, FilterConfig> map = db.hashMap("filter_config", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            return map.get("current");
+            return map.get(scopedKey);
         });
         if (cfg != null) {
             return cfg;
         }
-        FilterConfig generic = get(StoreKeys.FILTER_CONFIG, FilterConfig.class);
-        if (generic != null) {
-            return generic;
+        FilterConfig projectConfig = get(getCurrentProjectKeyPrefix() + StoreKeys.FILTER_CONFIG, FilterConfig.class);
+        if (projectConfig != null) {
+            return projectConfig;
         }
         return new FilterConfig();
     }

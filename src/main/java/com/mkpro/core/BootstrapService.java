@@ -459,7 +459,7 @@ public class BootstrapService {
 
             // Load saved FilterConfig from CentralMemory if available
             try {
-                com.mkpro.plugins.FilterConfig savedFilterConfig = CentralMemory.getInstance().get(StoreKeys.FILTER_CONFIG, com.mkpro.plugins.FilterConfig.class);
+                com.mkpro.plugins.FilterConfig savedFilterConfig = CentralMemory.getInstance().getFilterConfig();
                 if (savedFilterConfig != null) {
                     context.setFilterConfig(savedFilterConfig);
                 }

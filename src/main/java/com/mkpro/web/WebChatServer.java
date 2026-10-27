@@ -416,6 +416,9 @@ public class WebChatServer {
                 }
 
                 if (!text.isEmpty() && inputHandler != null) {
+                    if (centralMemory != null && text.contains("@")) {
+                        text = centralMemory.resolveNoteMentions(text);
+                    }
                     // Store sender on context for logging
                     lastWebSender = sender;
                     if (!imageAttachments.isEmpty()) {

@@ -73,6 +73,10 @@ public class TerminalUI {
                         // Log user input for training data export
                         context.getActionLogger().log("USER", line);
 
+                        if (context.getCentralMemory() != null && line.contains("@")) {
+                            line = context.getCentralMemory().resolveNoteMentions(line);
+                        }
+
                         // Fast-route evaluation prior to Coordinator turn
                         String routedAgent = null;
                         if (!isAutoContinue) {

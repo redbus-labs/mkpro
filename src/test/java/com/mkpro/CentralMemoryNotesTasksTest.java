@@ -684,4 +684,56 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("Remote Content", remoteNote.getContent());
         assertTrue(remoteNote.isPinned());
     }
+
+    // ==========================================================================
+    // 8. Resolve Note & Task Mentions with @ Notation
+    // ==========================================================================
+
+    @Test
+    @DisplayName("CentralMemory: resolveNoteMentions resolves Notes and Tasks via @[Title], @[Task: Title], @slug, and @id")
+    void testResolveNoteMentionsWithAtNotation() {
+        NoteItem archNote = new NoteItem("note-id", "My Architecture Note", "Use event-driven microservices with MapDB.");
+        memory.saveNote(archNote);
+
+        TaskItem vllmTask = new TaskItem("task-id", "Fix vLLM timeout", "TODO", "high");
+        memory.saveTask(vllmTask);
+
+        // 1. Bracketed note title mention: @[My Architecture Note]
+        String resolvedBracket = memory.resolveNoteMentions("Please review @[My Architecture Note] for details.");
+        assertTrue(resolvedBracket.contains("--- Referenced Note: My Architecture Note [Project: " + archNote.getProjectName() + "] ---"));
+        assertTrue(resolvedBracket.contains("Use event-driven microservices with MapDB."));
+        assertTrue(resolvedBracket.contains("--- End Note: My Architecture Note ---"));
+
+        // 2. Slugified note mention: @my-architecture-note
+        String resolvedSlug = memory.resolveNoteMentions("Check @my-architecture-note before implementing.");
+        assertTrue(resolvedSlug.contains("--- Referenced Note: My Architecture Note [Project: " + archNote.getProjectName() + "] ---"));
+        assertTrue(resolvedSlug.contains("Use event-driven microservices with MapDB."));
+
+        // 3. Note ID mention: @note-id
+        String resolvedId = memory.resolveNoteMentions("Apply pattern from @note-id");
+        assertTrue(resolvedId.contains("--- Referenced Note: My Architecture Note [Project: " + archNote.getProjectName() + "] ---"));
+        assertTrue(resolvedId.contains("Use event-driven microservices with MapDB."));
+
+        // 4. Bracketed task mention: @[Task: Fix vLLM timeout]
+        String resolvedTaskBracket = memory.resolveNoteMentions("Work on @[Task: Fix vLLM timeout] next.");
+        assertTrue(resolvedTaskBracket.contains("--- Referenced Task: Fix vLLM timeout [Status: TODO, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
+        assertTrue(resolvedTaskBracket.contains("Task: Fix vLLM timeout (Status: TODO, Priority: high)"));
+        assertTrue(resolvedTaskBracket.contains("--- End Task: Fix vLLM timeout ---"));
+
+        // 5. Slugified task mention: @fix-vllm-timeout
+        String resolvedTaskSlug = memory.resolveNoteMentions("Investigate @fix-vllm-timeout today.");
+        assertTrue(resolvedTaskSlug.contains("--- Referenced Task: Fix vLLM timeout [Status: TODO, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
+        assertTrue(resolvedTaskSlug.contains("Task: Fix vLLM timeout (Status: TODO, Priority: high)"));
+        assertTrue(resolvedTaskSlug.contains("--- End Task: Fix vLLM timeout ---"));
+
+        // 6. Task ID mention: @task-id
+        String resolvedTaskId = memory.resolveNoteMentions("Status update for @task-id");
+        assertTrue(resolvedTaskId.contains("--- Referenced Task: Fix vLLM timeout [Status: TODO, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
+        assertTrue(resolvedTaskId.contains("Task: Fix vLLM timeout (Status: TODO, Priority: high)"));
+
+        // 7. Non-matching or no-@ input returns unchanged
+        assertEquals("Hello world", memory.resolveNoteMentions("Hello world"));
+        assertEquals("Hello @unknown-note", memory.resolveNoteMentions("Hello @unknown-note"));
+        assertNull(memory.resolveNoteMentions(null));
+    }
 }

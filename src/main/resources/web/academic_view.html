@@ -2712,7 +2712,7 @@
                 <div class="dock-pill">
                     <button class="dock-btn" onclick="document.getElementById('dockFileInput').click()" title="Attach images or documents">📎</button>
                     <input type="file" id="dockFileInput" multiple accept="*/*" style="display:none;" onchange="handleFileInput(event)" />
-                    <input type="text" class="dock-input" id="userInput" placeholder="Inquire, propose hypothesis, run /command..." autocomplete="off" />
+                    <input type="text" class="dock-input" id="userInput" placeholder="Inquire, propose hypothesis, type @ for notes, run /command..." autocomplete="off" />
                     <button class="dock-btn" id="dockModelConfigBtn" onclick="openModelConfigModal()" title="Configure Agent Models &amp; Inference Servers" style="font-size:15px;">🧠</button>
                     <button class="dock-send-btn" id="sendBtn" onclick="sendMessage()">Send ↵</button>
                 </div>
@@ -4306,9 +4306,56 @@
             }
         }
 
-        // ========== Slash Command Palette ==========
-        userInput.addEventListener('input', (e) => {
-            const val = e.target.value;
+        // ========== Slash Command & @ Note / Task Mention Palette ==========
+        window.cachedNotesList = window.cachedNotesList || [];
+        window.cachedTasksList = window.cachedTasksList || [];
+        let slashPaletteMode = null; // 'slash' | 'note'
+        let currentAtNoteMatches = [];
+
+        async function handleSlashInput(val) {
+            const atMatch = val.match(/(?:^|\s)@([^@\n]*)$/);
+            if (atMatch) {
+                const query = (atMatch[1] || '').toLowerCase().trim();
+                if (!window.cachedNotesList || window.cachedNotesList.length === 0) {
+                    try {
+                        const res = await fetch('/api/notes');
+                        if (res.ok) {
+                            const notes = await res.json();
+                            window.cachedNotesList = notes || [];
+                        }
+                    } catch (err) {}
+                }
+                if (!window.cachedTasksList || window.cachedTasksList.length === 0) {
+                    await fetchTasks();
+                }
+                const matchedNotes = (window.cachedNotesList || []).filter(note => {
+                    if (!query) return true;
+                    const titleMatch = (note.title || '').toLowerCase().includes(query);
+                    const contentMatch = (note.content || '').toLowerCase().includes(query);
+                    const projMatch = (note.projectName || '').toLowerCase().includes(query);
+                    const tagsMatch = Array.isArray(note.tags) && note.tags.some(t => String(t).toLowerCase().includes(query));
+                    return titleMatch || contentMatch || projMatch || tagsMatch;
+                }).map(note => ({ ...note, itemType: 'note' }));
+
+                const matchedTasks = (window.cachedTasksList || []).filter(task => {
+                    if ((task.status || 'TODO').toUpperCase() === 'DONE') return false;
+                    if (!query) return true;
+                    const titleMatch = (task.title || '').toLowerCase().includes(query);
+                    const statusMatch = (task.status || '').toLowerCase().includes(query);
+                    const prioMatch = (task.priority || '').toLowerCase().includes(query);
+                    const projMatch = (task.projectName || '').toLowerCase().includes(query);
+                    return titleMatch || statusMatch || prioMatch || projMatch;
+                }).map(task => ({ ...task, itemType: 'task' }));
+
+                const list = [...matchedNotes, ...matchedTasks];
+                if (list.length > 0) {
+                    renderAtNotePalette(list);
+                } else {
+                    closeSlashPalette();
+                }
+                return;
+            }
+
             if (val.startsWith('/')) {
                 const query = val.slice(1).toLowerCase();
                 const matched = SLASH_COMMANDS.filter(item => item.cmd.toLowerCase().includes(query) || item.desc.toLowerCase().includes(query));
@@ -4320,9 +4367,20 @@
             } else {
                 closeSlashPalette();
             }
+        }
+
+        userInput.addEventListener('input', (e) => {
+            handleSlashInput(e.target.value);
         });
 
         userInput.addEventListener('keydown', (e) => {
+            if (slashPalette.classList.contains('open') && slashPaletteMode === 'note' && currentAtNoteMatches.length > 0) {
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    selectAtNoteMention(currentAtNoteMatches[0].id, currentAtNoteMatches[0].itemType);
+                    return;
+                }
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
@@ -4340,6 +4398,8 @@
         });
 
         function renderSlashPalette(list) {
+            slashPaletteMode = 'slash';
+            currentAtNoteMatches = [];
             slashPalette.innerHTML = list.map(item => `
                 <div class="slash-item" onclick="selectSlashCmd('${item.cmd}')">
                     <span>${item.cmd}</span>
@@ -4349,12 +4409,89 @@
             slashPalette.classList.add('open');
         }
 
+        function renderAtNotePalette(list) {
+            slashPaletteMode = 'note';
+            currentAtNoteMatches = list;
+            slashPalette.innerHTML = list.map(item => {
+                const isTask = item.itemType === 'task';
+                const isGlobal = item.projectScoped === false ||
+                    (item.projectPath && item.projectPath.toLowerCase() === 'global') ||
+                    (item.projectName && item.projectName.toLowerCase() === 'global');
+                const badge = isGlobal ? '🌐 Global' : `📁 ${escapeHtml(item.projectName || 'Project')}`;
+                const safeId = escapeHtml(item.id || '');
+                if (isTask) {
+                    const statusBadge = `[${escapeHtml(item.status || 'TODO')} · ${escapeHtml(item.priority || 'medium')}]`;
+                    return `
+                        <div class="slash-item" onclick="selectAtNoteMention('${safeId}', 'task')" style="flex-direction:column; align-items:flex-start; gap:2px;">
+                            <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:8px;">
+                                <span style="font-weight:600;">📋 ${escapeHtml(item.title || 'Untitled Task')}</span>
+                                <span class="slash-item-desc" style="font-size:10px; padding:1px 6px; border-radius:4px; background:var(--surface-hover);">${badge}</span>
+                            </div>
+                            <span class="slash-item-desc" style="font-size:11px; opacity:0.8;">${statusBadge}</span>
+                        </div>
+                    `;
+                }
+                const rawSnippet = (item.content || '').replace(/\s+/g, ' ').trim();
+                const snippet = rawSnippet.length > 60 ? rawSnippet.substring(0, 60) + '…' : rawSnippet;
+                return `
+                    <div class="slash-item" onclick="selectAtNoteMention('${safeId}', 'note')" style="flex-direction:column; align-items:flex-start; gap:2px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:8px;">
+                            <span style="font-weight:600;">📝 ${escapeHtml(item.title || 'Untitled')}</span>
+                            <span class="slash-item-desc" style="font-size:10px; padding:1px 6px; border-radius:4px; background:var(--surface-hover);">${badge}</span>
+                        </div>
+                        ${snippet ? `<span class="slash-item-desc" style="font-size:11px; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;">${escapeHtml(snippet)}</span>` : ''}
+                    </div>
+                `;
+            }).join('');
+            slashPalette.classList.add('open');
+        }
+
         function closeSlashPalette() {
+            slashPaletteMode = null;
+            currentAtNoteMatches = [];
             slashPalette.classList.remove('open');
         }
 
         function selectSlashCmd(cmd) {
             userInput.value = cmd + ' ';
+            closeSlashPalette();
+            userInput.focus();
+        }
+
+        function selectAtNoteMention(itemId, itemType) {
+            if (itemType === 'task' || (!itemType && !(window.cachedNotesList || []).some(n => String(n.id) === String(itemId)) && (window.cachedTasksList || []).some(t => String(t.id) === String(itemId)))) {
+                const task = (window.cachedTasksList || []).find(t => String(t.id) === String(itemId));
+                const title = (task && task.title) ? task.title : 'Untitled Task';
+                userInput.value = userInput.value.replace(/(?:^|\s)@([^@\n]*)$/, (match) => {
+                    const prefix = match.startsWith(' ') ? ' ' : '';
+                    return `${prefix}@[Task: ${title}] `;
+                });
+            } else {
+                const note = (window.cachedNotesList || []).find(n => String(n.id) === String(itemId));
+                const title = (note && note.title) ? note.title : 'Untitled';
+                userInput.value = userInput.value.replace(/(?:^|\s)@([^@\n]*)$/, (match) => {
+                    const prefix = match.startsWith(' ') ? ' ' : '';
+                    return `${prefix}@[${title}] `;
+                });
+            }
+            closeSlashPalette();
+            userInput.focus();
+        }
+
+        function insertNoteAtMention(noteId) {
+            const note = (window.cachedNotesList || []).find(n => String(n.id) === String(noteId));
+            const title = (note && note.title) ? note.title : 'Untitled';
+            const prefix = (userInput.value && !userInput.value.endsWith(' ')) ? ' ' : '';
+            userInput.value = (userInput.value || '') + `${prefix}@[${title}] `;
+            closeSlashPalette();
+            userInput.focus();
+        }
+
+        function insertTaskAtMention(taskId) {
+            const task = (window.cachedTasksList || []).find(t => String(t.id) === String(taskId));
+            const title = (task && task.title) ? task.title : 'Untitled Task';
+            const prefix = (userInput.value && !userInput.value.endsWith(' ')) ? ' ' : '';
+            userInput.value = (userInput.value || '') + `${prefix}@[Task: ${title}] `;
             closeSlashPalette();
             userInput.focus();
         }
@@ -4458,11 +4595,12 @@
         async function fetchTasks() {
             const container = document.getElementById('tasksContainer');
             const stickyContainer = document.getElementById('stickyTasksContainer');
-            if (!container && !stickyContainer) return;
             try {
-                const resp = await fetch('/api/tasks');
-                if (!resp.ok) throw new Error('Tasks request failed: ' + resp.status);
-                const tasks = await resp.json();
+                const res = await fetch('/api/tasks');
+                if (!res.ok) throw new Error('Tasks request failed: ' + res.status);
+                const tasks = await res.json();
+                window.cachedTasksList = tasks || [];
+                if (!container && !stickyContainer) return;
                 if (!Array.isArray(tasks) || tasks.length === 0) {
                     const emptyHtml = '<div style="color:var(--muted); font-size:12px; font-style:italic;">No tasks yet.</div>';
                     if (container) container.innerHTML = emptyHtml;
@@ -4480,6 +4618,7 @@
                             <input type="checkbox" class="task-checkbox" ${isDone ? 'checked' : ''} onchange="toggleTask('${escapedId}')" title="Mark ${isDone ? 'incomplete' : 'done'}" />
                             <span class="task-title" title="${escapeHtml(task.title || '')}">${escapeHtml(task.title || '')}</span>
                             <span class="task-priority-badge ${prioClass}">${escapeHtml(prio)}</span>
+                            ${!isDone ? `<button class="task-del-btn" onclick="insertTaskAtMention('${escapedId}')" title="Add @Task to prompt" style="color:var(--accent); font-weight:700;">@</button>` : ''}
                             <button class="task-del-btn" onclick="deleteTask('${escapedId}')" title="Delete task">🗑️</button>
                         </div>
                     `;
@@ -4605,11 +4744,12 @@
         async function fetchNotes() {
             const container = document.getElementById('notesContainer');
             const stickyContainer = document.getElementById('stickyNotesContainer');
-            if (!container && !stickyContainer) return;
             try {
-                const resp = await fetch('/api/notes');
-                if (!resp.ok) throw new Error('Notes request failed: ' + resp.status);
-                const notes = await resp.json();
+                const res = await fetch('/api/notes');
+                if (!res.ok) throw new Error('Notes request failed: ' + res.status);
+                const notes = await res.json();
+                window.cachedNotesList = notes || [];
+                if (!container && !stickyContainer) return;
                 if (!Array.isArray(notes) || notes.length === 0) {
                     const emptyHtml = '<div style="color:var(--muted); font-size:12px; font-style:italic;">No notes yet.</div>';
                     if (container) container.innerHTML = emptyHtml;
@@ -4639,7 +4779,10 @@
                         <div class="note-card" id="note-card-${escapedId}">
                             <div class="note-card-header">
                                 <span class="note-card-title">${escapeHtml(note.title || 'Untitled Note')}</span>
-                                <button class="note-del-btn" onclick="deleteNote('${escapedId}')" title="Delete note">🗑️</button>
+                                <div style="display:flex; align-items:center;">
+                                    <button class="note-del-btn" onclick="insertNoteAtMention('${note.id}')" title="Add @Note to prompt" style="color:var(--accent); font-weight:700; margin-right:4px;">@</button>
+                                    <button class="note-del-btn" onclick="deleteNote('${escapedId}')" title="Delete note">🗑️</button>
+                                </div>
                             </div>
                             ${dateStr ? `<div class="note-card-date">${escapeHtml(dateStr)}</div>` : ''}
                             ${tagsHtml}

@@ -287,9 +287,9 @@ public class MkPro {
      */
     private static void restoreSessionPreferences(com.mkpro.core.MkProContext context, String[] args, CommandRegistry registry) {
         try {
-            // Restore /web if user had it on and not already started via --web flag
+            // Restore /web if user had it on and not already started via --web flag (per project)
             if (context.getWebChatServer() == null) {
-                String webPref = context.getCentralMemory().getMemory("pref:web");
+                String webPref = context.getCentralMemory().getMemory(com.mkpro.CentralMemory.getCurrentProjectKeyPrefix() + "pref:web");
                 if (webPref != null && !webPref.isEmpty() && !"off".equals(webPref)) {
                     try {
                         int port = Integer.parseInt(webPref);

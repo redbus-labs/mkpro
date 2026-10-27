@@ -458,6 +458,43 @@
             padding: 12px 20px 16px;
             background: var(--surface);
             border-top: 1px solid var(--surface2);
+            position: relative;
+        }
+        .at-note-palette {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 20px;
+            right: 20px;
+            max-height: 260px;
+            overflow-y: auto;
+            background: var(--surface);
+            border: 1px solid var(--surface2);
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+            display: none;
+            flex-direction: column;
+            padding: 6px 0;
+            z-index: 200;
+        }
+        .at-note-palette.open {
+            display: flex;
+        }
+        .at-note-item {
+            padding: 8px 14px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 12px;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+            transition: background 0.15s;
+        }
+        .at-note-item:last-child {
+            border-bottom: none;
+        }
+        .at-note-item:hover, .at-note-item.active {
+            background: var(--surface2);
+            color: var(--accent);
         }
         .attachments-bar {
             display: flex;
@@ -1165,11 +1202,12 @@
             </div>
             <div class="chat" id="chat"></div>
             <div class="input-area">
+                <div class="at-note-palette" id="atNotePalette"></div>
                 <div class="attachments-bar" id="attachments"></div>
                 <div class="input-row">
                     <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Attach file">📎</button>
                     <input type="file" id="fileInput" multiple accept=".txt,.java,.py,.js,.ts,.json,.yaml,.yml,.md,.csv,.log,.xml,.html,.css,.sh,.bat,.sql,.groovy,.kt,.swift,.rs,.go,.c,.cpp,.h,.png,.jpg,.jpeg,.gif,.webp,.wav,.mp3,.ogg,.flac,.m4a,.aac,.webm,.mp4" onchange="handleFiles(event)" />
-                    <input type="text" id="input" placeholder="Type a message..." autocomplete="off" />
+                    <input type="text" id="input" placeholder="Type a message, or @ for notes..." autocomplete="off" />
                     <button class="attach-btn" onclick="openModelConfigModal()" title="Configure Agent Models &amp; Servers">🧠</button>
                     <button class="send-btn" id="send" onclick="sendMessage()">Send</button>
                 </div>
@@ -1945,11 +1983,152 @@
             return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
+        // ========== @ Note & Task Mention Autocomplete ==========
+        const atNotePalette = document.getElementById('atNotePalette');
+        window.cachedNotesList = window.cachedNotesList || [];
+        window.cachedTasksList = window.cachedTasksList || [];
+        let currentAtNoteMatches = [];
+
+        async function fetchNotesForPalette() {
+            try {
+                const [notesRes, tasksRes] = await Promise.all([
+                    fetch('/api/notes'),
+                    fetch('/api/tasks')
+                ]);
+                if (notesRes.ok) {
+                    const notes = await notesRes.json();
+                    window.cachedNotesList = notes || [];
+                }
+                if (tasksRes.ok) {
+                    const tasks = await tasksRes.json();
+                    window.cachedTasksList = tasks || [];
+                }
+            } catch (err) {}
+        }
+        fetchNotesForPalette();
+
+        async function handleAtNoteInput(val) {
+            const atMatch = val.match(/(?:^|\s)@([^@\n]*)$/);
+            if (!atMatch) {
+                closeAtNotePalette();
+                return;
+            }
+            const query = (atMatch[1] || '').toLowerCase().trim();
+            if ((!window.cachedNotesList || window.cachedNotesList.length === 0) ||
+                (!window.cachedTasksList || window.cachedTasksList.length === 0)) {
+                await fetchNotesForPalette();
+            }
+            const matchedNotes = (window.cachedNotesList || []).filter(note => {
+                if (!query) return true;
+                const titleMatch = (note.title || '').toLowerCase().includes(query);
+                const contentMatch = (note.content || '').toLowerCase().includes(query);
+                const projMatch = (note.projectName || '').toLowerCase().includes(query);
+                const tagsMatch = Array.isArray(note.tags) && note.tags.some(t => String(t).toLowerCase().includes(query));
+                return titleMatch || contentMatch || projMatch || tagsMatch;
+            }).map(note => ({ ...note, itemType: 'note' }));
+
+            const matchedTasks = (window.cachedTasksList || []).filter(task => {
+                if ((task.status || 'TODO').toUpperCase() === 'DONE') return false;
+                if (!query) return true;
+                const titleMatch = (task.title || '').toLowerCase().includes(query);
+                const statusMatch = (task.status || '').toLowerCase().includes(query);
+                const prioMatch = (task.priority || '').toLowerCase().includes(query);
+                const projMatch = (task.projectName || '').toLowerCase().includes(query);
+                return titleMatch || statusMatch || prioMatch || projMatch;
+            }).map(task => ({ ...task, itemType: 'task' }));
+
+            const matched = [...matchedNotes, ...matchedTasks];
+            if (matched.length > 0) {
+                renderAtNotePalette(matched);
+            } else {
+                closeAtNotePalette();
+            }
+        }
+
+        function renderAtNotePalette(list) {
+            if (!atNotePalette) return;
+            currentAtNoteMatches = list;
+            atNotePalette.innerHTML = list.map(item => {
+                const isTask = item.itemType === 'task';
+                const isGlobal = item.projectScoped === false ||
+                    (item.projectPath && item.projectPath.toLowerCase() === 'global') ||
+                    (item.projectName && item.projectName.toLowerCase() === 'global');
+                const badge = isGlobal ? '🌐 Global' : `📁 ${escapeHtml(item.projectName || 'Project')}`;
+                const safeId = escapeHtml(item.id || '');
+                if (isTask) {
+                    const statusBadge = `[${escapeHtml(item.status || 'TODO')} · ${escapeHtml(item.priority || 'medium')}]`;
+                    return `
+                        <div class="at-note-item" onclick="selectAtNoteMention('${safeId}', 'task')">
+                            <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:8px;">
+                                <span style="font-weight:600; color:var(--accent);">📋 ${escapeHtml(item.title || 'Untitled Task')}</span>
+                                <span style="font-size:10px; padding:1px 6px; border-radius:4px; background:var(--surface2); color:var(--text-dim);">${badge}</span>
+                            </div>
+                            <span style="font-size:11px; color:var(--text-dim);">${statusBadge}</span>
+                        </div>
+                    `;
+                }
+                const rawSnippet = (item.content || '').replace(/\s+/g, ' ').trim();
+                const snippet = rawSnippet.length > 60 ? rawSnippet.substring(0, 60) + '…' : rawSnippet;
+                return `
+                    <div class="at-note-item" onclick="selectAtNoteMention('${safeId}', 'note')">
+                        <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:8px;">
+                            <span style="font-weight:600; color:var(--accent);">📝 ${escapeHtml(item.title || 'Untitled')}</span>
+                            <span style="font-size:10px; padding:1px 6px; border-radius:4px; background:var(--surface2); color:var(--text-dim);">${badge}</span>
+                        </div>
+                        ${snippet ? `<span style="font-size:11px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;">${escapeHtml(snippet)}</span>` : ''}
+                    </div>
+                `;
+            }).join('');
+            atNotePalette.classList.add('open');
+        }
+
+        function closeAtNotePalette() {
+            currentAtNoteMatches = [];
+            if (atNotePalette) atNotePalette.classList.remove('open');
+        }
+
+        function selectAtNoteMention(itemId, itemType) {
+            if (itemType === 'task' || (!itemType && !(window.cachedNotesList || []).some(n => String(n.id) === String(itemId)) && (window.cachedTasksList || []).some(t => String(t.id) === String(itemId)))) {
+                const task = (window.cachedTasksList || []).find(t => String(t.id) === String(itemId));
+                const title = (task && task.title) ? task.title : 'Untitled Task';
+                input.value = input.value.replace(/(?:^|\s)@([^@\n]*)$/, (match) => {
+                    const prefix = match.startsWith(' ') ? ' ' : '';
+                    return `${prefix}@[Task: ${title}] `;
+                });
+            } else {
+                const note = (window.cachedNotesList || []).find(n => String(n.id) === String(itemId));
+                const title = (note && note.title) ? note.title : 'Untitled';
+                input.value = input.value.replace(/(?:^|\s)@([^@\n]*)$/, (match) => {
+                    const prefix = match.startsWith(' ') ? ' ' : '';
+                    return `${prefix}@[${title}] `;
+                });
+            }
+            closeAtNotePalette();
+            input.focus();
+        }
+
         // Input handling
+        input.addEventListener('input', (e) => {
+            handleAtNoteInput(e.target.value);
+        });
+
         input.addEventListener('keydown', (e) => {
+            if (atNotePalette && atNotePalette.classList.contains('open') && currentAtNoteMatches.length > 0) {
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    selectAtNoteMention(currentAtNoteMatches[0].id, currentAtNoteMatches[0].itemType);
+                    return;
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeAtNotePalette();
+                    return;
+                }
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
+            } else if (e.key === 'Escape') {
+                closeAtNotePalette();
             }
         });
 

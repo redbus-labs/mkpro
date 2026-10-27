@@ -139,7 +139,6 @@ public class CompactCommand implements Command {
 
     private void saveFilterConfig(FilterConfig fc) {
         try {
-            CentralMemory.getInstance().put(StoreKeys.FILTER_CONFIG, fc);
             CentralMemory.getInstance().saveFilterConfig(fc);
         } catch (Exception ignored) {}
     }

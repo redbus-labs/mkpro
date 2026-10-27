@@ -105,8 +105,8 @@ public class WebCommand implements Command {
             System.out.println("\u001b[32m[Web] Started on port " + port + "\u001b[0m");
             System.out.println("  → http://localhost:" + port);
 
-            // Remember preference for next session
-            context.getCentralMemory().saveMemory("pref:web", String.valueOf(port));
+            // Remember preference for next session (per project)
+            context.getCentralMemory().saveMemory(com.mkpro.CentralMemory.getCurrentProjectKeyPrefix() + "pref:web", String.valueOf(port));
 
         } catch (Exception e) {
             System.out.println("\u001b[31m[Web] Failed to start: " + e.getMessage() + "\u001b[0m");
@@ -124,7 +124,7 @@ public class WebCommand implements Command {
         context.setWebChatServer(null);
         System.out.println("\u001b[32m[Web] Stopped. All clients disconnected.\u001b[0m");
 
-        // Remember preference for next session
-        context.getCentralMemory().saveMemory("pref:web", "off");
+        // Remember preference for next session (per project)
+        context.getCentralMemory().saveMemory(com.mkpro.CentralMemory.getCurrentProjectKeyPrefix() + "pref:web", "off");
     }
 }

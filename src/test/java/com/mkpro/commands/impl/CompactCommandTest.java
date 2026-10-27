@@ -105,33 +105,38 @@ class CompactCommandTest {
     @Test
     @DisplayName("Verify FilterConfig persistence in CentralMemory across subcommands")
     void testFilterConfigPersistenceInCentralMemory() throws Exception {
+        String scopedKey = CentralMemory.getCurrentProjectKeyPrefix() + StoreKeys.FILTER_CONFIG;
+
         // Test turn limits persistence
         command.execute(new String[]{"12"}, context);
-        FilterConfig saved = CentralMemory.getInstance().get(StoreKeys.FILTER_CONFIG, FilterConfig.class);
+        FilterConfig saved = CentralMemory.getInstance().getFilterConfig();
         assertNotNull(saved);
         assertEquals(12, saved.getMaxTurns());
+        FilterConfig genericSaved = CentralMemory.getInstance().get(scopedKey, FilterConfig.class);
+        assertNotNull(genericSaved);
+        assertEquals(12, genericSaved.getMaxTurns());
 
         // Test prune settings persistence
         command.execute(new String[]{"prune", "3500"}, context);
-        saved = CentralMemory.getInstance().get(StoreKeys.FILTER_CONFIG, FilterConfig.class);
+        saved = CentralMemory.getInstance().getFilterConfig();
         assertNotNull(saved);
         assertTrue(saved.isPruneToolOutputs());
         assertEquals(3500, saved.getMaxToolPayloadChars());
 
         // Test prune off persistence
         command.execute(new String[]{"prune", "off"}, context);
-        saved = CentralMemory.getInstance().get(StoreKeys.FILTER_CONFIG, FilterConfig.class);
+        saved = CentralMemory.getInstance().getFilterConfig();
         assertNotNull(saved);
         assertFalse(saved.isPruneToolOutputs());
 
         // Test churn on/off persistence
         command.execute(new String[]{"churn", "on"}, context);
-        saved = CentralMemory.getInstance().get(StoreKeys.FILTER_CONFIG, FilterConfig.class);
+        saved = CentralMemory.getInstance().getFilterConfig();
         assertNotNull(saved);
         assertTrue(saved.isEvictStaleToolChurn());
 
         command.execute(new String[]{"churn", "off"}, context);
-        saved = CentralMemory.getInstance().get(StoreKeys.FILTER_CONFIG, FilterConfig.class);
+        saved = CentralMemory.getInstance().getFilterConfig();
         assertNotNull(saved);
         assertFalse(saved.isEvictStaleToolChurn());
 
@@ -139,7 +144,7 @@ class CompactCommandTest {
         saved.setMaxTurns(20);
         context.setFilterConfig(saved);
         command.execute(new String[0], context);
-        saved = CentralMemory.getInstance().get(StoreKeys.FILTER_CONFIG, FilterConfig.class);
+        saved = CentralMemory.getInstance().getFilterConfig();
         assertNotNull(saved);
         assertEquals(20, saved.getMaxTurns());
     }

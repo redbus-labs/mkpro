@@ -3,8 +3,13 @@ package com.mkpro.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mkpro.models.AgentConfig;
+import com.mkpro.models.Provider;
 import com.mkpro.models.notes.TaskItem;
 import com.mkpro.models.notes.NoteItem;
+import com.mkpro.config.ModelRegistry;
+import com.mkpro.commands.impl.OllamaCommand;
+import com.mkpro.commands.impl.VllmCommand;
 import com.mkpro.security.PathValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,6 +115,16 @@ class RestApiHandler {
                 handleTasksApi(exchange); return true;
             case "/api/notes":
                 handleNotesApi(exchange); return true;
+            case "/api/config/state":
+                handleConfigStateApi(exchange); return true;
+            case "/api/config/server-models":
+                handleConfigServerModelsApi(exchange); return true;
+            case "/api/config/agent":
+                handleConfigAgentApi(exchange); return true;
+            case "/api/config/reset":
+                handleConfigResetApi(exchange); return true;
+            case "/api/config/servers":
+                handleConfigServersApi(exchange); return true;
             default:
                 // Prefix-based routes
                 if (path.startsWith("/api/tasks/")) {
@@ -1622,5 +1637,513 @@ class RestApiHandler {
         } catch (Exception ignored) {}
 
         return false;
+    }
+
+    // ========================================================================
+    // Model & Server Configuration API Handlers
+    // ========================================================================
+
+    /**
+     * GET /api/config/state — Returns full agent model & inference server configuration state.
+     */
+    private void handleConfigStateApi(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            com.mkpro.CentralMemory memory = centralMemory != null ? centralMemory :
+                (mkproContext != null ? mkproContext.getCentralMemory() : com.mkpro.CentralMemory.getInstance());
+
+            List<String> providerOptions = new ArrayList<>();
+            List<String> ollamaServers = memory != null ? memory.getOllamaServers() : List.of();
+            if (!ollamaServers.isEmpty()) {
+                for (String entry : ollamaServers) {
+                    int sep = entry.indexOf('|');
+                    if (sep >= 0) {
+                        providerOptions.add("OLLAMA [" + entry.substring(0, sep) + "]");
+                    }
+                }
+            }
+            providerOptions.add("OLLAMA");
+
+            for (Provider p : Provider.values()) {
+                if (p == Provider.OLLAMA) continue;
+                if (p == Provider.OPENAI) {
+                    List<String> openAiServers = memory != null ? memory.getOpenAiServers() : List.of();
+                    if (openAiServers != null && !openAiServers.isEmpty()) {
+                        for (String entry : openAiServers) {
+                            int sep = entry.indexOf('|');
+                            if (sep >= 0) {
+                                providerOptions.add("OPENAI [" + entry.substring(0, sep) + "]");
+                            }
+                        }
+                    }
+                    providerOptions.add("OPENAI");
+                } else {
+                    providerOptions.add(p.name());
+                }
+            }
+
+            List<String> agentNames = new ArrayList<>();
+            agentNames.add("default");
+            agentNames.add("Coordinator");
+            if (mkproContext != null && mkproContext.getAgentManager() != null &&
+                mkproContext.getAgentManager().getAgentDefinitions() != null) {
+                for (String name : mkproContext.getAgentManager().getAgentDefinitions().keySet()) {
+                    if (!agentNames.contains(name)) agentNames.add(name);
+                }
+            } else if (mkproContext != null && mkproContext.getAgentConfigs() != null) {
+                for (String name : mkproContext.getAgentConfigs().keySet()) {
+                    if (!agentNames.contains(name)) agentNames.add(name);
+                }
+            }
+
+            Map<String, AgentConfig> effectiveConfigs = memory != null ? memory.getAllAgentConfigs() : Map.of();
+            List<Map<String, Object>> agentsList = new ArrayList<>();
+
+            for (String agentName : agentNames) {
+                AgentConfig cfg = effectiveConfigs.get(agentName);
+                if (cfg == null && mkproContext != null && mkproContext.getAgentConfigs() != null) {
+                    cfg = mkproContext.getAgentConfigs().get(agentName);
+                }
+                if (cfg == null) {
+                    cfg = effectiveConfigs.get("default");
+                }
+
+                String providerName = cfg != null && cfg.getProvider() != null ? cfg.getProvider().name() : "GEMINI";
+                String modelName = cfg != null && cfg.getModelName() != null ? cfg.getModelName() : "gemini-2.5-flash";
+                String serverUrl = cfg != null ? cfg.getServerUrl() : null;
+                String serverName = null;
+                String providerChoice = providerName;
+
+                if (serverUrl != null && !serverUrl.isEmpty() && memory != null) {
+                    if ("OPENAI".equalsIgnoreCase(providerName)) {
+                        serverName = VllmCommand.resolveServerName(serverUrl, memory);
+                        if (serverName != null) providerChoice = "OPENAI [" + serverName + "]";
+                    } else if ("OLLAMA".equalsIgnoreCase(providerName)) {
+                        for (String entry : memory.getOllamaServers()) {
+                            int sep = entry.indexOf('|');
+                            if (sep >= 0 && entry.substring(sep + 1).equalsIgnoreCase(serverUrl)) {
+                                serverName = entry.substring(0, sep);
+                                providerChoice = "OLLAMA [" + serverName + "]";
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                boolean isProjectScoped = memory != null && memory.hasExplicitProjectAgentConfig(agentName);
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("name", agentName);
+                item.put("provider", providerName);
+                item.put("providerChoice", providerChoice);
+                item.put("model", modelName);
+                item.put("serverUrl", serverUrl != null ? serverUrl : "");
+                item.put("serverName", serverName != null ? serverName : "");
+                item.put("scope", isProjectScoped ? "project" : "global");
+                agentsList.add(item);
+            }
+
+            List<Map<String, Object>> openAiList = new ArrayList<>();
+            if (memory != null && memory.getOpenAiServers() != null) {
+                String selectedOpenAi = memory.getSelectedOpenAiServer();
+                for (String entry : memory.getOpenAiServers()) {
+                    String[] parts = entry.split("\\|", -1);
+                    String name = parts.length > 0 ? parts[0] : "";
+                    String url = parts.length > 1 ? parts[1] : "";
+                    boolean hasKey = parts.length > 2 && !parts[2].isEmpty();
+                    int maxCtx = VllmCommand.resolveServerMaxContext(name, memory);
+                    Map<String, Object> s = new LinkedHashMap<>();
+                    s.put("name", name);
+                    s.put("url", url);
+                    s.put("hasKey", hasKey);
+                    s.put("maxContext", maxCtx);
+                    s.put("selected", url.equals(selectedOpenAi));
+                    openAiList.add(s);
+                }
+            }
+
+            List<Map<String, Object>> ollamaList = new ArrayList<>();
+            if (memory != null && memory.getOllamaServers() != null) {
+                String selectedOllama = memory.getSelectedOllamaServer();
+                for (String entry : memory.getOllamaServers()) {
+                    int sep = entry.indexOf('|');
+                    String name = sep >= 0 ? entry.substring(0, sep) : "unnamed";
+                    String url = sep >= 0 ? entry.substring(sep + 1) : entry;
+                    Map<String, Object> s = new LinkedHashMap<>();
+                    s.put("name", name);
+                    s.put("url", url);
+                    s.put("selected", url.equals(selectedOllama));
+                    ollamaList.add(s);
+                }
+            }
+
+            Map<String, List<String>> staticModels = new LinkedHashMap<>();
+            staticModels.put("GEMINI", ModelRegistry.GEMINI_MODELS);
+            staticModels.put("OPENAI", ModelRegistry.OPENAI_MODELS);
+            staticModels.put("OLLAMA", ModelRegistry.OLLAMA_MODELS);
+            staticModels.put("BEDROCK", ModelRegistry.BEDROCK_MODELS);
+            staticModels.put("AZURE", ModelRegistry.AZURE_MODELS);
+
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("projectPath", com.mkpro.CentralMemory.getCurrentProjectPath());
+            resp.put("providerOptions", providerOptions);
+            resp.put("agents", agentsList);
+            resp.put("servers", Map.of("openai", openAiList, "ollama", ollamaList));
+            resp.put("staticModels", staticModels);
+
+            sendJsonResponse(exchange, 200, resp);
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * GET /api/config/server-models?provider=OPENAI&server=local — Fetch models for a provider/server.
+     */
+    private void handleConfigServerModelsApi(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            String provider = "GEMINI";
+            String serverName = null;
+            String rawQuery = exchange.getRequestURI().getQuery();
+            if (rawQuery != null) {
+                for (String param : rawQuery.split("&")) {
+                    if (param.startsWith("provider=")) {
+                        provider = URLDecoder.decode(param.substring(9), StandardCharsets.UTF_8).trim();
+                    } else if (param.startsWith("server=")) {
+                        serverName = URLDecoder.decode(param.substring(7), StandardCharsets.UTF_8).trim();
+                    }
+                }
+            }
+
+            if (provider.contains("[")) {
+                int start = provider.indexOf('[');
+                int end = provider.indexOf(']');
+                if (end > start) {
+                    serverName = provider.substring(start + 1, end).trim();
+                }
+                provider = provider.substring(0, start).trim();
+            }
+
+            com.mkpro.CentralMemory memory = centralMemory != null ? centralMemory :
+                (mkproContext != null ? mkproContext.getCentralMemory() : com.mkpro.CentralMemory.getInstance());
+
+            List<String> models = new ArrayList<>();
+            String upper = provider.toUpperCase();
+            if ("OLLAMA".equals(upper)) {
+                if (serverName != null && !serverName.isEmpty() && memory != null) {
+                    String url = OllamaCommand.resolveServerUrl(serverName, memory);
+                    if (url != null) {
+                        models.addAll(ModelRegistry.fetchModelsFromServer(url));
+                    }
+                }
+                if (models.isEmpty()) {
+                    models.addAll(ModelRegistry.OLLAMA_MODELS);
+                }
+            } else if ("OPENAI".equals(upper)) {
+                if (serverName != null && !serverName.isEmpty() && memory != null) {
+                    String url = VllmCommand.resolveServerUrl(serverName, memory);
+                    String apiKey = VllmCommand.resolveServerApiKey(serverName, memory);
+                    if (url != null) {
+                        models.addAll(ModelRegistry.fetchOpenAiModelsFromServer(url, apiKey));
+                    }
+                }
+                for (String m : ModelRegistry.OPENAI_MODELS) {
+                    if (!models.contains(m)) models.add(m);
+                }
+            } else if ("GEMINI".equals(upper)) {
+                models.addAll(ModelRegistry.GEMINI_MODELS);
+            } else if ("BEDROCK".equals(upper)) {
+                models.addAll(ModelRegistry.BEDROCK_MODELS);
+            } else if ("AZURE".equals(upper)) {
+                models.addAll(ModelRegistry.AZURE_MODELS);
+            }
+
+            sendJsonResponse(exchange, 200, Map.of(
+                "provider", upper,
+                "server", serverName != null ? serverName : "",
+                "models", models
+            ));
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * POST /api/config/agent — Save agent model configuration (single agent or All Agents).
+     */
+    private void handleConfigAgentApi(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            JsonNode req = mapper.readTree(body);
+
+            String agent = req.has("agent") ? req.get("agent").asText().trim() : "";
+            String providerChoice = req.has("providerChoice") ? req.get("providerChoice").asText().trim() :
+                (req.has("provider") ? req.get("provider").asText().trim() : "");
+            String model = req.has("model") ? req.get("model").asText().trim() : "";
+            String scope = req.has("scope") ? req.get("scope").asText().trim().toLowerCase() : "project";
+            boolean globalScope = "global".equalsIgnoreCase(scope);
+
+            if (agent.isEmpty() || providerChoice.isEmpty() || model.isEmpty()) {
+                sendJsonError(exchange, 400, "agent, providerChoice, and model are required");
+                return;
+            }
+
+            String providerStr = providerChoice;
+            String serverName = req.has("serverName") ? req.get("serverName").asText().trim() : null;
+            if (providerChoice.contains("[")) {
+                int start = providerChoice.indexOf('[');
+                int end = providerChoice.indexOf(']');
+                if (end > start) {
+                    serverName = providerChoice.substring(start + 1, end).trim();
+                }
+                providerStr = providerChoice.substring(0, start).trim();
+            }
+
+            if (model.contains("@")) {
+                int atIdx = model.indexOf('@');
+                serverName = model.substring(atIdx + 1).trim();
+                model = model.substring(0, atIdx).trim();
+            }
+
+            Provider provider = Provider.valueOf(providerStr.toUpperCase());
+            com.mkpro.CentralMemory memory = centralMemory != null ? centralMemory :
+                (mkproContext != null ? mkproContext.getCentralMemory() : com.mkpro.CentralMemory.getInstance());
+
+            String serverUrl = null;
+            if (serverName != null && !serverName.isEmpty() && memory != null) {
+                if (provider == Provider.OLLAMA) {
+                    serverUrl = OllamaCommand.resolveServerUrl(serverName, memory);
+                    if (serverUrl == null) {
+                        sendJsonError(exchange, 400, "Unknown Ollama server: " + serverName);
+                        return;
+                    }
+                } else if (provider == Provider.OPENAI) {
+                    serverUrl = VllmCommand.resolveServerUrl(serverName, memory);
+                    if (serverUrl == null) {
+                        sendJsonError(exchange, 400, "Unknown OpenAI/vLLM server: " + serverName);
+                        return;
+                    }
+                }
+            }
+
+            AgentConfig config = new AgentConfig(provider, model, serverUrl);
+
+            if ("All Agents".equalsIgnoreCase(agent) || "all".equalsIgnoreCase(agent)) {
+                if (globalScope) {
+                    memory.saveGlobalAgentConfig("default", config);
+                } else {
+                    memory.saveAgentConfig("default", config);
+                }
+                List<String> activeAgents = new ArrayList<>();
+                activeAgents.add("Coordinator");
+                if (mkproContext != null && mkproContext.getAgentManager() != null &&
+                    mkproContext.getAgentManager().getAgentDefinitions() != null) {
+                    activeAgents.addAll(mkproContext.getAgentManager().getAgentDefinitions().keySet());
+                } else if (mkproContext != null && mkproContext.getAgentConfigs() != null) {
+                    activeAgents.addAll(mkproContext.getAgentConfigs().keySet());
+                }
+                for (String ag : activeAgents) {
+                    if (!"default".equalsIgnoreCase(ag) && !"All Agents".equalsIgnoreCase(ag)) {
+                        if (globalScope) {
+                            memory.saveGlobalAgentConfig(ag, config);
+                        } else {
+                            memory.saveAgentConfig(ag, config);
+                        }
+                    }
+                }
+            } else {
+                if (globalScope) {
+                    memory.saveGlobalAgentConfig(agent, config);
+                } else {
+                    memory.saveAgentConfig(agent, config);
+                }
+            }
+
+            if (mkproContext != null) {
+                mkproContext.getAgentConfigs().clear();
+                mkproContext.getAgentConfigs().putAll(memory.getAllAgentConfigs());
+                mkproContext.rebuildRunner();
+            }
+
+            sendJsonResponse(exchange, 200, Map.of(
+                "status", "updated",
+                "agent", agent,
+                "provider", provider.name(),
+                "model", model,
+                "scope", globalScope ? "global" : "project"
+            ));
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * POST /api/config/reset — Reset agent configuration override(s).
+     */
+    private void handleConfigResetApi(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            JsonNode req = mapper.readTree(body);
+            String target = req.has("agent") ? req.get("agent").asText().trim() :
+                (req.has("target") ? req.get("target").asText().trim() : "all");
+            String scope = req.has("scope") ? req.get("scope").asText().trim().toLowerCase() : "project";
+            boolean globalScope = "global".equalsIgnoreCase(scope);
+
+            com.mkpro.CentralMemory memory = centralMemory != null ? centralMemory :
+                (mkproContext != null ? mkproContext.getCentralMemory() : com.mkpro.CentralMemory.getInstance());
+
+            if (globalScope) {
+                if ("all".equalsIgnoreCase(target)) {
+                    for (String k : new ArrayList<>(memory.getGlobalAgentConfigs().keySet())) {
+                        memory.deleteGlobalAgentConfig(k);
+                    }
+                } else {
+                    memory.deleteGlobalAgentConfig(target);
+                }
+            } else {
+                if ("all".equalsIgnoreCase(target)) {
+                    memory.clearProjectAgentConfigs();
+                } else {
+                    memory.deleteAgentConfig(target);
+                }
+            }
+
+            if (mkproContext != null) {
+                mkproContext.getAgentConfigs().clear();
+                mkproContext.getAgentConfigs().putAll(memory.getAllAgentConfigs());
+                mkproContext.rebuildRunner();
+            }
+
+            sendJsonResponse(exchange, 200, Map.of(
+                "status", "reset",
+                "target", target,
+                "scope", globalScope ? "global" : "project"
+            ));
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * POST /api/config/servers — Add, remove, or update inference server (OpenAI/vLLM or Ollama).
+     */
+    private void handleConfigServersApi(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            JsonNode req = mapper.readTree(body);
+            String action = req.has("action") ? req.get("action").asText().trim().toLowerCase() : "add";
+            String type = req.has("type") ? req.get("type").asText().trim().toLowerCase() : "openai";
+            String name = req.has("name") ? req.get("name").asText().trim() : "";
+
+            com.mkpro.CentralMemory memory = centralMemory != null ? centralMemory :
+                (mkproContext != null ? mkproContext.getCentralMemory() : com.mkpro.CentralMemory.getInstance());
+
+            if (name.isEmpty()) {
+                sendJsonError(exchange, 400, "Server name is required");
+                return;
+            }
+
+            if ("remove".equals(action) || "delete".equals(action)) {
+                if ("ollama".equals(type)) {
+                    List<String> servers = new ArrayList<>(memory.getOllamaServers());
+                    servers.removeIf(e -> {
+                        int sep = e.indexOf('|');
+                        return sep >= 0 && e.substring(0, sep).equalsIgnoreCase(name);
+                    });
+                    memory.saveOllamaServers(servers);
+                } else {
+                    List<String> servers = new ArrayList<>(memory.getOpenAiServers());
+                    servers.removeIf(e -> e.split("\\|", -1)[0].equalsIgnoreCase(name));
+                    memory.saveOpenAiServers(servers);
+                }
+                if (mkproContext != null) mkproContext.rebuildRunner();
+                sendJsonResponse(exchange, 200, Map.of("status", "removed", "type", type, "name", name));
+                return;
+            }
+
+            if ("context".equals(action)) {
+                int maxContext = req.has("maxContext") ? req.get("maxContext").asInt(32768) : 32768;
+                List<String> servers = new ArrayList<>(memory.getOpenAiServers());
+                for (int i = 0; i < servers.size(); i++) {
+                    String[] p = servers.get(i).split("\\|", -1);
+                    if (p[0].equalsIgnoreCase(name)) {
+                        String url = p.length > 1 ? p[1] : "";
+                        String key = p.length > 2 ? p[2] : "";
+                        servers.set(i, p[0] + "|" + url + "|" + key + "|" + maxContext);
+                        break;
+                    }
+                }
+                memory.saveOpenAiServers(servers);
+                if (mkproContext != null) mkproContext.rebuildRunner();
+                sendJsonResponse(exchange, 200, Map.of("status", "context_updated", "name", name, "maxContext", maxContext));
+                return;
+            }
+
+            // Default action: add
+            String url = req.has("url") ? req.get("url").asText().trim() : "";
+            if (url.isEmpty()) {
+                sendJsonError(exchange, 400, "Server url is required");
+                return;
+            }
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                url = "http://" + url;
+            }
+            if (url.endsWith("/")) {
+                url = url.substring(0, url.length() - 1);
+            }
+
+            if ("ollama".equals(type)) {
+                List<String> servers = new ArrayList<>(memory.getOllamaServers());
+                servers.removeIf(e -> {
+                    int sep = e.indexOf('|');
+                    return sep >= 0 && e.substring(0, sep).equalsIgnoreCase(name);
+                });
+                servers.add(name + "|" + url);
+                memory.saveOllamaServers(servers);
+                sendJsonResponse(exchange, 200, Map.of("status", "added", "type", "ollama", "name", name, "url", url));
+            } else {
+                if (!url.contains("/v1") && !url.endsWith("/v1")) {
+                    url += "/v1";
+                }
+                String apiKey = req.has("apiKey") ? req.get("apiKey").asText().trim() : "";
+                Integer maxContext = (req.has("maxContext") && !req.get("maxContext").isNull() && !req.get("maxContext").asText().isBlank())
+                    ? req.get("maxContext").asInt() : null;
+
+                List<String> servers = new ArrayList<>(memory.getOpenAiServers());
+                servers.removeIf(e -> e.split("\\|", -1)[0].equalsIgnoreCase(name));
+                String entry = maxContext != null
+                    ? (name + "|" + url + "|" + apiKey + "|" + maxContext)
+                    : (!apiKey.isEmpty() ? (name + "|" + url + "|" + apiKey) : (name + "|" + url));
+                servers.add(entry);
+                memory.saveOpenAiServers(servers);
+                if (mkproContext != null) mkproContext.rebuildRunner();
+                sendJsonResponse(exchange, 200, Map.of("status", "added", "type", "openai", "name", name, "url", url));
+            }
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
     }
 }

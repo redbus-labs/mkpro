@@ -2,11 +2,20 @@ package com.mkpro.tools;
 
 import static com.mkpro.ui.AnsiColors.*;
 
+import com.google.adk.models.LlmRequest;
+import com.google.adk.models.OpenAiBaseLM;
+import com.google.adk.models.OllamaBaseLM;
+import com.google.adk.models.LlmResponse;
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.ToolContext;
 import com.google.genai.types.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.mkpro.CentralMemory;
+import com.mkpro.commands.impl.VllmCommand;
+import com.mkpro.config.ConfigService;
+import com.mkpro.models.AgentConfig;
+import com.mkpro.models.Provider;
 import io.reactivex.rxjava3.core.Single;
 
 import java.nio.file.Files;
@@ -19,14 +28,14 @@ import java.util.Optional;
 
 /**
  * AudioTranscriptionTool sends audio files to the LLM for transcription.
- * Uses Gemini's native audio understanding to:
+ * Uses the LLM's audio understanding to:
  * - Transcribe speech to text
  * - Summarize audio content
  * - Extract key points from recordings
  * - Identify speakers (when possible)
  *
- * Supports: MP3, WAV, OGG, FLAC, M4A, WEBM
- * Requires a multimodal model (Gemini 1.5+).
+ * Supports: MP3, WAV, OGG, FLAC, M4A, WEBM, AAC
+ * Requires a multimodal model (Gemini 1.5+, OpenAI / vLLM audio models, Ollama).
  */
 public class AudioTranscriptionTool {
 
@@ -148,69 +157,119 @@ public class AudioTranscriptionTool {
                             .parts(List.of(textPart, audioPart))
                             .build();
 
-                        // Get API key for Gemini
-                        String apiKey = System.getProperty("GOOGLE_API_KEY",
-                            System.getenv("GOOGLE_API_KEY"));
+                        CentralMemory cm = CentralMemory.getInstance();
+                        AgentConfig agentConfig = Optional.ofNullable(cm.getAgentConfig("Coordinator")).orElse(cm.getAgentConfig("default"));
 
-                        if (apiKey == null || apiKey.isEmpty()) {
+                        if (agentConfig != null && agentConfig.getProvider() == Provider.OPENAI) {
+                            String openAiUrl = agentConfig.hasServerUrl() ? agentConfig.getServerUrl() : VllmCommand.resolveServerUrl("default", cm);
+                            if (openAiUrl == null) openAiUrl = new ConfigService().getSetting("openai.base.url", "http://localhost:8000/v1");
+                            String openAiKey = VllmCommand.resolveServerApiKey(openAiUrl, cm);
+                            if (openAiKey == null) openAiKey = new ConfigService().getSetting("openai.api.key", System.getenv("OPENAI_API_KEY"));
+                            int maxContext = VllmCommand.resolveServerMaxContext(openAiUrl, cm);
+
+                            OpenAiBaseLM llm = new OpenAiBaseLM(agentConfig.getModelName(), openAiUrl, openAiKey != null ? openAiKey : "").withMaxContextTokens(maxContext).withTruncation(maxContext, "left");
+                            LlmRequest llmReq = LlmRequest.builder()
+                                .model(agentConfig.getModelName())
+                                .contents(List.of(content))
+                                .config(GenerateContentConfig.builder().build())
+                                .build();
+
+                            StringBuilder sb = new StringBuilder();
+                            for (LlmResponse resp : llm.generateContent(llmReq, false).blockingIterable()) {
+                                resp.content().flatMap(Content::parts).ifPresent(parts -> {
+                                    for (Part p : parts) {
+                                        p.text().ifPresent(sb::append);
+                                    }
+                                });
+                            }
+                            return Map.of("transcription", sb.toString().trim(), "file", fileName, "size_kb", audioBytes.length / 1024, "task", task, "mime_type", mimeType, "provider", "OPENAI", "model", agentConfig.getModelName());
+                        } else if (agentConfig != null && agentConfig.getProvider() == Provider.OLLAMA) {
+                            String ollamaUrl = agentConfig.hasServerUrl() ? agentConfig.getServerUrl() : new ConfigService().getSetting(ConfigService.PROP_OLLAMA_URL, "http://localhost:11434");
+                            OllamaBaseLM llm = new OllamaBaseLM(agentConfig.getModelName(), ollamaUrl);
+                            LlmRequest llmReq = LlmRequest.builder()
+                                .model(agentConfig.getModelName())
+                                .contents(List.of(content))
+                                .config(GenerateContentConfig.builder().build())
+                                .build();
+
+                            StringBuilder sb = new StringBuilder();
+                            for (LlmResponse resp : llm.generateContent(llmReq, false).blockingIterable()) {
+                                resp.content().flatMap(Content::parts).ifPresent(parts -> {
+                                    for (Part p : parts) {
+                                        p.text().ifPresent(sb::append);
+                                    }
+                                });
+                            }
+                            return Map.of("transcription", sb.toString().trim(), "file", fileName, "size_kb", audioBytes.length / 1024, "task", task, "mime_type", mimeType, "provider", "OLLAMA", "model", agentConfig.getModelName());
+                        } else {
+                            // Get API key for Gemini
+                            String apiKey = System.getProperty("GOOGLE_API_KEY", System.getenv("GOOGLE_API_KEY"));
+                            if (apiKey == null || apiKey.isEmpty()) {
+                                apiKey = System.getProperty("GEMINI_API_KEY", System.getenv("GEMINI_API_KEY"));
+                            }
+                            if (apiKey == null || apiKey.isEmpty()) {
+                                apiKey = new ConfigService().getSetting(ConfigService.PROP_GEMINI_KEY, null);
+                            }
+
+                            if (apiKey == null || apiKey.isEmpty()) {
+                                return Map.of(
+                                    "status", "no_api_key",
+                                    "message", "Audio transcription requires GOOGLE_API_KEY. Audio loaded successfully.",
+                                    "file", fileName,
+                                    "size_kb", audioBytes.length / 1024,
+                                    "mime_type", mimeType,
+                                    "task", task
+                                );
+                            }
+
+                            // Call Gemini REST API for audio
+                            String base64Audio = java.util.Base64.getEncoder().encodeToString(audioBytes);
+                            String requestBody = String.format(
+                                "{\"contents\":[{\"parts\":[{\"text\":\"%s\"},{\"inline_data\":{\"mime_type\":\"%s\",\"data\":\"%s\"}}]}]}",
+                                prompt.replace("\"", "\\\"").replace("\n", "\\n"),
+                                mimeType,
+                                base64Audio
+                            );
+
+                            java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
+                                .connectTimeout(java.time.Duration.ofSeconds(30)).build();
+
+                            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                                .uri(java.net.URI.create("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey))
+                                .header("Content-Type", "application/json")
+                                .timeout(java.time.Duration.ofSeconds(120))
+                                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
+                                .build();
+
+                            java.net.http.HttpResponse<String> httpResponse = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+                            String result = "";
+                            if (httpResponse.statusCode() == 200) {
+                                String body = httpResponse.body();
+                                int textStart = body.indexOf("\"text\":");
+                                if (textStart >= 0) {
+                                    int valueStart = body.indexOf("\"", textStart + 7) + 1;
+                                    int valueEnd = body.indexOf("\"", valueStart);
+                                    if (valueEnd > valueStart) {
+                                        result = body.substring(valueStart, valueEnd)
+                                            .replace("\\n", "\n").replace("\\\"", "\"");
+                                    }
+                                }
+                                if (result.isEmpty()) {
+                                    result = body;
+                                }
+                            } else {
+                                return Map.of("error", "Gemini API error (" + httpResponse.statusCode() + "): " + httpResponse.body());
+                            }
+
                             return Map.of(
-                                "status", "no_api_key",
-                                "message", "Audio transcription requires GOOGLE_API_KEY. Audio loaded successfully.",
+                                "transcription", result,
                                 "file", fileName,
                                 "size_kb", audioBytes.length / 1024,
-                                "mime_type", mimeType,
-                                "task", task
+                                "task", task,
+                                "mime_type", mimeType
                             );
                         }
-
-                        // Call Gemini REST API for audio
-                        String base64Audio = java.util.Base64.getEncoder().encodeToString(audioBytes);
-                        String requestBody = String.format(
-                            "{\"contents\":[{\"parts\":[{\"text\":\"%s\"},{\"inline_data\":{\"mime_type\":\"%s\",\"data\":\"%s\"}}]}]}",
-                            prompt.replace("\"", "\\\"").replace("\n", "\\n"),
-                            mimeType,
-                            base64Audio
-                        );
-
-                        java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
-                            .connectTimeout(java.time.Duration.ofSeconds(30)).build();
-
-                        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                            .uri(java.net.URI.create("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey))
-                            .header("Content-Type", "application/json")
-                            .timeout(java.time.Duration.ofSeconds(120))
-                            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
-                            .build();
-
-                        java.net.http.HttpResponse<String> httpResponse = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
-
-                        String result = "";
-                        if (httpResponse.statusCode() == 200) {
-                            String body = httpResponse.body();
-                            int textStart = body.indexOf("\"text\":");
-                            if (textStart >= 0) {
-                                int valueStart = body.indexOf("\"", textStart + 7) + 1;
-                                int valueEnd = body.indexOf("\"", valueStart);
-                                if (valueEnd > valueStart) {
-                                    result = body.substring(valueStart, valueEnd)
-                                        .replace("\\n", "\n").replace("\\\"", "\"");
-                                }
-                            }
-                            if (result.isEmpty()) {
-                                result = body;
-                            }
-                        } else {
-                            return Map.of("error", "Gemini API error (" + httpResponse.statusCode() + "): " + httpResponse.body());
-                        }
-
-                        return Map.of(
-                            "transcription", result,
-                            "file", fileName,
-                            "size_kb", audioBytes.length / 1024,
-                            "task", task,
-                            "mime_type", mimeType
-                        );
-
                     } catch (Exception e) {
                         return Collections.singletonMap("error", (Object) ("Audio transcription failed: " + e.getMessage()));
                     }

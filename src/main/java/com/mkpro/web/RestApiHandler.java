@@ -452,6 +452,7 @@ class RestApiHandler {
             status.put("instance_name", mkproContext.getInstanceName());
 
             status.put("git_branch", getGitBranch());
+            status.put("project_path", com.mkpro.CentralMemory.getCurrentProjectPath());
 
             if (mkproContext.getAgentManager() != null) {
                 status.put("agent_count", mkproContext.getAgentManager().getAgentDefinitions().size());

@@ -1012,6 +1012,97 @@
             border-color: var(--text-dim);
         }
 
+
+        /* Model & Server Configuration Modal Styles */
+        #modelConfigModalOverlay .ssh-modal-card {
+            max-width: 780px;
+            width: 92vw;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .mc-tabs {
+            display: flex;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--surface);
+            border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+        }
+        .mc-tab-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted, var(--text-dim));
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        .mc-tab-btn:hover {
+            color: var(--ink, var(--text));
+            background: rgba(128, 128, 128, 0.08);
+        }
+        .mc-tab-btn.active {
+            color: var(--accent);
+            background: rgba(44, 82, 130, 0.12);
+            border-color: var(--accent);
+        }
+        .mc-agent-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            background: var(--bg);
+            border: 1px solid rgba(128, 128, 128, 0.15);
+            border-radius: 8px;
+            flex-wrap: wrap;
+        }
+        .mc-scope-badge {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .mc-scope-badge.project {
+            background: rgba(40, 125, 67, 0.15);
+            color: var(--success, var(--green));
+            border: 1px solid var(--success, var(--green));
+        }
+        .mc-scope-badge.global {
+            background: rgba(128, 128, 128, 0.15);
+            color: var(--muted, var(--text-dim));
+            border: 1px solid rgba(128, 128, 128, 0.3);
+        }
+        .mc-select, .mc-input {
+            background: var(--surface, var(--bg));
+            border: 1px solid rgba(128, 128, 128, 0.25);
+            border-radius: 6px;
+            padding: 6px 10px;
+            color: var(--ink, var(--text));
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            outline: none;
+        }
+        .mc-select:focus, .mc-input:focus {
+            border-color: var(--accent);
+        }
+        .mc-server-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px;
+            background: var(--bg);
+            border: 1px solid rgba(128, 128, 128, 0.15);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
     </style>
 </head>
 <body>
@@ -1079,6 +1170,7 @@
                     <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Attach file">📎</button>
                     <input type="file" id="fileInput" multiple accept=".txt,.java,.py,.js,.ts,.json,.yaml,.yml,.md,.csv,.log,.xml,.html,.css,.sh,.bat,.sql,.groovy,.kt,.swift,.rs,.go,.c,.cpp,.h,.png,.jpg,.jpeg,.gif,.webp,.wav,.mp3,.ogg,.flac,.m4a,.aac,.webm,.mp4" onchange="handleFiles(event)" />
                     <input type="text" id="input" placeholder="Type a message..." autocomplete="off" />
+                    <button class="attach-btn" onclick="openModelConfigModal()" title="Configure Agent Models &amp; Servers">🧠</button>
                     <button class="send-btn" id="send" onclick="sendMessage()">Send</button>
                 </div>
             </div>
@@ -2956,6 +3048,448 @@
         setInterval(checkSshStatus, 15000);
         checkSshStatus();
 
+
+        // ========== Model & Provider Configuration Modal Controllers ==========
+        let mcStateCache = null;
+        let mcProviderModelsCache = {};
+
+        function showMcBanner(msg, type = 'info') {
+            const b = document.getElementById('mcStatusBanner');
+            if (!b) return;
+            if (!msg) {
+                b.className = 'ssh-status-banner';
+                b.style.display = 'none';
+                b.textContent = '';
+                return;
+            }
+            b.className = 'ssh-status-banner ' + type;
+            b.style.display = 'block';
+            b.textContent = msg;
+        }
+
+        function openModelConfigModal() {
+            const overlay = document.getElementById('modelConfigModalOverlay');
+            if (!overlay) return;
+            showMcBanner('');
+            overlay.classList.add('active');
+            loadModelConfigState();
+        }
+
+        function closeModelConfigModal() {
+            const overlay = document.getElementById('modelConfigModalOverlay');
+            if (overlay) overlay.classList.remove('active');
+        }
+
+        function switchModelConfigTab(tab) {
+            const tabAgents = document.getElementById('mcTabAgents');
+            const tabServers = document.getElementById('mcTabServers');
+            const btnAgents = document.getElementById('mcTabBtnAgents');
+            const btnServers = document.getElementById('mcTabBtnServers');
+            if (tab === 'servers') {
+                if (tabAgents) tabAgents.style.display = 'none';
+                if (tabServers) tabServers.style.display = 'flex';
+                if (btnAgents) btnAgents.classList.remove('active');
+                if (btnServers) btnServers.classList.add('active');
+            } else {
+                if (tabAgents) tabAgents.style.display = 'flex';
+                if (tabServers) tabServers.style.display = 'none';
+                if (btnAgents) btnAgents.classList.add('active');
+                if (btnServers) btnServers.classList.remove('active');
+            }
+        }
+
+        function getSelectedMcScope() {
+            const r = document.querySelector('input[name="mcScopeRadio"]:checked');
+            return r ? r.value : 'project';
+        }
+
+        async function fetchModelsForProviderChoice(providerChoice) {
+            if (!providerChoice) return [];
+            if (mcProviderModelsCache[providerChoice]) {
+                return mcProviderModelsCache[providerChoice];
+            }
+            let provider = providerChoice.split(' ')[0];
+            let server = '';
+            if (providerChoice.includes('[')) {
+                server = providerChoice.substring(providerChoice.indexOf('[') + 1, providerChoice.indexOf(']'));
+            }
+            try {
+                const qs = `provider=${encodeURIComponent(provider)}&server=${encodeURIComponent(server)}`;
+                const resp = await fetch(`/api/config/server-models?${qs}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (Array.isArray(data.models) && data.models.length > 0) {
+                        mcProviderModelsCache[providerChoice] = data.models;
+                        return data.models;
+                    }
+                }
+            } catch (err) {
+                console.warn('Failed to fetch models for', providerChoice, err);
+            }
+            if (mcStateCache && mcStateCache.staticModels && mcStateCache.staticModels[provider]) {
+                return mcStateCache.staticModels[provider];
+            }
+            return [];
+        }
+
+        function populateMcModelSelect(selectEl, customInputEl, models, currentModel) {
+            if (!selectEl) return;
+            selectEl.innerHTML = '';
+            const list = Array.isArray(models) ? [...models] : [];
+            if (currentModel && !list.includes(currentModel)) {
+                list.unshift(currentModel);
+            }
+            list.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m;
+                if (m === currentModel) opt.selected = true;
+                selectEl.appendChild(opt);
+            });
+            const customOpt = document.createElement('option');
+            customOpt.value = '__custom__';
+            customOpt.textContent = '[Custom model...]';
+            selectEl.appendChild(customOpt);
+
+            if (!currentModel && list.length === 0) {
+                customOpt.selected = true;
+                if (customInputEl) customInputEl.style.display = 'block';
+            } else {
+                if (customInputEl) customInputEl.style.display = 'none';
+            }
+        }
+
+        async function onMcBulkProviderChange() {
+            const provSel = document.getElementById('mcBulkProvider');
+            const modSel = document.getElementById('mcBulkModelSelect');
+            const customIn = document.getElementById('mcBulkCustomModel');
+            if (!provSel || !modSel) return;
+            const choice = provSel.value;
+            const models = await fetchModelsForProviderChoice(choice);
+            populateMcModelSelect(modSel, customIn, models, models[0] || '');
+        }
+
+        function onMcBulkModelSelectChange() {
+            const modSel = document.getElementById('mcBulkModelSelect');
+            const customIn = document.getElementById('mcBulkCustomModel');
+            if (!modSel || !customIn) return;
+            if (modSel.value === '__custom__') {
+                customIn.style.display = 'block';
+                customIn.focus();
+            } else {
+                customIn.style.display = 'none';
+            }
+        }
+
+        async function onMcAgentProviderChange(agentName) {
+            const provSel = document.getElementById(`mcProv_${agentName}`);
+            const modSel = document.getElementById(`mcMod_${agentName}`);
+            const customIn = document.getElementById(`mcCust_${agentName}`);
+            if (!provSel || !modSel) return;
+            const models = await fetchModelsForProviderChoice(provSel.value);
+            populateMcModelSelect(modSel, customIn, models, models[0] || '');
+        }
+
+        function onMcAgentModelSelectChange(agentName) {
+            const modSel = document.getElementById(`mcMod_${agentName}`);
+            const customIn = document.getElementById(`mcCust_${agentName}`);
+            if (!modSel || !customIn) return;
+            if (modSel.value === '__custom__') {
+                customIn.style.display = 'block';
+                customIn.focus();
+            } else {
+                customIn.style.display = 'none';
+            }
+        }
+
+        async function loadModelConfigState() {
+            try {
+                mcProviderModelsCache = {};
+                const resp = await fetch('/api/config/state');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const state = await resp.json();
+                mcStateCache = state;
+
+                const providerOptions = state.providerOptions || ['GEMINI', 'OPENAI', 'OLLAMA', 'BEDROCK', 'AZURE'];
+
+                // Populate bulk provider dropdown
+                const bulkProv = document.getElementById('mcBulkProvider');
+                if (bulkProv) {
+                    const prevVal = bulkProv.value;
+                    bulkProv.innerHTML = '';
+                    providerOptions.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p;
+                        opt.textContent = p;
+                        bulkProv.appendChild(opt);
+                    });
+                    if (prevVal && providerOptions.includes(prevVal)) bulkProv.value = prevVal;
+                    await onMcBulkProviderChange();
+                }
+
+                // Render per-agent rows
+                const agentsList = document.getElementById('mcAgentsList');
+                if (agentsList) {
+                    agentsList.innerHTML = '';
+                    const agents = state.agents || [];
+                    for (const ag of agents) {
+                        const row = document.createElement('div');
+                        row.className = 'mc-agent-row';
+                        const scopeClass = ag.scope === 'project' ? 'project' : 'global';
+                        const scopeLabel = ag.scope === 'project' ? 'project' : 'global';
+
+                        const provOptsHtml = providerOptions.map(p =>
+                            `<option value="${p}" ${p === ag.providerChoice ? 'selected' : ''}>${p}</option>`
+                        ).join('');
+
+                        row.innerHTML = `
+                            <div style="min-width:130px; display:flex; align-items:center; gap:6px;">
+                                <span style="font-weight:600; font-size:12px;">${ag.name}</span>
+                                <span class="mc-scope-badge ${scopeClass}">[${scopeLabel}]</span>
+                            </div>
+                            <select id="mcProv_${ag.name}" class="mc-select" style="min-width:140px;" onchange="onMcAgentProviderChange('${ag.name}')">
+                                ${provOptsHtml}
+                            </select>
+                            <select id="mcMod_${ag.name}" class="mc-select" style="flex:1; min-width:170px;" onchange="onMcAgentModelSelectChange('${ag.name}')"></select>
+                            <input type="text" id="mcCust_${ag.name}" class="mc-input" placeholder="Custom model..." style="display:none; flex:1; min-width:150px;" />
+                            <button class="ssh-btn ssh-btn-connect" style="padding:5px 10px; font-size:11px;" onclick="saveSingleAgentConfig('${ag.name}')">Save</button>
+                            <button class="ssh-btn ssh-btn-cancel" style="padding:5px 8px; font-size:11px;" onclick="resetSingleAgentConfig('${ag.name}')" title="Reset ${ag.name} override">↺</button>
+                        `;
+                        agentsList.appendChild(row);
+
+                        const models = await fetchModelsForProviderChoice(ag.providerChoice);
+                        const modSel = document.getElementById(`mcMod_${ag.name}`);
+                        const custIn = document.getElementById(`mcCust_${ag.name}`);
+                        populateMcModelSelect(modSel, custIn, models, ag.model);
+                    }
+                }
+
+                // Render servers lists
+                renderMcServersList(state.servers || {});
+            } catch (err) {
+                showMcBanner('Failed to load configuration state: ' + err.message, 'error');
+            }
+        }
+
+        function renderMcServersList(servers) {
+            const openAiEl = document.getElementById('mcOpenAiServersList');
+            const ollamaEl = document.getElementById('mcOllamaServersList');
+
+            if (openAiEl) {
+                const list = (servers && servers.openai) || [];
+                if (list.length === 0) {
+                    openAiEl.innerHTML = `<div style="font-size:12px; opacity:0.6; padding:6px 0;">No OpenAI / vLLM servers registered.</div>`;
+                } else {
+                    openAiEl.innerHTML = list.map(s => `
+                        <div class="mc-server-card">
+                            <div style="display:flex; flex-direction:column; gap:2px;">
+                                <span style="font-weight:700; font-size:12px;">${s.name}</span>
+                                <span style="font-size:11px; opacity:0.75; font-family:'JetBrains Mono',monospace;">${s.url}</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                <input type="number" id="mcCtx_${s.name}" class="mc-input" style="width:110px; padding:4px 8px; font-size:11px;" placeholder="maxContext" value="${s.maxContext || ''}" title="Max Context Tokens" />
+                                <button class="ssh-btn ssh-btn-cancel" style="padding:4px 8px; font-size:11px;" onclick="updateServerMaxContext('${s.name}')">Update Context</button>
+                                <button class="ssh-btn ssh-btn-disconnect" style="padding:4px 8px; font-size:11px;" onclick="removeInferenceServer('openai', '${s.name}')">Remove</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            }
+
+            if (ollamaEl) {
+                const list = (servers && servers.ollama) || [];
+                if (list.length === 0) {
+                    ollamaEl.innerHTML = `<div style="font-size:12px; opacity:0.6; padding:6px 0;">No Ollama servers registered.</div>`;
+                } else {
+                    ollamaEl.innerHTML = list.map(s => `
+                        <div class="mc-server-card">
+                            <div style="display:flex; flex-direction:column; gap:2px;">
+                                <span style="font-weight:700; font-size:12px;">${s.name}</span>
+                                <span style="font-size:11px; opacity:0.75; font-family:'JetBrains Mono',monospace;">${s.url}</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <button class="ssh-btn ssh-btn-disconnect" style="padding:4px 8px; font-size:11px;" onclick="removeInferenceServer('ollama', '${s.name}')">Remove</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            }
+        }
+
+        async function applyBulkAgentConfig() {
+            const provSel = document.getElementById('mcBulkProvider');
+            const modSel = document.getElementById('mcBulkModelSelect');
+            const customIn = document.getElementById('mcBulkCustomModel');
+            if (!provSel || !modSel) return;
+
+            const providerChoice = provSel.value;
+            const model = modSel.value === '__custom__' ? (customIn ? customIn.value.trim() : '') : modSel.value;
+            if (!model) {
+                showMcBanner('Please select or enter a model name.', 'error');
+                return;
+            }
+            const scope = getSelectedMcScope();
+            try {
+                const resp = await fetch('/api/config/agent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agent: 'All Agents', providerChoice, model, scope })
+                });
+                const data = await resp.json();
+                if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+                showMcBanner(`Applied ${providerChoice} → ${model} to all agents.`, 'success');
+                await loadModelConfigState();
+            } catch (err) {
+                showMcBanner('Failed to apply bulk config: ' + err.message, 'error');
+            }
+        }
+
+        async function saveSingleAgentConfig(agentName) {
+            const provSel = document.getElementById(`mcProv_${agentName}`);
+            const modSel = document.getElementById(`mcMod_${agentName}`);
+            const customIn = document.getElementById(`mcCust_${agentName}`);
+            if (!provSel || !modSel) return;
+
+            const providerChoice = provSel.value;
+            const model = modSel.value === '__custom__' ? (customIn ? customIn.value.trim() : '') : modSel.value;
+            if (!model) {
+                showMcBanner(`Please select or enter a model for ${agentName}.`, 'error');
+                return;
+            }
+            const scope = getSelectedMcScope();
+            try {
+                const resp = await fetch('/api/config/agent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agent: agentName, providerChoice, model, scope })
+                });
+                const data = await resp.json();
+                if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+                showMcBanner(`Saved ${agentName}: ${providerChoice} → ${model} (${scope})`, 'success');
+                await loadModelConfigState();
+            } catch (err) {
+                showMcBanner(`Failed to save ${agentName}: ` + err.message, 'error');
+            }
+        }
+
+        async function resetSingleAgentConfig(agentName) {
+            const scope = getSelectedMcScope();
+            try {
+                const resp = await fetch('/api/config/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agent: agentName, scope })
+                });
+                const data = await resp.json();
+                if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+                showMcBanner(`Reset configuration for ${agentName}.`, 'info');
+                await loadModelConfigState();
+            } catch (err) {
+                showMcBanner(`Failed to reset ${agentName}: ` + err.message, 'error');
+            }
+        }
+
+        async function resetAllAgentConfigs() {
+            const scope = getSelectedMcScope();
+            try {
+                const resp = await fetch('/api/config/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agent: 'all', scope })
+                });
+                const data = await resp.json();
+                if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+                showMcBanner('Reset all project agent overrides.', 'info');
+                await loadModelConfigState();
+            } catch (err) {
+                showMcBanner('Failed to reset configurations: ' + err.message, 'error');
+            }
+        }
+
+        async function addInferenceServer() {
+            const typeEl = document.getElementById('mcNewServerType');
+            const nameEl = document.getElementById('mcNewServerName');
+            const urlEl = document.getElementById('mcNewServerUrl');
+            const keyEl = document.getElementById('mcNewServerApiKey');
+            const ctxEl = document.getElementById('mcNewServerMaxContext');
+
+            const type = typeEl ? typeEl.value : 'openai';
+            const name = nameEl ? nameEl.value.trim() : '';
+            const url = urlEl ? urlEl.value.trim() : '';
+            const apiKey = keyEl ? keyEl.value.trim() : '';
+            const maxContext = ctxEl && ctxEl.value ? parseInt(ctxEl.value, 10) : null;
+
+            if (!name || !url) {
+                showMcBanner('Server Name and Endpoint URL are required.', 'error');
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/config/servers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'add', type, name, url, apiKey, maxContext })
+                });
+                const data = await resp.json();
+                if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+                if (nameEl) nameEl.value = '';
+                if (urlEl) urlEl.value = '';
+                if (keyEl) keyEl.value = '';
+                if (ctxEl) ctxEl.value = '';
+                showMcBanner(`Added ${type} server '${name}'.`, 'success');
+                await loadModelConfigState();
+            } catch (err) {
+                showMcBanner('Failed to add server: ' + err.message, 'error');
+            }
+        }
+
+        async function removeInferenceServer(type, name) {
+            try {
+                const resp = await fetch('/api/config/servers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'remove', type, name })
+                });
+                const data = await resp.json();
+                if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+                showMcBanner(`Removed ${type} server '${name}'.`, 'info');
+                await loadModelConfigState();
+            } catch (err) {
+                showMcBanner('Failed to remove server: ' + err.message, 'error');
+            }
+        }
+
+        async function updateServerMaxContext(name) {
+            const ctxInput = document.getElementById(`mcCtx_${name}`);
+            const val = ctxInput ? parseInt(ctxInput.value, 10) : NaN;
+            if (!val || val <= 0) {
+                showMcBanner('Please enter a valid positive number for maxContext.', 'error');
+                return;
+            }
+            try {
+                let serverUrl = '';
+                if (mcStateCache && mcStateCache.servers && mcStateCache.servers.openai) {
+                    const found = mcStateCache.servers.openai.find(s => s.name === name);
+                    if (found) serverUrl = found.url;
+                }
+                const resp = await fetch('/api/config/servers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'context', type: 'openai', name, url: serverUrl, maxContext: val })
+                });
+                await fetch('/api/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: `/vllm context ${name} ${val}` })
+                }).catch(() => {});
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                showMcBanner(`Updated maxContext for '${name}' to ${val} tokens.`, 'success');
+                await loadModelConfigState();
+            } catch (err) {
+                showMcBanner('Failed to update context: ' + err.message, 'error');
+            }
+        }
+
     </script>
 
     <!-- Read-Only Diff Inspection Modal -->
@@ -3063,6 +3597,125 @@
                 <div class="ssh-footer-actions" style="margin-left:auto;">
                     <button class="ssh-btn ssh-btn-cancel" onclick="closeSshModal()">Cancel</button>
                     <button class="ssh-btn ssh-btn-connect" id="sshConnectBtn" onclick="connectSsh()">Connect</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Model & Provider Configuration Modal -->
+    <div class="ssh-modal-overlay" id="modelConfigModalOverlay" onclick="if(event.target===this) closeModelConfigModal()">
+        <div class="ssh-modal-card">
+            <div class="ssh-modal-header">
+                <div>
+                    <h3 style="margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; gap:6px;">
+                        <span>🧠 Model &amp; Provider Configuration</span>
+                    </h3>
+                    <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.75; font-family:'JetBrains Mono',monospace;">
+                        Configure LLM providers, per-agent models, and vLLM / Ollama inference servers.
+                    </p>
+                </div>
+                <button class="ssh-modal-close-btn" onclick="closeModelConfigModal()" title="Close (Esc)">✕</button>
+            </div>
+
+            <div class="mc-tabs">
+                <button class="mc-tab-btn active" id="mcTabBtnAgents" onclick="switchModelConfigTab('agents')">🤖 Agent Models</button>
+                <button class="mc-tab-btn" id="mcTabBtnServers" onclick="switchModelConfigTab('servers')">🖥️ vLLM &amp; Ollama Servers</button>
+            </div>
+
+            <div class="ssh-modal-body" style="flex:1; overflow-y:auto;">
+                <div class="ssh-status-banner" id="mcStatusBanner"></div>
+
+                <!-- Tab 1: Agent Models -->
+                <div id="mcTabAgents" style="display:flex; flex-direction:column; gap:14px;">
+                    <!-- Scope selector bar -->
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:10px 12px; background:var(--bg); border-radius:8px; border:1px solid rgba(128,128,128,0.15);">
+                        <div style="display:flex; align-items:center; gap:14px; font-size:12px;">
+                            <span style="font-weight:600;">Save Scope:</span>
+                            <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
+                                <input type="radio" name="mcScopeRadio" value="project" checked />
+                                <span>📁 Current Project Scope</span>
+                            </label>
+                            <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
+                                <input type="radio" name="mcScopeRadio" value="global" />
+                                <span>🌐 Global Fallback Scope</span>
+                            </label>
+                        </div>
+                        <button class="ssh-btn ssh-btn-cancel" onclick="resetAllAgentConfigs()" style="padding:4px 10px; font-size:11px;" title="Reset all project overrides to global defaults">↺ Reset Project Overrides</button>
+                    </div>
+
+                    <!-- Quick Apply to All Agents Box -->
+                    <div style="padding:12px; background:var(--bg); border-radius:8px; border:1px solid rgba(128,128,128,0.2); display:flex; flex-direction:column; gap:8px;">
+                        <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--accent); letter-spacing:0.03em;">
+                            ⚡ Quick Apply to All Agents
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <select id="mcBulkProvider" class="mc-select" style="flex:1; min-width:150px;" onchange="onMcBulkProviderChange()"></select>
+                            <select id="mcBulkModelSelect" class="mc-select" style="flex:2; min-width:180px;" onchange="onMcBulkModelSelectChange()"></select>
+                            <input type="text" id="mcBulkCustomModel" class="mc-input" placeholder="Enter custom model name..." style="display:none; flex:2; min-width:180px;" />
+                            <button class="ssh-btn ssh-btn-connect" onclick="applyBulkAgentConfig()" style="white-space:nowrap;">Apply to All Agents</button>
+                        </div>
+                    </div>
+
+                    <!-- Per-Agent List -->
+                    <div style="display:flex; flex-direction:column; gap:8px;" id="mcAgentsList">
+                        <div style="font-size:12px; opacity:0.7;">Loading agent configurations...</div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: vLLM & Ollama Servers -->
+                <div id="mcTabServers" style="display:none; flex-direction:column; gap:16px;">
+                    <div>
+                        <div style="font-size:12px; font-weight:700; margin-bottom:8px; color:var(--accent);">Registered OpenAI / vLLM Servers</div>
+                        <div id="mcOpenAiServersList"></div>
+                    </div>
+
+                    <div>
+                        <div style="font-size:12px; font-weight:700; margin-bottom:8px; color:var(--accent);">Registered Ollama Servers</div>
+                        <div id="mcOllamaServersList"></div>
+                    </div>
+
+                    <!-- Add Server Form -->
+                    <div style="padding:14px; background:var(--bg); border-radius:8px; border:1px solid rgba(128,128,128,0.2); display:flex; flex-direction:column; gap:10px;">
+                        <div style="font-size:12px; font-weight:700; color:var(--accent);">+ Add Inference Server</div>
+                        <div class="ssh-form-row row-split">
+                            <div>
+                                <label class="ssh-form-label">Server Type</label>
+                                <select id="mcNewServerType" class="mc-select" onchange="document.getElementById('mcNewServerOpenAiFields').style.display = this.value === 'openai' ? 'flex' : 'none';">
+                                    <option value="openai">OpenAI / vLLM</option>
+                                    <option value="ollama">Ollama</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="ssh-form-label">Alias / Name <span class="req">*</span></label>
+                                <input type="text" id="mcNewServerName" class="mc-input" placeholder="e.g. local-vllm or gpu-box" autocomplete="off" />
+                            </div>
+                        </div>
+                        <div class="ssh-form-row">
+                            <label class="ssh-form-label">Endpoint URL <span class="req">*</span></label>
+                            <input type="text" id="mcNewServerUrl" class="mc-input" placeholder="e.g. http://localhost:8000/v1 or http://localhost:11434" autocomplete="off" />
+                        </div>
+                        <div class="ssh-form-row row-split" id="mcNewServerOpenAiFields">
+                            <div>
+                                <label class="ssh-form-label">API Key (optional)</label>
+                                <input type="password" id="mcNewServerApiKey" class="mc-input" placeholder="sk-... (optional)" autocomplete="new-password" />
+                            </div>
+                            <div>
+                                <label class="ssh-form-label">Max Context Tokens (optional)</label>
+                                <input type="number" id="mcNewServerMaxContext" class="mc-input" placeholder="e.g. 32768" autocomplete="off" />
+                            </div>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+                            <button class="ssh-btn ssh-btn-connect" onclick="addInferenceServer()">+ Add Server</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ssh-modal-footer">
+                <span style="font-size:11px; opacity:0.7; font-family:'JetBrains Mono',monospace;">Changes take effect immediately across active runners.</span>
+                <div class="ssh-footer-actions" style="margin-left:auto;">
+                    <button class="ssh-btn ssh-btn-cancel" onclick="closeModelConfigModal()">Close</button>
                 </div>
             </div>
         </div>

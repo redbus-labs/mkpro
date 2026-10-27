@@ -2,6 +2,7 @@ package com.mkpro.models.notes;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.mkpro.CentralMemory;
 import java.io.Serializable;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -87,7 +88,7 @@ public class NoteItem implements Serializable {
     public boolean isProjectScoped() { return projectScoped; }
     public void setProjectScoped(boolean projectScoped) { this.projectScoped = projectScoped; }
 
-    @JsonProperty("projectName")
+    @JsonProperty(value = "projectName", access = JsonProperty.Access.READ_ONLY)
     public String getProjectName() {
         if (projectPath == null || projectPath.isBlank() || "global".equalsIgnoreCase(projectPath)) {
             return "Global";
@@ -97,6 +98,23 @@ public class NoteItem implements Serializable {
             return fileName != null ? fileName.toString() : projectPath;
         } catch (Exception e) {
             return projectPath;
+        }
+    }
+
+    @JsonProperty(value = "currentProject", access = JsonProperty.Access.READ_ONLY)
+    public boolean isCurrentProject() {
+        if (!projectScoped || projectPath == null || projectPath.isBlank() || "global".equalsIgnoreCase(projectPath)) {
+            return false;
+        }
+        String current = CentralMemory.getCurrentProjectPath();
+        if (current == null || current.isBlank()) {
+            return false;
+        }
+        try {
+            return Path.of(projectPath).toAbsolutePath().normalize()
+                    .equals(Path.of(current).toAbsolutePath().normalize());
+        } catch (Exception e) {
+            return projectPath.trim().replace('\\', '/').equalsIgnoreCase(current.trim().replace('\\', '/'));
         }
     }
 

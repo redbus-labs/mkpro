@@ -2,11 +2,20 @@ package com.mkpro.tools;
 
 import static com.mkpro.ui.AnsiColors.*;
 
+import com.google.adk.models.LlmRequest;
+import com.google.adk.models.OpenAiBaseLM;
+import com.google.adk.models.OllamaBaseLM;
+import com.google.adk.models.LlmResponse;
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.ToolContext;
 import com.google.genai.types.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.mkpro.CentralMemory;
+import com.mkpro.commands.impl.VllmCommand;
+import com.mkpro.config.ConfigService;
+import com.mkpro.models.AgentConfig;
+import com.mkpro.models.Provider;
 import io.reactivex.rxjava3.core.Single;
 
 import java.nio.file.Files;
@@ -18,7 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * VisionTool sends images to the configured LLM (Gemini) for visual analysis.
+ * VisionTool sends images to the configured LLM for visual analysis.
  * Agents can use this to:
  * - Describe UI screenshots
  * - Analyze architecture diagrams
@@ -26,7 +35,7 @@ import java.util.Optional;
  * - Compare design mockups with implementations
  * - Understand error screenshots
  *
- * Requires a vision-capable model (Gemini 1.5+, GPT-4o via Azure).
+ * Requires a vision-capable model (Gemini 1.5+, GPT-4o / vLLM, Ollama vision models).
  * The image is sent as inline_data and never leaves the LLM API call.
  */
 public class VisionTool {
@@ -83,12 +92,12 @@ public class VisionTool {
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 return Single.fromCallable(() -> {
                     String imagePath = (String) args.get("image_path");
-                    String prompt = args.get("prompt") != null ? (String) args.get("prompt") : 
+                    String prompt = args.get("prompt") != null ? (String) args.get("prompt") :
                         "Describe this image in detail. If it's a UI/screenshot, describe the layout, elements, and any visible text. If it's a diagram, explain the architecture or flow shown.";
 
                     try {
                         Path path = Paths.get(imagePath).toAbsolutePath();
-                        
+
                         // Validate file exists
                         if (!Files.exists(path)) {
                             return Collections.singletonMap("error", (Object) ("Image file not found: " + imagePath));
@@ -115,7 +124,7 @@ public class VisionTool {
 
                         // Read image bytes
                         byte[] imageBytes = Files.readAllBytes(path);
-                        System.out.println(ANSI_BLUE + "[Vision] Analyzing image: " + fileName + 
+                        System.out.println(ANSI_BLUE + "[Vision] Analyzing image: " + fileName +
                             " (" + (imageBytes.length / 1024) + "KB)" + ANSI_RESET);
 
                         // Build multimodal content with image + text prompt
@@ -132,70 +141,120 @@ public class VisionTool {
                             .parts(List.of(textPart, imagePart))
                             .build();
 
-                        // Get API key from system for Gemini vision call
-                        String apiKey = System.getProperty("GOOGLE_API_KEY", 
-                            System.getenv("GOOGLE_API_KEY"));
-                        
-                        if (apiKey == null || apiKey.isEmpty()) {
-                            // Fall back: return image metadata without AI analysis
+                        CentralMemory cm = CentralMemory.getInstance();
+                        AgentConfig agentConfig = Optional.ofNullable(cm.getAgentConfig("Coordinator")).orElse(cm.getAgentConfig("default"));
+
+                        if (agentConfig != null && agentConfig.getProvider() == Provider.OPENAI) {
+                            String openAiUrl = agentConfig.hasServerUrl() ? agentConfig.getServerUrl() : VllmCommand.resolveServerUrl("default", cm);
+                            if (openAiUrl == null) openAiUrl = new ConfigService().getSetting("openai.base.url", "http://localhost:8000/v1");
+                            String openAiKey = VllmCommand.resolveServerApiKey(openAiUrl, cm);
+                            if (openAiKey == null) openAiKey = new ConfigService().getSetting("openai.api.key", System.getenv("OPENAI_API_KEY"));
+                            int maxContext = VllmCommand.resolveServerMaxContext(openAiUrl, cm);
+
+                            OpenAiBaseLM llm = new OpenAiBaseLM(agentConfig.getModelName(), openAiUrl, openAiKey != null ? openAiKey : "").withMaxContextTokens(maxContext).withTruncation(maxContext, "left");
+                            LlmRequest llmReq = LlmRequest.builder()
+                                .model(agentConfig.getModelName())
+                                .contents(List.of(content))
+                                .config(GenerateContentConfig.builder().build())
+                                .build();
+
+                            StringBuilder sb = new StringBuilder();
+                            for (LlmResponse resp : llm.generateContent(llmReq, false).blockingIterable()) {
+                                resp.content().flatMap(Content::parts).ifPresent(parts -> {
+                                    for (Part p : parts) {
+                                        p.text().ifPresent(sb::append);
+                                    }
+                                });
+                            }
+                            return Map.of("analysis", sb.toString().trim(), "file", fileName, "size_kb", imageBytes.length / 1024, "mime_type", mimeType, "provider", "OPENAI", "model", agentConfig.getModelName());
+                        } else if (agentConfig != null && agentConfig.getProvider() == Provider.OLLAMA) {
+                            String ollamaUrl = agentConfig.hasServerUrl() ? agentConfig.getServerUrl() : new ConfigService().getSetting(ConfigService.PROP_OLLAMA_URL, "http://localhost:11434");
+                            OllamaBaseLM llm = new OllamaBaseLM(agentConfig.getModelName(), ollamaUrl);
+                            LlmRequest llmReq = LlmRequest.builder()
+                                .model(agentConfig.getModelName())
+                                .contents(List.of(content))
+                                .config(GenerateContentConfig.builder().build())
+                                .build();
+
+                            StringBuilder sb = new StringBuilder();
+                            for (LlmResponse resp : llm.generateContent(llmReq, false).blockingIterable()) {
+                                resp.content().flatMap(Content::parts).ifPresent(parts -> {
+                                    for (Part p : parts) {
+                                        p.text().ifPresent(sb::append);
+                                    }
+                                });
+                            }
+                            return Map.of("analysis", sb.toString().trim(), "file", fileName, "size_kb", imageBytes.length / 1024, "mime_type", mimeType, "provider", "OLLAMA", "model", agentConfig.getModelName());
+                        } else {
+                            // Get API key from system / config for Gemini vision call
+                            String apiKey = System.getProperty("GOOGLE_API_KEY", System.getenv("GOOGLE_API_KEY"));
+                            if (apiKey == null || apiKey.isEmpty()) {
+                                apiKey = System.getProperty("GEMINI_API_KEY", System.getenv("GEMINI_API_KEY"));
+                            }
+                            if (apiKey == null || apiKey.isEmpty()) {
+                                apiKey = new ConfigService().getSetting(ConfigService.PROP_GEMINI_KEY, null);
+                            }
+
+                            if (apiKey == null || apiKey.isEmpty()) {
+                                // Fall back: return image metadata without AI analysis
+                                return Map.of(
+                                    "status", "no_api_key",
+                                    "message", "Vision analysis requires GOOGLE_API_KEY. Image loaded successfully.",
+                                    "file", fileName,
+                                    "size_kb", imageBytes.length / 1024,
+                                    "mime_type", mimeType,
+                                    "prompt_used", prompt
+                                );
+                            }
+
+                            // Call Gemini REST API for vision
+                            String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
+                            String requestBody = String.format(
+                                "{\"contents\":[{\"parts\":[{\"text\":\"%s\"},{\"inline_data\":{\"mime_type\":\"%s\",\"data\":\"%s\"}}]}]}",
+                                prompt.replace("\"", "\\\"").replace("\n", "\\n"),
+                                mimeType,
+                                base64Image
+                            );
+
+                            java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
+                                .connectTimeout(java.time.Duration.ofSeconds(30)).build();
+
+                            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                                .uri(java.net.URI.create("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey))
+                                .header("Content-Type", "application/json")
+                                .timeout(java.time.Duration.ofSeconds(60))
+                                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
+                                .build();
+
+                            java.net.http.HttpResponse<String> httpResponse = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+                            String analysis = "";
+                            if (httpResponse.statusCode() == 200) {
+                                // Parse response — extract text from candidates[0].content.parts[0].text
+                                String body = httpResponse.body();
+                                int textStart = body.indexOf("\"text\":");
+                                if (textStart >= 0) {
+                                    int valueStart = body.indexOf("\"", textStart + 7) + 1;
+                                    int valueEnd = body.indexOf("\"", valueStart);
+                                    if (valueEnd > valueStart) {
+                                        analysis = body.substring(valueStart, valueEnd)
+                                            .replace("\\n", "\n").replace("\\\"", "\"");
+                                    }
+                                }
+                                if (analysis.isEmpty()) {
+                                    analysis = body; // Return raw response if parsing fails
+                                }
+                            } else {
+                                return Map.of("error", "Gemini API error (" + httpResponse.statusCode() + "): " + httpResponse.body());
+                            }
+
                             return Map.of(
-                                "status", "no_api_key",
-                                "message", "Vision analysis requires GOOGLE_API_KEY. Image loaded successfully.",
+                                "analysis", analysis,
                                 "file", fileName,
                                 "size_kb", imageBytes.length / 1024,
-                                "mime_type", mimeType,
-                                "prompt_used", prompt
+                                "mime_type", mimeType
                             );
                         }
-
-                        // Call Gemini REST API for vision
-                        String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
-                        String requestBody = String.format(
-                            "{\"contents\":[{\"parts\":[{\"text\":\"%s\"},{\"inline_data\":{\"mime_type\":\"%s\",\"data\":\"%s\"}}]}]}",
-                            prompt.replace("\"", "\\\"").replace("\n", "\\n"),
-                            mimeType,
-                            base64Image
-                        );
-
-                        java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
-                            .connectTimeout(java.time.Duration.ofSeconds(30)).build();
-
-                        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                            .uri(java.net.URI.create("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey))
-                            .header("Content-Type", "application/json")
-                            .timeout(java.time.Duration.ofSeconds(60))
-                            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
-                            .build();
-
-                        java.net.http.HttpResponse<String> httpResponse = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
-
-                        String analysis = "";
-                        if (httpResponse.statusCode() == 200) {
-                            // Parse response — extract text from candidates[0].content.parts[0].text
-                            String body = httpResponse.body();
-                            int textStart = body.indexOf("\"text\":");
-                            if (textStart >= 0) {
-                                int valueStart = body.indexOf("\"", textStart + 7) + 1;
-                                int valueEnd = body.indexOf("\"", valueStart);
-                                if (valueEnd > valueStart) {
-                                    analysis = body.substring(valueStart, valueEnd)
-                                        .replace("\\n", "\n").replace("\\\"", "\"");
-                                }
-                            }
-                            if (analysis.isEmpty()) {
-                                analysis = body; // Return raw response if parsing fails
-                            }
-                        } else {
-                            return Map.of("error", "Gemini API error (" + httpResponse.statusCode() + "): " + httpResponse.body());
-                        }
-
-                        return Map.of(
-                            "analysis", analysis,
-                            "file", fileName,
-                            "size_kb", imageBytes.length / 1024,
-                            "mime_type", mimeType
-                        );
-
                     } catch (Exception e) {
                         return Collections.singletonMap("error", (Object) ("Vision analysis failed: " + e.getMessage()));
                     }

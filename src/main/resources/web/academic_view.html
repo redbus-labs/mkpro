@@ -1463,6 +1463,39 @@
         .note-card-content p {
             margin: 2px 0;
         }
+        .note-project-header {
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s ease;
+        }
+        .note-project-header:hover {
+            background: var(--accent-soft) !important;
+        }
+        .note-project-chevron {
+            display: inline-block;
+            font-size: 9px;
+            margin-right: 5px;
+            transition: transform 0.18s ease;
+            transform: rotate(90deg);
+            color: var(--muted);
+        }
+        .note-project-group.collapsed .note-project-chevron {
+            transform: rotate(0deg);
+        }
+        .note-project-group.collapsed .note-project-items {
+            display: none;
+        }
+        .note-project-current-badge {
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 1px 5px;
+            border-radius: 4px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            margin-left: 6px;
+            letter-spacing: 0.3px;
+        }
 
         /* File Edit Approval Modal Popup & Read-Only Diff Modal */
         #editApprovalModal, #readOnlyDiffModal {
@@ -4307,6 +4340,23 @@
             fetchNotes();
         }
 
+        const taskGroupCollapsedState = new Map();
+        const noteGroupCollapsedState = new Map();
+
+        function toggleProjectGroup(type, encodedKey) {
+            const key = decodeURIComponent(encodedKey);
+            const stateMap = type === 'task' ? taskGroupCollapsedState : noteGroupCollapsedState;
+            const current = stateMap.has(key) ? stateMap.get(key) : false;
+            const nextState = !current;
+            stateMap.set(key, nextState);
+
+            document.querySelectorAll('.note-project-group').forEach(el => {
+                if (el.getAttribute('data-group-type') === type && el.getAttribute('data-group-key') === encodedKey) {
+                    el.classList.toggle('collapsed', nextState);
+                }
+            });
+        }
+
         async function fetchTasks() {
             const container = document.getElementById('tasksContainer');
             const stickyContainer = document.getElementById('stickyTasksContainer');
@@ -4348,24 +4398,34 @@
                     const groupKey = isGlobal ? 'global' : (t.projectPath || projName);
                     if (!groups.has(groupKey)) {
                         groups.set(groupKey, {
+                            groupKey: groupKey,
                             isGlobal: isGlobal,
+                            isCurrentProject: !isGlobal && t.currentProject === true,
                             projectName: projName,
                             projectPath: t.projectPath || '',
                             items: []
                         });
+                    } else if (!isGlobal && t.currentProject === true) {
+                        groups.get(groupKey).isCurrentProject = true;
                     }
                     groups.get(groupKey).items.push(t);
                 });
 
                 const renderedHtml = Array.from(groups.values()).map(group => {
+                    if (!taskGroupCollapsedState.has(group.groupKey)) {
+                        taskGroupCollapsedState.set(group.groupKey, !group.isCurrentProject);
+                    }
+                    const isCollapsed = taskGroupCollapsedState.get(group.groupKey);
+                    const encodedKey = encodeURIComponent(group.groupKey);
                     const headerLabel = group.isGlobal ? '🌐 Global' : `📁 ${escapeHtml(group.projectName)}`;
+                    const currentBadge = group.isCurrentProject ? '<span class="note-project-current-badge">Current</span>' : '';
                     return `
-                        <div class="note-project-group" style="margin-bottom:10px;">
-                            <div class="note-project-header" style="font-size:11px; font-weight:600; color:var(--accent); padding:4px 6px; margin-bottom:6px; background:var(--surface-hover); border-radius:5px; display:flex; align-items:center; justify-content:space-between;" title="${escapeHtml(group.projectPath || group.projectName)}">
-                                <span>${headerLabel}</span>
+                        <div class="note-project-group ${isCollapsed ? 'collapsed' : ''}" data-group-type="task" data-group-key="${encodedKey}" style="margin-bottom:10px;">
+                            <div class="note-project-header" onclick="toggleProjectGroup('task', '${encodedKey}')" style="font-size:11px; font-weight:600; color:var(--accent); padding:4px 6px; margin-bottom:6px; background:var(--surface-hover); border-radius:5px; display:flex; align-items:center; justify-content:space-between;" title="${escapeHtml(group.projectPath || group.projectName)}">
+                                <span style="display:flex; align-items:center;"><span class="note-project-chevron">▶</span>${headerLabel}${currentBadge}</span>
                                 <span style="font-size:10px; color:var(--muted); font-family:'JetBrains Mono',monospace;">${group.items.length}</span>
                             </div>
-                            <div style="display:flex; flex-direction:column; gap:6px;">
+                            <div class="note-project-items" style="display:flex; flex-direction:column; gap:6px;">
                                 ${group.items.map(renderTaskRow).join('')}
                             </div>
                         </div>
@@ -4501,24 +4561,34 @@
                     const groupKey = isGlobal ? 'global' : (note.projectPath || projName);
                     if (!groups.has(groupKey)) {
                         groups.set(groupKey, {
+                            groupKey: groupKey,
                             isGlobal: isGlobal,
+                            isCurrentProject: !isGlobal && note.currentProject === true,
                             projectName: projName,
                             projectPath: note.projectPath || '',
                             items: []
                         });
+                    } else if (!isGlobal && note.currentProject === true) {
+                        groups.get(groupKey).isCurrentProject = true;
                     }
                     groups.get(groupKey).items.push(note);
                 });
 
                 const renderedHtml = Array.from(groups.values()).map(group => {
+                    if (!noteGroupCollapsedState.has(group.groupKey)) {
+                        noteGroupCollapsedState.set(group.groupKey, !group.isCurrentProject);
+                    }
+                    const isCollapsed = noteGroupCollapsedState.get(group.groupKey);
+                    const encodedKey = encodeURIComponent(group.groupKey);
                     const headerLabel = group.isGlobal ? '🌐 Global' : `📁 ${escapeHtml(group.projectName)}`;
+                    const currentBadge = group.isCurrentProject ? '<span class="note-project-current-badge">Current</span>' : '';
                     return `
-                        <div class="note-project-group" style="margin-bottom:10px;">
-                            <div class="note-project-header" style="font-size:11px; font-weight:600; color:var(--accent); padding:4px 6px; margin-bottom:6px; background:var(--surface-hover); border-radius:5px; display:flex; align-items:center; justify-content:space-between;" title="${escapeHtml(group.projectPath || group.projectName)}">
-                                <span>${headerLabel}</span>
+                        <div class="note-project-group ${isCollapsed ? 'collapsed' : ''}" data-group-type="note" data-group-key="${encodedKey}" style="margin-bottom:10px;">
+                            <div class="note-project-header" onclick="toggleProjectGroup('note', '${encodedKey}')" style="font-size:11px; font-weight:600; color:var(--accent); padding:4px 6px; margin-bottom:6px; background:var(--surface-hover); border-radius:5px; display:flex; align-items:center; justify-content:space-between;" title="${escapeHtml(group.projectPath || group.projectName)}">
+                                <span style="display:flex; align-items:center;"><span class="note-project-chevron">▶</span>${headerLabel}${currentBadge}</span>
                                 <span style="font-size:10px; color:var(--muted); font-family:'JetBrains Mono',monospace;">${group.items.length}</span>
                             </div>
-                            <div style="display:flex; flex-direction:column; gap:6px;">
+                            <div class="note-project-items" style="display:flex; flex-direction:column; gap:6px;">
                                 ${group.items.map(renderNoteCard).join('')}
                             </div>
                         </div>

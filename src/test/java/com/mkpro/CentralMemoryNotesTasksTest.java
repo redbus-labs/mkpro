@@ -76,6 +76,7 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("medium", defaultTask.getPriority());
         assertNull(defaultTask.getDueDate());
         assertTrue(defaultTask.isProjectScoped());
+        assertFalse(defaultTask.isCurrentProject());
         assertEquals("Global", defaultTask.getProjectName());
         assertTrue(defaultTask.getCreatedAt() >= before && defaultTask.getCreatedAt() <= after);
         assertTrue(defaultTask.getUpdatedAt() >= before && defaultTask.getUpdatedAt() <= after);
@@ -92,14 +93,20 @@ public class CentralMemoryNotesTasksTest {
         // Scoped constructors
         TaskItem globalConstructed = new TaskItem("task-g", "Global Task", "TODO", "low", false);
         assertFalse(globalConstructed.isProjectScoped());
+        assertFalse(globalConstructed.isCurrentProject());
         assertEquals("global", globalConstructed.getProjectPath());
         assertEquals("Global", globalConstructed.getProjectName());
 
         Path customProjPath = tempDir.resolve("my-awesome-project");
         TaskItem pathConstructed = new TaskItem("task-p", "Project Task", "TODO", "high", customProjPath.toString());
         assertTrue(pathConstructed.isProjectScoped());
+        assertFalse(pathConstructed.isCurrentProject());
         assertEquals(customProjPath.toString(), pathConstructed.getProjectPath());
         assertEquals("my-awesome-project", pathConstructed.getProjectName());
+
+        TaskItem currentProjConstructed = new TaskItem("task-curr", "Current Project Task", "TODO", "high", CentralMemory.getCurrentProjectPath());
+        assertTrue(currentProjConstructed.isProjectScoped());
+        assertTrue(currentProjConstructed.isCurrentProject());
 
         // Null status/priority fallback to defaults
         TaskItem nullDefaultsTask = new TaskItem("task-2", "Another Feature", null, null);
@@ -161,6 +168,7 @@ public class CentralMemoryNotesTasksTest {
         assertTrue(defaultNote.getTags().isEmpty());
         assertFalse(defaultNote.isPinned());
         assertTrue(defaultNote.isProjectScoped());
+        assertFalse(defaultNote.isCurrentProject());
         assertEquals("Global", defaultNote.getProjectName());
         assertTrue(defaultNote.getCreatedAt() >= before && defaultNote.getCreatedAt() <= after);
         assertTrue(defaultNote.getUpdatedAt() >= before && defaultNote.getUpdatedAt() <= after);
@@ -177,14 +185,20 @@ public class CentralMemoryNotesTasksTest {
         // Scoped constructors
         NoteItem globalConstructed = new NoteItem("note-g", "Global Note", "Content", false);
         assertFalse(globalConstructed.isProjectScoped());
+        assertFalse(globalConstructed.isCurrentProject());
         assertEquals("global", globalConstructed.getProjectPath());
         assertEquals("Global", globalConstructed.getProjectName());
 
         Path customProjPath = tempDir.resolve("my-awesome-project");
         NoteItem pathConstructed = new NoteItem("note-p", "Project Note", "Content", customProjPath.toString());
         assertTrue(pathConstructed.isProjectScoped());
+        assertFalse(pathConstructed.isCurrentProject());
         assertEquals(customProjPath.toString(), pathConstructed.getProjectPath());
         assertEquals("my-awesome-project", pathConstructed.getProjectName());
+
+        NoteItem currentProjConstructed = new NoteItem("note-curr", "Current Project Note", "Content", CentralMemory.getCurrentProjectPath());
+        assertTrue(currentProjConstructed.isProjectScoped());
+        assertTrue(currentProjConstructed.isCurrentProject());
 
         // Getters and Setters
         paramNote.setId("note-updated");
@@ -456,6 +470,7 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("note-proj-1", currentProjectNotes.get(0).getId());
         assertEquals(currentProjectPath, currentProjectNotes.get(0).getProjectPath());
         assertTrue(currentProjectNotes.get(0).isProjectScoped());
+        assertTrue(currentProjectNotes.get(0).isCurrentProject());
 
         // Verify getProjectNotes(otherProjectPath) returns other project's notes
         List<NoteItem> otherProjectNotes = memory.getProjectNotes(otherProjectPath);
@@ -463,6 +478,7 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("note-other-1", otherProjectNotes.get(0).getId());
         assertEquals(otherProjectPath, otherProjectNotes.get(0).getProjectPath());
         assertEquals("other-project", otherProjectNotes.get(0).getProjectName());
+        assertFalse(otherProjectNotes.get(0).isCurrentProject());
 
         // Verify getGlobalNotes() returns only global notes
         List<NoteItem> globalNotes = memory.getGlobalNotes();
@@ -471,6 +487,7 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("global", globalNotes.get(0).getProjectPath());
         assertEquals("Global", globalNotes.get(0).getProjectName());
         assertFalse(globalNotes.get(0).isProjectScoped());
+        assertFalse(globalNotes.get(0).isCurrentProject());
 
         // Verify getNote() precedence: project lookup -> global fallback -> other project lookup
         NoteItem sharedIdGlobal = new NoteItem("shared-id", "Global Fallback Title", "Global Content");
@@ -547,6 +564,7 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("task-proj-1", currentProjectTasks.get(0).getId());
         assertEquals(currentProjectPath, currentProjectTasks.get(0).getProjectPath());
         assertTrue(currentProjectTasks.get(0).isProjectScoped());
+        assertTrue(currentProjectTasks.get(0).isCurrentProject());
 
         // Verify getProjectTasks(otherProjectPath) returns other project's tasks
         List<TaskItem> otherProjectTasks = memory.getProjectTasks(otherProjectPath);
@@ -554,6 +572,7 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("task-other-1", otherProjectTasks.get(0).getId());
         assertEquals(otherProjectPath, otherProjectTasks.get(0).getProjectPath());
         assertEquals("other-task-project", otherProjectTasks.get(0).getProjectName());
+        assertFalse(otherProjectTasks.get(0).isCurrentProject());
 
         // Verify getGlobalTasks() returns only global tasks
         List<TaskItem> globalTasks = memory.getGlobalTasks();
@@ -562,6 +581,7 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("global", globalTasks.get(0).getProjectPath());
         assertEquals("Global", globalTasks.get(0).getProjectName());
         assertFalse(globalTasks.get(0).isProjectScoped());
+        assertFalse(globalTasks.get(0).isCurrentProject());
 
         // Verify toggleTask works across current project, global, and other projects while preserving projectPath
         TaskItem toggledOther = memory.toggleTask("task-other-1");

@@ -64,6 +64,10 @@ class ShutdownHandler {
             }
         } catch (Exception e) { /* Silent */ }
 
+        if (context.getRabbitMqWorkerService() != null) {
+            try { context.getRabbitMqWorkerService().stop(); } catch (Exception ignored) {}
+        }
+
         if (context.getDiscoveryService() != null) {
             context.getDiscoveryService().stop();
         }

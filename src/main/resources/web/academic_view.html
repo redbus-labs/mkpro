@@ -4329,6 +4329,7 @@
                     await fetchTasks();
                 }
                 const matchedNotes = (window.cachedNotesList || []).filter(note => {
+                    if (note.currentProject !== true) return false;
                     if (!query) return true;
                     const titleMatch = (note.title || '').toLowerCase().includes(query);
                     const contentMatch = (note.content || '').toLowerCase().includes(query);
@@ -4338,6 +4339,7 @@
                 }).map(note => ({ ...note, itemType: 'note' }));
 
                 const matchedTasks = (window.cachedTasksList || []).filter(task => {
+                    if (task.currentProject !== true) return false;
                     if ((task.status || 'TODO').toUpperCase() === 'DONE') return false;
                     if (!query) return true;
                     const titleMatch = (task.title || '').toLowerCase().includes(query);
@@ -4618,7 +4620,7 @@
                             <input type="checkbox" class="task-checkbox" ${isDone ? 'checked' : ''} onchange="toggleTask('${escapedId}')" title="Mark ${isDone ? 'incomplete' : 'done'}" />
                             <span class="task-title" title="${escapeHtml(task.title || '')}">${escapeHtml(task.title || '')}</span>
                             <span class="task-priority-badge ${prioClass}">${escapeHtml(prio)}</span>
-                            ${!isDone ? `<button class="task-del-btn" onclick="insertTaskAtMention('${escapedId}')" title="Add @Task to prompt" style="color:var(--accent); font-weight:700;">@</button>` : ''}
+                            ${task.currentProject === true && !isDone ? `<button class="task-del-btn" onclick="insertTaskAtMention('${escapedId}')" title="Add @Task to prompt" style="color:var(--accent); font-weight:700;">@</button>` : ''}
                             <button class="task-del-btn" onclick="deleteTask('${escapedId}')" title="Delete task">🗑️</button>
                         </div>
                     `;
@@ -4780,7 +4782,7 @@
                             <div class="note-card-header">
                                 <span class="note-card-title">${escapeHtml(note.title || 'Untitled Note')}</span>
                                 <div style="display:flex; align-items:center;">
-                                    <button class="note-del-btn" onclick="insertNoteAtMention('${note.id}')" title="Add @Note to prompt" style="color:var(--accent); font-weight:700; margin-right:4px;">@</button>
+                                    ${note.currentProject === true ? `<button class="note-del-btn" onclick="insertNoteAtMention('${note.id}')" title="Add @Note to prompt" style="color:var(--accent); font-weight:700; margin-right:4px;">@</button>` : ''}
                                     <button class="note-del-btn" onclick="deleteNote('${escapedId}')" title="Delete note">🗑️</button>
                                 </div>
                             </div>

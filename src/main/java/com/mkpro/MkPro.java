@@ -146,12 +146,22 @@ public class MkPro {
                 });
             }
 
+            // 4b. Start RabbitMQ worker if --worker flag is present
+            if (hasWorkerFlag(args)) {
+                registry.executeCommand(hasInternalFlag(args) ? "/mq on internal" : "/mq on", context);
+            }
+
             // 5. Restore user preferences from previous session
             restoreSessionPreferences(context, args, registry);
 
-            // 6. Start the UI Loop
-            TerminalUI ui = new TerminalUI(context, registry);
-            ui.start();
+            // 6. Start the UI Loop (or keep alive on CountDownLatch if --headless and --worker)
+            if (hasWorkerFlag(args) && hasHeadlessFlag(args)) {
+                System.out.println(ANSI_GREEN + "[Worker] Running in headless RabbitMQ worker mode. Press Ctrl+C to stop." + ANSI_RESET);
+                new java.util.concurrent.CountDownLatch(1).await();
+            } else {
+                TerminalUI ui = new TerminalUI(context, registry);
+                ui.start();
+            }
         } catch (Exception e) {
             System.err.println("\n" + ANSI_RED + "FATAL ERROR during startup:" + ANSI_RESET);
             System.err.println(ANSI_YELLOW + e.getMessage() + ANSI_RESET);
@@ -180,6 +190,7 @@ public class MkPro {
         registry.register(new TrainCommand());
         registry.register(new VisualizeCommand());
         registry.register(new NetworkCommand());
+        registry.register(new MqCommand());
         registry.register(new OllamaCommand());
         VllmCommand vllmCommand = new VllmCommand();
         registry.register(vllmCommand);
@@ -312,6 +323,34 @@ public class MkPro {
         } catch (Exception e) {
             // Silent — preference restore should never block startup
         }
+    }
+
+    private static boolean hasWorkerFlag(String[] args) {
+        if (args == null) return false;
+        for (String arg : args) {
+            if ("--worker".equalsIgnoreCase(arg) || "--mq".equalsIgnoreCase(arg) || "--internal".equalsIgnoreCase(arg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasInternalFlag(String[] args) {
+        if (args == null) return false;
+        for (String arg : args) {
+            if ("--internal".equalsIgnoreCase(arg)) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasHeadlessFlag(String[] args) {
+        if (args == null) return false;
+        for (String arg : args) {
+            if ("--headless".equalsIgnoreCase(arg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int getWebPort(String[] args) {

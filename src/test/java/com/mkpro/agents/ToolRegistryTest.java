@@ -104,4 +104,13 @@ public class ToolRegistryTest {
         assertNotNull(tools);
         assertFalse(tools.isEmpty());
     }
+
+    @Test
+    void resolveDeduplicatesByToolName() {
+        List<BaseTool> safeTools = registry.resolve(List.of("safe_write"));
+        assertEquals(1, safeTools.size());
+        List<BaseTool> fileWriteAndReplace = registry.resolve(List.of("file_write", "replace_in_file"));
+        long distinctNames = fileWriteAndReplace.stream().map(BaseTool::name).distinct().count();
+        assertEquals(fileWriteAndReplace.size(), distinctNames);
+    }
 }

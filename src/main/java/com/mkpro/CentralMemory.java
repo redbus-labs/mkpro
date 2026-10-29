@@ -503,8 +503,8 @@ public class CentralMemory {
             return input;
         }
 
-        List<NoteItem> allNotes = getAllNotes();
-        List<TaskItem> allTasks = getAllTasks();
+        List<NoteItem> allNotes = getProjectNotes();
+        List<TaskItem> allTasks = getProjectTasks().stream().filter(t -> !"DONE".equalsIgnoreCase(t.getStatus())).collect(Collectors.toList());
         if (allNotes.isEmpty() && allTasks.isEmpty()) {
             return input;
         }

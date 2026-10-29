@@ -252,12 +252,28 @@ public class BootstrapService {
                 context.setVerbose(true);
             } else if ("-r".equalsIgnoreCase(arg) || "--runner".equalsIgnoreCase(arg)) {
                 if (i + 1 < args.length) {
-                    try {
-                        context.getCurrentRunnerType().set(RunnerType.valueOf(args[i + 1].toUpperCase()));
-                    } catch (IllegalArgumentException e) {
-                        System.err.println("Invalid runner type: " + args[i+1]);
+                    String rVal = args[i + 1].trim();
+                    if ("1".equals(rVal)) {
+                        context.getCurrentRunnerType().set(RunnerType.IN_MEMORY);
+                    } else if ("2".equals(rVal)) {
+                        context.getCurrentRunnerType().set(RunnerType.MAP_DB);
+                    } else if ("3".equals(rVal)) {
+                        context.getCurrentRunnerType().set(RunnerType.POSTGRES);
+                    } else {
+                        try {
+                            context.getCurrentRunnerType().set(RunnerType.valueOf(rVal.toUpperCase()));
+                        } catch (IllegalArgumentException e) {
+                            System.err.println("Invalid runner type: " + rVal);
+                            context.getCurrentRunnerType().set(RunnerType.IN_MEMORY);
+                        }
                     }
                     i++;
+                } else {
+                    context.getCurrentRunnerType().set(RunnerType.IN_MEMORY);
+                }
+            } else if ("--worker".equalsIgnoreCase(arg) || "--mq".equalsIgnoreCase(arg) || "--headless".equalsIgnoreCase(arg)) {
+                if (context.getCurrentRunnerType().get() == null) {
+                    context.getCurrentRunnerType().set(RunnerType.IN_MEMORY);
                 }
             } else if ("--name".equalsIgnoreCase(arg)) {
                 if (i + 1 < args.length) {

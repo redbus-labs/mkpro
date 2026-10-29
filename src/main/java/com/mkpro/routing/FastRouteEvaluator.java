@@ -34,11 +34,15 @@ public class FastRouteEvaluator {
             }
             int pct = (int) Math.round(confidence * 100);
             String catName = category != null ? category.name() : "GENERAL";
-            String toolSuffix = targetAgent.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
+            
+            // Normalize "CodeEditor" to "Coder" for tool suffix
+            String agentName = "CodeEditor".equalsIgnoreCase(targetAgent) ? "Coder" : targetAgent;
+            String toolSuffix = agentName.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
+            
             return String.format(
                 "[Routing Guidance: Recommended specialist agent is '%s' (category: %s, confidence: %d%%, reason: %s). " +
                 "Please coordinate and delegate to `ask_%s` as appropriate.]",
-                targetAgent, catName, pct, reason, toolSuffix
+                agentName, catName, pct, reason, toolSuffix
             );
         }
     }
@@ -74,6 +78,9 @@ public class FastRouteEvaluator {
         // Direct YAML agent keyword match (e.g. "@coder", "coder", explicit agent directive)
         String directAgent = classifier.classifyToAgent(trimmed);
         if (directAgent != null && !"Coordinator".equalsIgnoreCase(directAgent)) {
+            if ("CodeEditor".equalsIgnoreCase(directAgent)) {
+                directAgent = "Coder";
+            }
             TaskCategory cat = classifier.classify(trimmed);
             return new EvaluationResult(true, directAgent, 1.0, cat, "direct_keyword_match");
         }
@@ -87,7 +94,14 @@ public class FastRouteEvaluator {
             if (decision != null && decision.shouldRoute 
                     && !"Coordinator".equalsIgnoreCase(decision.agent) 
                     && decision.confidence >= CONFIDENCE_THRESHOLD) {
-                return new EvaluationResult(true, decision.agent, decision.confidence, category, "markov_high_confidence");
+                
+                String agent = decision.agent;
+                // Normalize for Markov-based predictions
+                if ("CodeEditor".equalsIgnoreCase(agent)) {
+                    agent = "Coder";
+                }
+                
+                return new EvaluationResult(true, agent, decision.confidence, category, "markov_high_confidence");
             }
         }
 

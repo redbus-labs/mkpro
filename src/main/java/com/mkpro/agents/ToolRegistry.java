@@ -15,7 +15,7 @@ import java.util.*;
  *   file_read, file_write, safe_write, clipboard, shell, image,
  *   codebase_search, multi_project_search, mcp_scan, graph_memory,
  *   fetch_url, stats, selenium, ssh, ssh_connect, ssh_exec,
- *   ssh_file_transfer, ssh_disconnect, ssh_status
+ *   ssh_file_transfer, ssh_disconnect, ssh_status, replace_in_file
  */
 public class ToolRegistry {
 
@@ -32,8 +32,9 @@ public class ToolRegistry {
     private void initializeTools() {
         // File operations
         toolCache.put("file_read", List.of(FileSystemTools.create(), MkProTools.createListDirTool()));
-        toolCache.put("file_write", List.of(MkProTools.createWriteFileTool()));
+        toolCache.put("file_write", List.of(MkProTools.createWriteFileTool(), MkProTools.createReplaceInFileTool()));
         toolCache.put("safe_write", List.of(MkProTools.createSafeWriteFileTool()));
+        toolCache.put("replace_in_file", List.of(MkProTools.createReplaceInFileTool()));
 
         // Clipboard
         toolCache.put("clipboard", List.of(ClipboardTools.create()));
@@ -135,16 +136,20 @@ public class ToolRegistry {
             return Collections.emptyList();
         }
 
-        List<BaseTool> resolved = new ArrayList<>();
+        Map<String, BaseTool> deduplicated = new LinkedHashMap<>();
         for (String name : toolNames) {
             List<BaseTool> tools = toolCache.get(name.trim().toLowerCase());
             if (tools != null) {
-                resolved.addAll(tools);
+                for (BaseTool tool : tools) {
+                    if (tool != null && tool.name() != null) {
+                        deduplicated.putIfAbsent(tool.name(), tool);
+                    }
+                }
             } else {
                 System.err.println("[ToolRegistry] Unknown tool name: '" + name + "'. Skipping.");
             }
         }
-        return resolved;
+        return new ArrayList<>(deduplicated.values());
     }
 
     /**

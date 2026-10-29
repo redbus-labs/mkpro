@@ -66,7 +66,8 @@ public class IntentClassifier {
             "analyz.*project", "analyz.*code", "analyz.*entire", "deep.*analyz",
             "review.*project", "review.*code", "review.*entire", "codebase.*review",
             "scan.*project", "scan.*code", "explore.*code", "understand.*code",
-            "overview", "high.*level", "how.*work", "how.*structure"
+            "overview", "high.*level", "how.*work", "how.*structure",
+            "service"
         ));
 
         PATTERNS.put(TaskCategory.ANDROID, compilePatterns(
@@ -117,7 +118,8 @@ public class IntentClassifier {
             "algorithm", "interface", "service", "controller", "model",
             "import", "library", "module",
             "edit.*file", "change.*file", "modify", "update.*code", "rename",
-            "variable", "error", "exception", "null", "crash", "broken"
+            "variable", "error", "exception", "null", "crash", "broken",
+            "refactor", "replace", "rewrite"
         ));
     }
 
@@ -228,6 +230,11 @@ public class IntentClassifier {
                 bestScore = score;
                 bestAgent = entry.getKey();
             }
+        }
+
+        // Normalize CodeEditor to Coder
+        if ("CodeEditor".equalsIgnoreCase(bestAgent)) {
+            return "Coder";
         }
 
         // Require at least 1 keyword match

@@ -587,4 +587,10 @@ public class MkProContext {
 
     public com.mkpro.facts.FactEngine getFactEngine() { return factEngine; }
     public void setFactEngine(com.mkpro.facts.FactEngine factEngine) { this.factEngine = factEngine; }
+
+    // RabbitMQ Task Worker (Pattern A)
+    private com.mkpro.infra.mq.RabbitMqWorkerService rabbitMqWorkerService;
+
+    public com.mkpro.infra.mq.RabbitMqWorkerService getRabbitMqWorkerService() { return rabbitMqWorkerService; }
+    public void setRabbitMqWorkerService(com.mkpro.infra.mq.RabbitMqWorkerService rabbitMqWorkerService) { this.rabbitMqWorkerService = rabbitMqWorkerService; }
 }

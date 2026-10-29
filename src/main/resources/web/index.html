@@ -2019,6 +2019,7 @@
                 await fetchNotesForPalette();
             }
             const matchedNotes = (window.cachedNotesList || []).filter(note => {
+                if (note.currentProject !== true) return false;
                 if (!query) return true;
                 const titleMatch = (note.title || '').toLowerCase().includes(query);
                 const contentMatch = (note.content || '').toLowerCase().includes(query);
@@ -2028,6 +2029,7 @@
             }).map(note => ({ ...note, itemType: 'note' }));
 
             const matchedTasks = (window.cachedTasksList || []).filter(task => {
+                if (task.currentProject !== true) return false;
                 if ((task.status || 'TODO').toUpperCase() === 'DONE') return false;
                 if (!query) return true;
                 const titleMatch = (task.title || '').toLowerCase().includes(query);

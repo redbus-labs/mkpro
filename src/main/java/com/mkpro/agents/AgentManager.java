@@ -579,13 +579,15 @@ public class AgentManager {
 
             // 2. Aggregate specialized arrays tailored to agent roles
             List<BaseTool> coderTools = new ArrayList<>();
-            coderTools.add(FileSystemTools.create()); // read-only file access
+            coderTools.add(FileSystemTools.create());
+            coderTools.add(MkProTools.createWriteFileTool());
+            coderTools.add(MkProTools.createSafeWriteFileTool());
+            coderTools.add(MkProTools.createReplaceInFileTool());
             coderTools.addAll(clipboardTools);
             coderTools.addAll(codebaseSearchTools);
             coderTools.addAll(mcpScanTools);
             coderTools.addAll(graphMemoryTools);
             coderTools.addAll(fetchUrlTools);
-            // Coder does NOT get write tools or selenium — it reads/analyzes only
 
             List<BaseTool> codeEditorTools = new ArrayList<>();
             codeEditorTools.add(FileSystemTools.create());
@@ -951,9 +953,8 @@ public class AgentManager {
         if (agentName == null) return coderTools;
         String nameLower = agentName.toLowerCase();
 
-        if (nameLower.equals("codeeditor") || nameLower.equals("code_editor")) {
-            return codeEditorTools;
-        } else if (nameLower.equals("coder") || nameLower.equals("developer")) {
+        if (nameLower.equals("codeeditor") || nameLower.equals("code_editor")
+                || nameLower.equals("coder") || nameLower.equals("developer")) {
             return coderTools;
         } else if (nameLower.equals("securityauditor") || nameLower.equals("security_auditor") || nameLower.contains("security")) {
             return securityAuditorTools;

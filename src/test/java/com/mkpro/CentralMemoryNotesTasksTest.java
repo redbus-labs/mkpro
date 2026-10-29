@@ -731,7 +731,26 @@ public class CentralMemoryNotesTasksTest {
         assertTrue(resolvedTaskId.contains("--- Referenced Task: Fix vLLM timeout [Status: TODO, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
         assertTrue(resolvedTaskId.contains("Task: Fix vLLM timeout (Status: TODO, Priority: high)"));
 
-        // 7. Non-matching or no-@ input returns unchanged
+        // 7. Notes and tasks from another project, global scope, or DONE tasks are NOT resolved via @
+        Path otherProjectDir = tempDir.resolve("other-project");
+        NoteItem otherProjNote = new NoteItem("other-note-id", "Other Project Note", "Should not resolve", otherProjectDir.toString());
+        memory.saveNote(otherProjNote);
+
+        NoteItem globalNote = new NoteItem("global-note-id", "Global Note", "Global content", false);
+        memory.saveGlobalNote(globalNote);
+
+        TaskItem otherProjTask = new TaskItem("other-task-id", "Other Project Task", "TODO", "medium", otherProjectDir.toString());
+        memory.saveTask(otherProjTask);
+
+        TaskItem doneTask = new TaskItem("done-task-id", "Completed Task", "DONE", "low");
+        memory.saveTask(doneTask);
+
+        assertEquals("Check @[Other Project Note] and @other-note-id", memory.resolveNoteMentions("Check @[Other Project Note] and @other-note-id"));
+        assertEquals("Check @[Global Note] and @global-note-id", memory.resolveNoteMentions("Check @[Global Note] and @global-note-id"));
+        assertEquals("Check @[Task: Other Project Task] and @other-task-id", memory.resolveNoteMentions("Check @[Task: Other Project Task] and @other-task-id"));
+        assertEquals("Check @[Task: Completed Task] and @done-task-id", memory.resolveNoteMentions("Check @[Task: Completed Task] and @done-task-id"));
+
+        // 8. Non-matching or no-@ input returns unchanged
         assertEquals("Hello world", memory.resolveNoteMentions("Hello world"));
         assertEquals("Hello @unknown-note", memory.resolveNoteMentions("Hello @unknown-note"));
         assertNull(memory.resolveNoteMentions(null));

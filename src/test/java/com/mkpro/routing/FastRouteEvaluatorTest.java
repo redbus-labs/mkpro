@@ -92,4 +92,27 @@ public class FastRouteEvaluatorTest {
         assertEquals("Tester", result.targetAgent);
         assertTrue(result.confidence >= 0.65);
     }
+
+    @Test
+    void testAndroidDevNormalizedToCoderUnlessMobileKeywordsPresent() {
+        for (int i = 0; i < 25; i++) {
+            router.recordTransition(IntentClassifier.TaskCategory.CODING, null, "AndroidDev");
+        }
+
+        IntentClassifier.registerAgentKeywords("AndroidDev", List.of("android", "apk", "adb", "logcat", "jetpack", "androidmanifest"));
+
+        // Non-Android coding prompt should be normalized from AndroidDev to Coder
+        FastRouteEvaluator.EvaluationResult nonAndroidResult = FastRouteEvaluator.evaluate(
+            "implement a new Java service method to fix bug", context
+        );
+        assertTrue(nonAndroidResult.shouldDirectDispatch);
+        assertEquals("Coder", nonAndroidResult.targetAgent);
+
+        // Explicit Android prompt should route to AndroidDev
+        FastRouteEvaluator.EvaluationResult androidResult = FastRouteEvaluator.evaluate(
+            "fix the android adb logcat crash", context
+        );
+        assertTrue(androidResult.shouldDirectDispatch);
+        assertEquals("AndroidDev", androidResult.targetAgent);
+    }
 }

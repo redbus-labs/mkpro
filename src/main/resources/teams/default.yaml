@@ -256,6 +256,7 @@ agents:
   - name: AndroidDev
     description: "Delegates Android development tasks to the Android specialist agent who deeply understands the project's architecture, dependencies, and conventions."
     tools: [file_read, clipboard, codebase_search, mcp_scan, graph_memory, fetch_url, shell]
+    routing_keywords: [android, apk, adb, logcat, jetpack, androidmanifest]
     instruction: |
       Role: Android Development Specialist.
 

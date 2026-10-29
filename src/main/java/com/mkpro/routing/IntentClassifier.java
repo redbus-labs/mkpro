@@ -71,8 +71,9 @@ public class IntentClassifier {
         ));
 
         PATTERNS.put(TaskCategory.ANDROID, compilePatterns(
-            "android", "kotlin.*ui", "jetpack", "compose", "gradle.*android",
-            "activity", "fragment", "recyclerview", "room.*database"
+            "android", "kotlin.*ui", "jetpack", "jetpack.*compose", "compose.*ui", "gradle.*android",
+            "android.*activity", "mainactivity", "android.*fragment", "recyclerview", "room.*database",
+            "apk", "adb", "logcat", "androidmanifest"
         ));
 
         PATTERNS.put(TaskCategory.IOS, compilePatterns(
@@ -203,7 +204,17 @@ public class IntentClassifier {
         if (keywords == null || keywords.isEmpty()) return;
         List<Pattern> compiled = new ArrayList<>();
         for (String kw : keywords) {
-            compiled.add(Pattern.compile(kw.replace(" ", "\\s*"), Pattern.CASE_INSENSITIVE));
+            if (kw == null) continue;
+            String trimmed = kw.trim();
+            if (trimmed.isEmpty()) continue;
+            String regex = trimmed.replace(" ", "\\s*");
+            if (Character.isLetterOrDigit(trimmed.charAt(0))) {
+                regex = "\\b" + regex;
+            }
+            if (Character.isLetterOrDigit(trimmed.charAt(trimmed.length() - 1))) {
+                regex = regex + "\\b";
+            }
+            compiled.add(Pattern.compile(regex, Pattern.CASE_INSENSITIVE));
         }
         DYNAMIC_AGENT_PATTERNS.put(agentName, compiled);
     }

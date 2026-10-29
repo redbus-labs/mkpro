@@ -109,14 +109,24 @@ public class MarkovTrainer {
                         String selectedAgent = extractAgent(assistantMessage);
 
                         if (selectedAgent != null) {
-                            // Use category from classification, or infer from agent if GENERAL
-                            if (category == IntentClassifier.TaskCategory.GENERAL) {
+                            // Ensure mobile specialist delegations are attributed to their platform categories
+                            // rather than polluting TaskCategory.CODING
+                            if ("AndroidDev".equals(selectedAgent)) {
+                                category = IntentClassifier.TaskCategory.ANDROID;
+                            } else if ("IosDev".equals(selectedAgent)) {
+                                category = IntentClassifier.TaskCategory.IOS;
+                            } else if (category == IntentClassifier.TaskCategory.GENERAL) {
+                                // Use category from classification, or infer from agent if GENERAL
                                 category = inferCategoryFromAgent(selectedAgent);
                             }
+
+                            // Consolidate legacy CodeEditor into Coder for routing transitions
+                            String routedAgent = "CodeEditor".equals(selectedAgent) ? "Coder" : selectedAgent;
+
                             // Only record routing transitions for non-GENERAL categories
                             if (category != IntentClassifier.TaskCategory.GENERAL) {
-                                router.recordTransition(category, lastAgent, selectedAgent);
-                                lastAgent = selectedAgent;
+                                router.recordTransition(category, lastAgent, routedAgent);
+                                lastAgent = routedAgent;
                                 count++;
                             }
                             

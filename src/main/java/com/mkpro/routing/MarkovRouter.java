@@ -116,18 +116,35 @@ public class MarkovRouter {
     }
 
     /**
+     * Normalize agent names for a given category.
+     * - Consolidates legacy "CodeEditor" into "Coder".
+     * - Prevents mobile specialist agents ("AndroidDev", "IosDev") from hijacking general CODING tasks.
+     */
+    private static String normalizeAgentForCategory(String catKey, String agent) {
+        if (agent == null) return null;
+        if ("CodeEditor".equalsIgnoreCase(agent)) {
+            return "Coder";
+        }
+        if ("CODING".equals(catKey) && ("AndroidDev".equalsIgnoreCase(agent) || "IosDev".equalsIgnoreCase(agent))) {
+            return "Coder";
+        }
+        return agent;
+    }
+
+    /**
      * Predict the best agent for a given category and last agent used.
      */
     public RoutingDecision route(IntentClassifier.TaskCategory category, String lastAgent) {
         String catKey = category.name();
+        String normLastAgent = lastAgent != null ? normalizeAgentForCategory(catKey, lastAgent) : null;
 
         // Try order-1 Markov (category + lastAgent)
-        if (lastAgent != null) {
+        if (normLastAgent != null) {
             Map<String, Map<String, Integer>> categoryTransitions = transitions.get(catKey);
             if (categoryTransitions != null) {
-                Map<String, Integer> agentCounts = categoryTransitions.get(lastAgent);
+                Map<String, Integer> agentCounts = categoryTransitions.get(normLastAgent);
                 if (agentCounts != null && !agentCounts.isEmpty()) {
-                    return pickBest(agentCounts);
+                    return pickBest(catKey, agentCounts);
                 }
             }
         }
@@ -135,7 +152,7 @@ public class MarkovRouter {
         // Fallback: just category → agent (order-0)
         Map<String, Integer> catCounts = categoryToAgent.get(catKey);
         if (catCounts != null && !catCounts.isEmpty()) {
-            return pickBest(catCounts);
+            return pickBest(catKey, catCounts);
         }
 
         // No data — can't route
@@ -159,8 +176,9 @@ public class MarkovRouter {
         return catCounts.entrySet().stream()
             .filter(e -> !excludeAgents.contains(e.getKey()))
             .filter(e -> !"Coordinator".equals(e.getKey()))
+            .filter(e -> !("CODING".equals(catKey) && ("AndroidDev".equals(e.getKey()) || "IosDev".equals(e.getKey()))))
             .max(java.util.Map.Entry.comparingByValue())
-            .map(java.util.Map.Entry::getKey)
+            .map(e -> normalizeAgentForCategory(catKey, e.getKey()))
             .orElse(null);
     }
 
@@ -169,17 +187,20 @@ public class MarkovRouter {
      */
     public void recordTransition(IntentClassifier.TaskCategory category, String lastAgent, String selectedAgent) {
         String catKey = category.name();
+        String normLast = lastAgent != null ? normalizeAgentForCategory(catKey, lastAgent) : "_START_";
+        String normSelected = normalizeAgentForCategory(catKey, selectedAgent);
+        if (normSelected == null) return;
 
         // Update order-1 matrix
         transitions
             .computeIfAbsent(catKey, k -> new ConcurrentHashMap<>())
-            .computeIfAbsent(lastAgent != null ? lastAgent : "_START_", k -> new ConcurrentHashMap<>())
-            .merge(selectedAgent, 1, Integer::sum);
+            .computeIfAbsent(normLast, k -> new ConcurrentHashMap<>())
+            .merge(normSelected, 1, Integer::sum);
 
         // Update order-0 matrix
         categoryToAgent
             .computeIfAbsent(catKey, k -> new ConcurrentHashMap<>())
-            .merge(selectedAgent, 1, Integer::sum);
+            .merge(normSelected, 1, Integer::sum);
 
         totalObservations++;
     }
@@ -527,6 +548,8 @@ public class MarkovRouter {
                     }
                 } catch (Exception e) { /* OK — v3 model without Layer 2 */ }
             }
+
+            sanitizeLoadedModel();
         }
     }
 
@@ -568,8 +591,52 @@ public class MarkovRouter {
                 Map<String, java.util.List<java.util.List<String>>> loadedStalls = (Map<String, java.util.List<java.util.List<String>>>) ois.readObject();
                 if (loadedStalls != null) stallPatterns.putAll(loadedStalls);
             } catch (Exception e) { /* OK */ }
+            sanitizeLoadedModel();
         } catch (ClassNotFoundException e) {
             System.err.println("[MarkovRouter] Legacy model class not found: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Normalize loaded transition matrices in-place so legacy "CodeEditor" and
+     * cross-category mobile entries ("AndroidDev", "IosDev" under "CODING")
+     * are merged into "Coder".
+     */
+    private void sanitizeLoadedModel() {
+        for (Map.Entry<String, Map<String, Integer>> catEntry : categoryToAgent.entrySet()) {
+            String catKey = catEntry.getKey();
+            Map<String, Integer> rawCounts = catEntry.getValue();
+            if (rawCounts == null || rawCounts.isEmpty()) continue;
+            Map<String, Integer> merged = new ConcurrentHashMap<>();
+            for (Map.Entry<String, Integer> e : rawCounts.entrySet()) {
+                String normAgent = normalizeAgentForCategory(catKey, e.getKey());
+                if (normAgent != null && e.getValue() != null && e.getValue() > 0) {
+                    merged.merge(normAgent, e.getValue(), Integer::sum);
+                }
+            }
+            catEntry.setValue(merged);
+        }
+
+        for (Map.Entry<String, Map<String, Map<String, Integer>>> catTrans : transitions.entrySet()) {
+            String catKey = catTrans.getKey();
+            Map<String, Map<String, Integer>> rawLastMap = catTrans.getValue();
+            if (rawLastMap == null || rawLastMap.isEmpty()) continue;
+            Map<String, Map<String, Integer>> mergedLastMap = new ConcurrentHashMap<>();
+            for (Map.Entry<String, Map<String, Integer>> lastEntry : rawLastMap.entrySet()) {
+                String normLast = "_START_".equals(lastEntry.getKey())
+                    ? "_START_"
+                    : normalizeAgentForCategory(catKey, lastEntry.getKey());
+                Map<String, Integer> nextMap = mergedLastMap.computeIfAbsent(normLast, k -> new ConcurrentHashMap<>());
+                if (lastEntry.getValue() != null) {
+                    for (Map.Entry<String, Integer> nextEntry : lastEntry.getValue().entrySet()) {
+                        String normNext = normalizeAgentForCategory(catKey, nextEntry.getKey());
+                        if (normNext != null && nextEntry.getValue() != null && nextEntry.getValue() > 0) {
+                            nextMap.merge(normNext, nextEntry.getValue(), Integer::sum);
+                        }
+                    }
+                }
+            }
+            catTrans.setValue(mergedLastMap);
         }
     }
 
@@ -577,18 +644,31 @@ public class MarkovRouter {
      * Pick the best agent from a count map with confidence scoring.
      */
     private RoutingDecision pickBest(Map<String, Integer> agentCounts) {
-        int total = agentCounts.values().stream().mapToInt(Integer::intValue).sum();
+        return pickBest(null, agentCounts);
+    }
+
+    private RoutingDecision pickBest(String catKey, Map<String, Integer> agentCounts) {
+        Map<String, Integer> normalizedCounts = new HashMap<>();
+        int total = 0;
+        for (Map.Entry<String, Integer> entry : agentCounts.entrySet()) {
+            int count = entry.getValue() != null ? entry.getValue() : 0;
+            if (count <= 0) continue;
+            String normAgent = catKey != null ? normalizeAgentForCategory(catKey, entry.getKey()) : entry.getKey();
+            normalizedCounts.merge(normAgent, count, Integer::sum);
+            total += count;
+        }
+
         String bestAgent = null;
         int bestCount = 0;
 
-        for (Map.Entry<String, Integer> entry : agentCounts.entrySet()) {
+        for (Map.Entry<String, Integer> entry : normalizedCounts.entrySet()) {
             if (entry.getValue() > bestCount) {
                 bestCount = entry.getValue();
                 bestAgent = entry.getKey();
             }
         }
 
-        if (bestAgent == null) {
+        if (bestAgent == null || total == 0) {
             return new RoutingDecision("Coordinator", 0.0, false);
         }
 

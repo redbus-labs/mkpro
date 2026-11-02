@@ -2599,6 +2599,7 @@
             <div class="brand-title">
                 <span>mkpro</span>
                 <span class="badge-pill">Academic UI</span>
+                <span class="badge-pill" id="headerProjectSessionBadge">📁 mkpro · 💬 default</span>
             </div>
             <nav class="nav-links">
                 <a href="/index.html">⚙️ Standard Terminal</a>
@@ -2613,6 +2614,13 @@
                     <select id="branchSelect" onchange="switchBranch(this.value)" title="Switch collaborative git branch">
                         <option>loading branch...</option>
                     </select>
+                </div>
+                <div class="masthead-select-wrap">
+                    <span>💬</span>
+                    <select id="sessionSelect" onchange="switchNamedSession(this.value)" title="Switch named session">
+                        <option value="default">default</option>
+                    </select>
+                    <button onclick="promptNewNamedSession()" title="New named session" style="background:none;border:none;color:var(--accent);cursor:pointer;font-weight:700;font-size:13px;padding:0 4px;">+</button>
                 </div>
 
                 <!-- Display Alias Button -->
@@ -3142,7 +3150,7 @@
                 connText.textContent = 'Connected';
                 userInput.disabled = false;
                 sendBtn.disabled = false;
-                loadBranches();
+                loadBranches(); loadSessionsList();
             };
 
             ws.onclose = () => {
@@ -4232,7 +4240,55 @@
             addSystemCard(`Git workspace branch switched to: ${branch}`);
         }
 
-        // ========== History Scroll Pagination ==========
+        function updateWindowTitle(projectName, sessionName) {
+  window.currentProjectName = projectName || window.currentProjectName || 'mkpro';
+  window.currentSessionName = sessionName || window.currentSessionName || 'default';
+  document.title = `mkpro — ${window.currentProjectName} [${window.currentSessionName}]`;
+  const badge = document.getElementById('headerProjectSessionBadge');
+  if (badge) badge.textContent = `📁 ${window.currentProjectName} · 💬 ${window.currentSessionName}`;
+}
+async function loadSessionsList() {
+  try {
+    const r = await fetch("/api/sessions");
+    if (!r.ok) return;
+    const data = await r.json();
+    const d = data;
+    updateWindowTitle(data.projectName || data.project_name, data.activeSession || data.session_name);
+    const sel = document.getElementById("sessionSelect");
+    if (!sel) return;
+    sel.innerHTML = "";
+    const items = d.sessions || [{name: "default"}];
+    items.forEach(s => {
+      const name = typeof s === "string" ? s : s.name;
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      if (name === d.active) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch (e) {}
+}
+async function switchNamedSession(name) {
+  if (!name) return;
+  try {
+    const r = await fetch("/api/sessions/switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    if (r.ok) { const data = await r.json(); updateWindowTitle(data.projectName || data.project_name, data.activeSession || data.session_name); }
+    await loadSessionsList();
+    await loadHistory();
+    addSystemCard("Switched to session: " + name);
+  } catch (e) {}
+}
+async function promptNewNamedSession() {
+  const name = prompt("Enter new session name:");
+  if (name && name.trim()) await switchNamedSession(name.trim());
+}
+async function loadHistory() {
+  historyOffset = 0; noMoreHistory = false;
+  chatStream.innerHTML = "";
+  await loadOlderHistory();
+}
+loadSessionsList();
+// ========== History Scroll Pagination ==========
         streamViewport.addEventListener('scroll', async () => {
             if (streamViewport.scrollTop === 0 && !loadingHistory && !noMoreHistory) {
                 await loadOlderHistory();
@@ -5208,6 +5264,7 @@
                 const resp = await fetch('/api/status');
                 if (!resp.ok) return;
                 const data = await resp.json();
+                updateWindowTitle(data.projectName || data.project_name, data.activeSession || data.session_name);
                 document.getElementById('drawerTelemetry').innerHTML = `Branch: <strong>${escapeHtml(data.git_branch || 'main')}</strong> • Runtime: active`;
             } catch(e) {}
         }

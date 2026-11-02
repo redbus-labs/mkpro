@@ -1971,4 +1971,77 @@ public Map<String, Map<String, String>> dumpAllStores() {
             db.commit();
         });
     }
+
+    // --- Project Sessions (Added) ---
+
+    public Map<String, String> getProjectSessions() {
+        return withSharedDb(db -> {
+            Map<String, String> sessionMap = db.hashMap("project_sessions", Serializer.STRING, Serializer.STRING).createOrOpen();
+            String prefix = getCurrentProjectKeyPrefix();
+            LinkedHashMap<String, String> result = new LinkedHashMap<>();
+            result.put("default", "default-session");
+            sessionMap.forEach((k, v) -> {
+                if (k.startsWith(prefix)) {
+                    String name = k.substring(prefix.length());
+                    if (!name.equals("active")) result.put(name, v);
+                }
+            });
+            return result;
+        });
+    }
+
+    public String getActiveSessionName() {
+        return withSharedDb(db -> {
+            Map<String, String> sessions = db.hashMap("project_sessions", Serializer.STRING, Serializer.STRING).createOrOpen();
+            return sessions.getOrDefault(getCurrentProjectKeyPrefix() + "active", "default");
+        });
+    }
+
+    public String getActiveSessionId() {
+        return getProjectSessions().getOrDefault(getActiveSessionName(), "default-session");
+    }
+
+    public String registerOrActivateSession(String sessionName) {
+        String name = (sessionName == null || sessionName.isBlank()) ? "default" : sessionName.trim();
+        return withSharedDb(db -> {
+            Map<String, String> sessions = db.hashMap("project_sessions", Serializer.STRING, Serializer.STRING).createOrOpen();
+            String key = getCurrentProjectKeyPrefix() + name;
+            String sessionId = sessions.get(key);
+            if (sessionId == null) {
+                sessionId = "default".equalsIgnoreCase(name) ? "default-session" : "session-" + name.toLowerCase().replaceAll("[^a-z0-9_-]+", "-") + "-" + (System.currentTimeMillis() % 100000);
+                sessions.put(key, sessionId);
+            }
+            sessions.put(getCurrentProjectKeyPrefix() + "active", name);
+            db.commit();
+            return sessionId;
+        });
+    }
+
+    public boolean renameProjectSession(String oldName, String newName) {
+        return withSharedDb(db -> {
+            Map<String, String> sessions = db.hashMap("project_sessions", Serializer.STRING, Serializer.STRING).createOrOpen();
+            String oldKey = getCurrentProjectKeyPrefix() + oldName;
+            String newKey = getCurrentProjectKeyPrefix() + newName;
+            String id = sessions.get(oldKey);
+            if (id == null || sessions.containsKey(newKey)) return false;
+            sessions.put(newKey, id);
+            sessions.remove(oldKey);
+            if (oldName.equals(sessions.getOrDefault(getCurrentProjectKeyPrefix() + "active", "default"))) sessions.put(getCurrentProjectKeyPrefix() + "active", newName);
+            db.commit();
+            return true;
+        });
+    }
+
+    public boolean deleteProjectSession(String sessionName) {
+        if (sessionName.equalsIgnoreCase("default")) return false;
+        return withSharedDb(db -> {
+            Map<String, String> sessions = db.hashMap("project_sessions", Serializer.STRING, Serializer.STRING).createOrOpen();
+            String key = getCurrentProjectKeyPrefix() + sessionName;
+            if (!sessions.containsKey(key)) return false;
+            sessions.remove(key);
+            if (sessionName.equals(sessions.getOrDefault(getCurrentProjectKeyPrefix() + "active", "default"))) sessions.put(getCurrentProjectKeyPrefix() + "active", "default");
+            db.commit();
+            return true;
+        });
+    }
 }

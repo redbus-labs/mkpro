@@ -447,6 +447,39 @@ public class CentralMemoryTest {
         }
     }
 
+    @Test
+    void testMultipleNamedSessionsPerProject() {
+        assertEquals("default", memory.getActiveSessionName());
+        assertEquals("default-session", memory.getActiveSessionId());
+        Map<String, String> initial = memory.getProjectSessions();
+        assertEquals(1, initial.size());
+        assertEquals("default-session", initial.get("default"));
+
+        String authId = memory.registerOrActivateSession("feature-auth");
+        assertNotNull(authId);
+        assertTrue(authId.startsWith("session-feature-auth-"));
+        assertEquals("feature-auth", memory.getActiveSessionName());
+        assertEquals(authId, memory.getActiveSessionId());
+
+        String uiId = memory.registerOrActivateSession("bugfix-ui");
+        assertEquals("bugfix-ui", memory.getActiveSessionName());
+        assertEquals(uiId, memory.getActiveSessionId());
+        assertEquals(3, memory.getProjectSessions().size());
+
+        assertEquals(authId, memory.registerOrActivateSession("feature-auth"));
+        assertEquals("feature-auth", memory.getActiveSessionName());
+
+        assertTrue(memory.renameProjectSession("feature-auth", "auth-v2"));
+        assertEquals("auth-v2", memory.getActiveSessionName());
+        assertEquals(authId, memory.getActiveSessionId());
+        assertFalse(memory.getProjectSessions().containsKey("feature-auth"));
+
+        assertFalse(memory.deleteProjectSession("default"));
+        assertTrue(memory.deleteProjectSession("auth-v2"));
+        assertEquals("default", memory.getActiveSessionName());
+        assertEquals("default-session", memory.getActiveSessionId());
+    }
+
     // ==========================================================================
     // HELPERS
     // ==========================================================================

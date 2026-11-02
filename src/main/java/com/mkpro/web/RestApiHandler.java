@@ -103,7 +103,7 @@ class RestApiHandler {
                 handleTeamsApi(exchange); return true;
             case "/api/goals":
                 handleGoalsApi(exchange); return true;
-            case "/api/sessions/new":
+            case "/api/sessions": handleSessionsApi(exchange); return true; case "/api/sessions/switch": handleSessionSwitchApi(exchange); return true; case "/api/sessions/rename": handleSessionRenameApi(exchange); return true; case "/api/sessions/delete": handleSessionDeleteApi(exchange); return true; case "/api/sessions/new":
                 handleNewSessionApi(exchange); return true;
             case "/api/ssh/connect":
                 handleSshConnectApi(exchange); return true;
@@ -476,6 +476,8 @@ class RestApiHandler {
 
             status.put("git_branch", getGitBranch());
             status.put("project_path", com.mkpro.CentralMemory.getCurrentProjectPath());
+            status.put("project_name", java.nio.file.Paths.get(com.mkpro.CentralMemory.getCurrentProjectPath()).getFileName().toString());
+            status.put("session_name", centralMemory != null ? centralMemory.getActiveSessionName() : "default");
 
             if (mkproContext.getAgentManager() != null) {
                 status.put("agent_count", mkproContext.getAgentManager().getAgentDefinitions().size());
@@ -551,23 +553,41 @@ class RestApiHandler {
             }
             limit = Math.min(limit, 50);
 
-            List<String> allLogs = com.mkpro.ActionLogger.getAllLogs();
-            int total = allLogs.size();
-
-            List<Map<String, String>> messages = new ArrayList<>();
-
-            int startIdx = Math.max(0, total - offset - limit);
-            int endIdx = Math.max(0, total - offset);
-
-            for (int i = startIdx; i < endIdx; i++) {
-                String entry = allLogs.get(i);
-                Map<String, String> msg = parseLogEntry(entry);
-                if (msg != null) {
-                    messages.add(msg);
+            List<String> sessionLogs = new ArrayList<>();
+            if (mkproContext != null && mkproContext.getCurrentSession() != null) {
+                com.google.adk.sessions.Session session = mkproContext.getCurrentSession();
+                if (mkproContext.getSessionService() != null) {
+                    try {
+                        com.google.adk.sessions.Session latest = mkproContext.getSessionService().getSession(session.sessionKey(), com.google.adk.sessions.GetSessionConfig.builder().build()).blockingGet();
+                        if (latest != null) { session = latest; mkproContext.setCurrentSession(session); }
+                    } catch (Exception ignored) {}
+                }
+                if (session != null && session.events() != null) {
+                    for (com.google.adk.events.Event event : session.events()) {
+                        StringBuilder textBuilder = new StringBuilder();
+                        event.content().flatMap(com.google.genai.types.Content::parts).ifPresent(parts -> {
+                            for (com.google.genai.types.Part part : parts) { part.text().ifPresent(textBuilder::append); }
+                        });
+                        String cleanText = textBuilder.toString().replaceAll("(?s)\\s*\\[Routing Guidance:.*?\\]", "").trim();
+                        if (cleanText.isEmpty()) continue;
+                        boolean isUser = "user".equalsIgnoreCase(event.author()) || event.content().flatMap(c -> c.role()).orElse("").equalsIgnoreCase("user");
+                        String role = isUser ? "USER" : (event.author() != null && !event.author().isBlank() ? event.author() : "Coordinator");
+                        String ts = java.time.Instant.ofEpochMilli(event.timestamp()).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime().toString();
+                        String entry = "[" + ts + "] " + role + ": " + cleanText;
+                        sessionLogs.add(entry);
+                    }
                 }
             }
-
-            boolean hasMore = startIdx > 0;
+            int total = sessionLogs.size();
+            List<Map<String, String>> messages = new ArrayList<>();
+            int fromIndex = Math.max(0, total - offset - limit);
+            int toIndex = Math.max(0, total - offset);
+            for (int i = fromIndex; i < toIndex; i++) {
+                String entry = sessionLogs.get(i);
+                Map<String, String> msg = parseLogEntry(entry);
+                if (msg != null) { messages.add(msg); }
+            }
+            boolean hasMore = fromIndex > 0;
 
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("messages", messages);
@@ -1250,15 +1270,65 @@ class RestApiHandler {
         }
     }
 
-    private void handleNewSessionApi(HttpExchange exchange) throws IOException {
-        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1); return;
-        }
-        if (commandRegistry != null && mkproContext != null) {
-            commandRegistry.executeCommand("/new", mkproContext);
-        }
-        sendJsonResponse(exchange, 200, Map.of("status", "session_reset"));
+    private com.mkpro.CentralMemory resolveCm() { return centralMemory != null ? centralMemory : (mkproContext != null && mkproContext.getCentralMemory() != null ? mkproContext.getCentralMemory() : com.mkpro.CentralMemory.getInstance()); }
+    private String resolveProjectName() { return java.nio.file.Paths.get(com.mkpro.CentralMemory.getCurrentProjectPath()).getFileName().toString(); }
+    private void handleSessionsApi(HttpExchange exchange) throws IOException { handleSessionsListApi(exchange); }
+    private void handleSessionsListApi(HttpExchange exchange) throws IOException {
+        com.mkpro.CentralMemory cm = resolveCm();
+        Map<String, String> map = cm.getProjectSessions();
+        String active = cm.getActiveSessionName();
+        List<Map<String, Object>> list = new ArrayList<>();
+        map.forEach((k, sid) -> {
+            int eventCount = 0;
+            if (mkproContext != null && mkproContext.getSessionService() != null && sid != null) {
+                try {
+                    com.google.adk.sessions.Session s = mkproContext.getSessionService().getSession(new com.google.adk.sessions.SessionKey("mkpro", "Coordinator", sid), com.google.adk.sessions.GetSessionConfig.builder().build()).blockingGet();
+                    if (s != null && s.events() != null) eventCount = s.events().size();
+                } catch (Exception ignored) {}
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("name", k); item.put("sessionId", sid); item.put("active", k.equals(active)); item.put("eventCount", eventCount);
+            list.add(item);
+        });
+        sendJsonResponse(exchange, 200, Map.of("active", active, "activeSession", active, "projectName", resolveProjectName(), "activeSessionId", cm.getActiveSessionId(), "sessions", list, "sessionMap", map));
     }
+    private void handleSessionSwitchApi(HttpExchange exchange) throws IOException { handleSessionsSwitchApi(exchange); }
+    private void handleSessionsSwitchApi(HttpExchange exchange) throws IOException {
+  if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(405, -1); return; }
+  String b = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+  JsonNode r = b.isBlank() ? mapper.createObjectNode() : mapper.readTree(b);
+  String name = r.has("name") ? r.get("name").asText("default").trim() : "default";
+  com.mkpro.commands.impl.SessionCommand.switchSession(name, mkproContext);
+  com.mkpro.CentralMemory cm = resolveCm();
+  sendJsonResponse(exchange, 200, Map.of("status", "switched", "active", cm.getActiveSessionName(), "activeSession", cm.getActiveSessionName(), "projectName", resolveProjectName(), "sessionId", cm.getActiveSessionId()));
+}
+private void handleSessionRenameApi(HttpExchange exchange) throws IOException {
+  if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(405, -1); return; }
+  JsonNode r = mapper.readTree(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+  String o = r.has("oldName") ? r.get("oldName").asText("").trim() : (r.has("old") ? r.get("old").asText("").trim() : "");
+  String n = r.has("newName") ? r.get("newName").asText("").trim() : (r.has("new") ? r.get("new").asText("").trim() : "");
+  com.mkpro.CentralMemory cm = resolveCm();
+  if (!cm.renameProjectSession(o, n)) { sendJsonError(exchange, 400, "Failed to rename session"); return; }
+  sendJsonResponse(exchange, 200, Map.of("status", "renamed", "active", cm.getActiveSessionName()));
+}
+    private void handleSessionDeleteApi(HttpExchange exchange) throws IOException {
+  if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(405, -1); return; }
+  JsonNode r = mapper.readTree(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+  String name = r.has("name") ? r.get("name").asText("").trim() : "";
+  com.mkpro.CentralMemory cm = resolveCm();
+  if (!cm.deleteProjectSession(name)) { sendJsonError(exchange, 400, "Failed to delete session"); return; }
+  if (mkproContext != null) com.mkpro.commands.impl.SessionCommand.switchSession(cm.getActiveSessionName(), mkproContext);
+  sendJsonResponse(exchange, 200, Map.of("status", "deleted", "active", cm.getActiveSessionName()));
+}
+private void handleNewSessionApi(HttpExchange exchange) throws IOException {
+  if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(405, -1); return; }
+  String b = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+  JsonNode r = b.isBlank() ? mapper.createObjectNode() : mapper.readTree(b);
+  String name = (r.has("name") && !r.get("name").asText("").isBlank()) ? r.get("name").asText().trim() : ("session-" + (System.currentTimeMillis() % 100000));
+  com.mkpro.commands.impl.SessionCommand.switchSession(name, mkproContext);
+  com.mkpro.CentralMemory cm = resolveCm();
+  sendJsonResponse(exchange, 200, Map.of("status", "session_reset", "active", cm.getActiveSessionName(), "activeSession", cm.getActiveSessionName(), "projectName", resolveProjectName(), "sessionId", cm.getActiveSessionId()));
+}
 
     // ========================================================================
     // Knowledge Topics API

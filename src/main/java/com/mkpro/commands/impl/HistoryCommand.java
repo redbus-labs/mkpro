@@ -32,7 +32,7 @@ public class HistoryCommand implements Command {
         String subCommand = args.length > 0 ? args[0].toLowerCase() : "10";
 
         if ("new".equals(subCommand) || "clear".equals(subCommand)) {
-            startNewSession(context);
+            String name = (args.length > 1 && !args[1].isBlank()) ? args[1].trim() : ("session-" + System.currentTimeMillis()); SessionCommand.switchSession(name, context);
             return;
         }
 

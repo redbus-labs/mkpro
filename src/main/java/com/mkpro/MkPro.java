@@ -201,6 +201,7 @@ public class MkPro {
             public String getDescription() { return "Alias for /vllm"; }
         });
         registry.register(new HistoryCommand());
+        registry.register(new SessionCommand());
         registry.register(new KnowledgeCommand());
         registry.register(new WebCommand());
         registry.register(new SchedulerCommand());

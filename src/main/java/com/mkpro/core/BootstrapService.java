@@ -564,7 +564,7 @@ public class BootstrapService {
                 System.out.println(ANSI_YELLOW + "  FactEngine warning (skipped): " + t.getMessage() + ANSI_RESET);
             }
 
-            String sessionId = "default-session";
+            String sessionId = context.getCentralMemory().getActiveSessionId();
             SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sessionId);
             Session session = null;
             try {

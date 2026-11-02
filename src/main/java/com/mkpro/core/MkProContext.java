@@ -217,7 +217,7 @@ public class MkProContext {
             this.runner = newRunner;
 
             // 5. Establish a clean default session in the new environment
-            String sessionId = "default-session";
+            String sessionId = this.centralMemory != null ? this.centralMemory.getActiveSessionId() : "default-session";
             com.google.adk.sessions.SessionKey sessionKey = new com.google.adk.sessions.SessionKey("mkpro", "Coordinator", sessionId);
             Session session = null;
             try {

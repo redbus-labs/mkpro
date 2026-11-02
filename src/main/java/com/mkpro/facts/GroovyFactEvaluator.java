@@ -21,10 +21,16 @@ public class GroovyFactEvaluator {
     private final CompilerConfiguration config;
 
     public GroovyFactEvaluator() {
-        this.config = new CompilerConfiguration();
-        ImportCustomizer imports = new ImportCustomizer();
-        imports.addStarImports("java.lang.Math");
-        config.addCompilationCustomizers(imports);
+        CompilerConfiguration cfg = null;
+        try {
+            cfg = new CompilerConfiguration();
+            ImportCustomizer imports = new ImportCustomizer();
+            imports.addStarImports("java.lang.Math");
+            cfg.addCompilationCustomizers(imports);
+        } catch (Throwable t) {
+            System.err.println("[GroovyFactEvaluator] Warning: " + t.getMessage());
+        }
+        this.config = cfg;
     }
 
     /**
@@ -78,14 +84,14 @@ public class GroovyFactEvaluator {
                 Binding binding = new Binding();
                 binding.setVariable("vars", variables != null ? variables : new HashMap<>());
 
-                GroovyShell shell = new GroovyShell(binding, config);
+                GroovyShell shell = config != null ? new GroovyShell(binding, config) : new GroovyShell(binding);
                 Object result = shell.evaluate(script);
 
                 if (result instanceof Map) {
                     return (Map<String, Object>) result;
                 }
                 return Map.of("result", result != null ? result : "null");
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 return Map.of("error", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
             }
         });
@@ -95,7 +101,7 @@ public class GroovyFactEvaluator {
         } catch (TimeoutException e) {
             future.cancel(true);
             return Map.of("error", "Script timed out (" + (TIMEOUT_MS / 1000) + "s limit)");
-        } catch (Exception e) {
+        } catch (Throwable e) {
             return Map.of("error", "Execution failed: " + e.getMessage());
         } finally {
             executor.shutdownNow();

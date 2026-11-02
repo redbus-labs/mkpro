@@ -18,6 +18,7 @@ if not exist "%JAR_PATH%" (
 )
 
 :: Run the application with registry enabled
-java -Dmkpro.db.name=%~n0 -jar "%JAR_PATH%" --enable-registry %*
+copy /Y target\mkpro-4.9.0.jar target\mkpro-runtime.jar >nul
+java -Dmkpro.db.name=%~n0 -jar target\mkpro-runtime.jar --enable-registry %*
 
 endlocal

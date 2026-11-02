@@ -716,20 +716,20 @@ public class CentralMemoryNotesTasksTest {
 
         // 4. Bracketed task mention: @[Task: Fix vLLM timeout]
         String resolvedTaskBracket = memory.resolveNoteMentions("Work on @[Task: Fix vLLM timeout] next.");
-        assertTrue(resolvedTaskBracket.contains("--- Referenced Task: Fix vLLM timeout [Status: TODO, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
-        assertTrue(resolvedTaskBracket.contains("Task: Fix vLLM timeout (Status: TODO, Priority: high)"));
+        assertTrue(resolvedTaskBracket.contains("--- Referenced Task: Fix vLLM timeout [Status: IN_PROGRESS, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
+        assertTrue(resolvedTaskBracket.contains("Task: Fix vLLM timeout (Status: IN_PROGRESS, Priority: high)"));
         assertTrue(resolvedTaskBracket.contains("--- End Task: Fix vLLM timeout ---"));
 
         // 5. Slugified task mention: @fix-vllm-timeout
         String resolvedTaskSlug = memory.resolveNoteMentions("Investigate @fix-vllm-timeout today.");
-        assertTrue(resolvedTaskSlug.contains("--- Referenced Task: Fix vLLM timeout [Status: TODO, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
-        assertTrue(resolvedTaskSlug.contains("Task: Fix vLLM timeout (Status: TODO, Priority: high)"));
+        assertTrue(resolvedTaskSlug.contains("--- Referenced Task: Fix vLLM timeout [Status: IN_PROGRESS, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
+        assertTrue(resolvedTaskSlug.contains("Task: Fix vLLM timeout (Status: IN_PROGRESS, Priority: high)"));
         assertTrue(resolvedTaskSlug.contains("--- End Task: Fix vLLM timeout ---"));
 
         // 6. Task ID mention: @task-id
         String resolvedTaskId = memory.resolveNoteMentions("Status update for @task-id");
-        assertTrue(resolvedTaskId.contains("--- Referenced Task: Fix vLLM timeout [Status: TODO, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
-        assertTrue(resolvedTaskId.contains("Task: Fix vLLM timeout (Status: TODO, Priority: high)"));
+        assertTrue(resolvedTaskId.contains("--- Referenced Task: Fix vLLM timeout [Status: IN_PROGRESS, Priority: high, Project: " + vllmTask.getProjectName() + "] ---"));
+        assertTrue(resolvedTaskId.contains("Task: Fix vLLM timeout (Status: IN_PROGRESS, Priority: high)"));
 
         // 7. Notes and tasks from another project, global scope, or DONE tasks are NOT resolved via @
         Path otherProjectDir = tempDir.resolve("other-project");
@@ -754,5 +754,11 @@ public class CentralMemoryNotesTasksTest {
         assertEquals("Hello world", memory.resolveNoteMentions("Hello world"));
         assertEquals("Hello @unknown-note", memory.resolveNoteMentions("Hello @unknown-note"));
         assertNull(memory.resolveNoteMentions(null));
+        assertTrue(CentralMemory.activeTurnTaskIds.contains("task-id"));
+        assertEquals("IN_PROGRESS", memory.getTask("task-id").getStatus());
+        List<TaskItem> completed = memory.completeActiveTurnTasks(true);
+        assertEquals(1, completed.size());
+        assertEquals("DONE", memory.getTask("task-id").getStatus());
+        assertTrue(CentralMemory.activeTurnTaskIds.isEmpty());
     }
 }

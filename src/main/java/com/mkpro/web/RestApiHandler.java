@@ -125,6 +125,14 @@ class RestApiHandler {
                 handleConfigResetApi(exchange); return true;
             case "/api/config/servers":
                 handleConfigServersApi(exchange); return true;
+            case "/api/mq/status":
+                handleMqStatusApi(exchange); return true;
+            case "/api/mq/control":
+                handleMqControlApi(exchange); return true;
+            case "/api/mq/send":
+                handleMqSendApi(exchange); return true;
+            case "/api/mq/results":
+                handleMqResultsApi(exchange); return true;
             default:
                 // Prefix-based routes
                 if (path.startsWith("/api/tasks/")) {
@@ -1146,6 +1154,99 @@ class RestApiHandler {
         } else {
             exchange.sendResponseHeaders(405, -1);
             exchange.close();
+        }
+    }
+
+    private void handleMqStatusApi(HttpExchange exchange) throws IOException {
+        com.mkpro.CentralMemory cm = centralMemory != null ? centralMemory : com.mkpro.CentralMemory.getInstance();
+        com.mkpro.infra.mq.RabbitMqWorkerService w = mkproContext != null ? mkproContext.getRabbitMqWorkerService() : null;
+        com.mkpro.infra.mq.MqConfig cfg = (w != null && w.getConfig() != null) ? w.getConfig() : com.mkpro.infra.mq.MqConfig.fromEnvAndMemory(cm);
+        Map<String, Object> st = new LinkedHashMap<>();
+        boolean running = w != null && w.isRunning();
+        st.put("running", running);
+        st.put("activeMode", running ? w.getActiveMode() : "NONE");
+        st.put("configuredMode", cfg.getMode());
+        st.put("workerInstanceId", w != null ? w.getWorkerInstanceId() : "");
+        st.put("internalHttpPort", w != null ? w.getBoundInternalHttpPort() : cfg.getInternalHttpPort());
+        st.put("host", cfg.getHost());
+        st.put("port", cfg.getPort());
+        st.put("taskQueue", cfg.getTaskQueue());
+        st.put("resultQueue", cfg.getResultQueue());
+        st.put("dlqQueue", cfg.getDlqQueue());
+        st.put("pendingCount", w != null ? w.getInternalPendingCount() : 0);
+        st.put("resultCount", w != null ? w.getInternalResultCount() : 0);
+        st.put("dlqCount", w != null ? w.getInternalDlqCount() : 0);
+        st.put("tasksProcessed", w != null ? w.getTasksProcessed() : 0L);
+        st.put("tasksSucceeded", w != null ? w.getTasksSucceeded() : 0L);
+        st.put("tasksFailed", w != null ? w.getTasksFailed() : 0L);
+        st.put("activeTasks", w != null ? w.getActiveTasks() : 0);
+        sendJsonResponse(exchange, 200, st);
+    }
+
+    private void handleMqResultsApi(HttpExchange exchange) throws IOException {
+        int limit = 20;
+        String q = exchange.getRequestURI().getQuery();
+        if (q != null) {
+            for (String pr : q.split("&")) if (pr.startsWith("limit=")) { try { limit = Integer.parseInt(pr.substring(6)); } catch (Exception ignored) {} }
+        }
+        com.mkpro.infra.mq.RabbitMqWorkerService w = mkproContext != null ? mkproContext.getRabbitMqWorkerService() : null;
+        List<com.mkpro.infra.mq.MqResultMessage> res = w != null ? w.getRecentResults(limit) : Collections.emptyList();
+        sendJsonResponse(exchange, 200, Map.of("results", res));
+    }
+
+    private void handleMqControlApi(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(405, -1); exchange.close(); return; }
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            JsonNode req = body.isBlank() ? mapper.createObjectNode() : mapper.readTree(body);
+            String action = req.has("action") ? req.get("action").asText("start").trim().toLowerCase() : "start";
+            String mode = req.has("mode") ? req.get("mode").asText("AUTO").trim().toUpperCase() : "AUTO";
+            com.mkpro.CentralMemory cm = centralMemory != null ? centralMemory : com.mkpro.CentralMemory.getInstance();
+            if ("stop".equals(action) || "off".equals(action)) {
+                if (mkproContext != null && mkproContext.getRabbitMqWorkerService() != null) {
+                    mkproContext.getRabbitMqWorkerService().stop();
+                    mkproContext.setRabbitMqWorkerService(null);
+                }
+                handleMqStatusApi(exchange);
+                return;
+            }
+            if ("internal".equals(action) || "rabbitmq".equals(action) || "auto".equals(action)) mode = action.toUpperCase();
+            if (mkproContext != null && mkproContext.getRabbitMqWorkerService() != null) {
+                mkproContext.getRabbitMqWorkerService().stop();
+                mkproContext.setRabbitMqWorkerService(null);
+            }
+            com.mkpro.infra.mq.MqConfig cfg = com.mkpro.infra.mq.MqConfig.fromEnvAndMemory(cm);
+            cfg.setMode(mode);
+            cfg.saveToMemory(cm);
+            com.mkpro.infra.mq.RabbitMqWorkerService w = new com.mkpro.infra.mq.RabbitMqWorkerService(cfg, mkproContext);
+            w.start();
+            if (mkproContext != null) mkproContext.setRabbitMqWorkerService(w);
+            handleMqStatusApi(exchange);
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    private void handleMqSendApi(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(405, -1); exchange.close(); return; }
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            JsonNode req = mapper.readTree(body);
+            String prompt = req.has("prompt") ? req.get("prompt").asText("").trim() : "";
+            String agent = req.has("targetAgent") ? req.get("targetAgent").asText("Coordinator").trim() : (req.has("agent") ? req.get("agent").asText("Coordinator").trim() : "Coordinator");
+            if (prompt.isEmpty()) { sendJsonError(exchange, 400, "prompt is required"); return; }
+            com.mkpro.CentralMemory cm = centralMemory != null ? centralMemory : com.mkpro.CentralMemory.getInstance();
+            com.mkpro.infra.mq.RabbitMqWorkerService w = mkproContext != null ? mkproContext.getRabbitMqWorkerService() : null;
+            if (w == null || !w.isRunning()) {
+                com.mkpro.infra.mq.MqConfig cfg = com.mkpro.infra.mq.MqConfig.fromEnvAndMemory(cm);
+                w = new com.mkpro.infra.mq.RabbitMqWorkerService(cfg, mkproContext);
+                try { w.start(); } catch (Exception ignored) {}
+                if (mkproContext != null) mkproContext.setRabbitMqWorkerService(w);
+            }
+            String taskId = w.publishTask(prompt, agent, null);
+            sendJsonResponse(exchange, 200, Map.of("status", "enqueued", "taskId", taskId, "targetAgent", agent, "activeMode", w.getActiveMode()));
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
         }
     }
 

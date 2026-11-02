@@ -17,6 +17,7 @@ if not exist "%JAR_PATH%" (
 )
 
 :: Start mkpro in RabbitMQ worker mode
-java --add-modules jdk.incubator.vector --enable-preview -Dmkpro.db.name=%~n0 -jar "%JAR_PATH%" -r 1 --enable-registry --worker %*
+copy /Y target\mkpro-4.9.0.jar target\mkpro-runtime.jar >nul
+java --add-modules jdk.incubator.vector --enable-preview -Dmkpro.db.name=%~n0 -jar target\mkpro-runtime.jar -r 1 --enable-registry --worker %*
 
 endlocal

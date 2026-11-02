@@ -322,11 +322,14 @@ public class TerminalUI {
                                         System.out.println();
                                     }
                                 }, error -> {
+                                    com.mkpro.CentralMemory.activeTurnTaskIds.clear();
                                     isThinking.set(false);
                                     spinnerThread.interrupt();
                                     System.err.println(ANSI_RESET + "\n[Error] " + error.getMessage());
                                 }, () -> {
                                     // ON COMPLETE - Calculate stats
+                                    boolean turnOk = !responseBuilder.toString().contains("Error executing") && !responseBuilder.toString().contains("FAILED");
+                                    if (context.getCentralMemory() != null) context.getCentralMemory().completeActiveTurnTasks(turnOk);
                                     long duration = System.currentTimeMillis() - startTime;
                                     
                                     // Web: stream end via event bus

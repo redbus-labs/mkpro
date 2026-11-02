@@ -586,11 +586,14 @@ public class MkPro {
                         });
                     });
                 }, error -> {
+                    com.mkpro.CentralMemory.activeTurnTaskIds.clear();
                     if (context.getEventBus() != null) {
                         context.getEventBus().emit(com.mkpro.events.MkProEvent.streamChunk("\n\n[Error: " + error.getMessage() + "]"));
                         context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
                     }
                 }, () -> {
+                    boolean turnOk = !responseBuilder.toString().contains("Error executing") && !responseBuilder.toString().contains("FAILED");
+                    if (context.getCentralMemory() != null) context.getCentralMemory().completeActiveTurnTasks(turnOk);
                     if (context.getEventBus() != null) {
                         context.getEventBus().emit(com.mkpro.events.MkProEvent.streamEnd());
                     }
@@ -635,6 +638,7 @@ public class MkPro {
                     }
                 });
         } catch (Exception e) {
+            com.mkpro.CentralMemory.activeTurnTaskIds.clear();
             if (context.getWebChatServer() != null) {
                 context.getWebChatServer().broadcastStreamChunk("\n\n[Error: " + e.getMessage() + "]");
                 context.getWebChatServer().broadcastStreamEnd();

@@ -553,12 +553,16 @@ public class BootstrapService {
             }
 
             // Initialize FactEngine (verified facts + relationship graph)
-            com.mkpro.facts.FactEngine factEngine = new com.mkpro.facts.FactEngine();
-            factEngine.setCentralMemory(context.getCentralMemory());
-            factEngine.loadPersistedFacts();
-            context.setFactEngine(factEngine);
-            com.mkpro.facts.VerifyFactTool.init(factEngine);
-            System.out.println(ANSI_GREEN + factEngine.getStats() + ANSI_RESET);
+            try {
+                com.mkpro.facts.FactEngine factEngine = new com.mkpro.facts.FactEngine();
+                factEngine.setCentralMemory(context.getCentralMemory());
+                factEngine.loadPersistedFacts();
+                context.setFactEngine(factEngine);
+                com.mkpro.facts.VerifyFactTool.init(factEngine);
+                System.out.println(ANSI_GREEN + factEngine.getStats() + ANSI_RESET);
+            } catch (Throwable t) {
+                System.out.println(ANSI_YELLOW + "  FactEngine warning (skipped): " + t.getMessage() + ANSI_RESET);
+            }
 
             String sessionId = "default-session";
             SessionKey sessionKey = new SessionKey("mkpro", "Coordinator", sessionId);

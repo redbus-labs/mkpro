@@ -2729,6 +2729,7 @@
                     <button class="drawer-tab-btn active" id="tabBtnFiles" onclick="switchDrawerTab('files')">📁 Files</button>
                     <button class="drawer-tab-btn" id="tabBtnGoals" onclick="switchDrawerTab('goals')">🎯 Goals</button>
                     <button class="drawer-tab-btn" id="tabBtnNotes" onclick="switchDrawerTab('notes')">📝 Notes & Tasks</button>
+                    <button class="drawer-tab-btn" id="tabBtnJobs" onclick="switchDrawerTab('jobs')">🐇 Jobs</button>
                 </div>
                 <button class="drawer-close-btn" onclick="toggleDrawer()" title="Close Drawer (Ctrl + B)">✕</button>
             </div>
@@ -3394,6 +3395,7 @@
                     hideThinkingLoader();
                     endStreamingCard();
                     refreshDrawerFiles();
+                    fetchTasks();
                     break;
 
                 // 5. autonomous maker stimulus memo
@@ -3768,6 +3770,7 @@
             }
 
             ws.send(JSON.stringify(payload));
+            if (outboundText && outboundText.includes("@")) setTimeout(() => fetchTasks(), 300);
             showThinkingLoader();
         }
 
@@ -4518,6 +4521,8 @@
             if (tabBtnFiles) tabBtnFiles.classList.toggle('active', tab === 'files');
             if (tabBtnGoals) tabBtnGoals.classList.toggle('active', tab === 'goals');
             if (tabBtnNotes) tabBtnNotes.classList.toggle('active', tab === 'notes');
+            const tabBtnJobs = document.getElementById('tabBtnJobs');
+            if (tabBtnJobs) tabBtnJobs.classList.toggle('active', tab === 'jobs');
             renderDrawer();
         }
 
@@ -4533,7 +4538,106 @@
                 loadDrawerGoals(body);
             } else if (activeDrawerTab === 'notes') {
                 renderNotesTab();
+            } else if (activeDrawerTab === 'jobs') {
+                renderJobsTab();
+            } else if (activeDrawerTab === 'jobs') {
+                renderJobsTab();
             }
+        }
+
+        function renderJobsTab() {
+            const body = document.getElementById('drawerBody');
+            if (!body) return;
+            body.innerHTML = `
+                <div class="drawer-section-title">
+                    <span>🐇 Queue & Worker Control</span>
+                    <button class="card-action-btn" onclick="fetchMqStatusAndResults()" title="Refresh status" style="padding:2px 6px; font-size:11px;">🔄</button>
+                </div>
+                <div id="mqStatusBox" style="background:var(--surface-hover); padding:10px; border-radius:8px; font-size:12px; margin-bottom:12px;">
+                    Loading worker status...
+                </div>
+                <div style="display:flex; gap:6px; margin-bottom:14px; align-items:center;">
+                    <select id="mqModeSelect" class="drawer-select" style="flex:1;">
+                        <option value="AUTO">Mode: AUTO</option>
+                        <option value="INTERNAL">Mode: INTERNAL</option>
+                        <option value="RABBITMQ">Mode: RABBITMQ</option>
+                    </select>
+                    <button class="btn btn-sm btn-primary" onclick="controlMqWorker('start')">▶ Start</button>
+                    <button class="btn btn-sm" onclick="controlMqWorker('stop')" style="background:var(--danger); color:#fff;">■ Stop</button>
+                </div>
+                <div class="drawer-section-title"><span>🚀 Enqueue Background Job</span></div>
+                <div class="note-editor-box" style="margin-bottom:14px;">
+                    <select id="mqJobAgent" class="drawer-select" style="width:100%; margin-bottom:6px;">
+                        <option value="Coordinator">Coordinator</option>
+                        <option value="Architect">Architect</option>
+                        <option value="Coder">Coder</option>
+                        <option value="SecurityAuditor">SecurityAuditor</option>
+                        <option value="Tester">Tester</option>
+                    </select>
+                    <textarea id="mqJobPrompt" class="drawer-input" rows="3" placeholder="Background task prompt..." style="resize:vertical;"></textarea>
+                    <button class="btn btn-sm btn-primary" onclick="submitMqJobFromUi()" style="width:100%; margin-top:6px;">📤 Enqueue Job</button>
+                </div>
+                <div class="drawer-section-title"><span>📊 Recent Job Results</span></div>
+                <div id="mqResultsContainer" style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="color:var(--muted); font-size:12px;">Loading results...</div>
+                </div>
+            `;
+            fetchMqStatusAndResults();
+        }
+
+        async function fetchMqStatusAndResults() {
+            try {
+                const [stRes, resRes] = await Promise.all([fetch('/api/mq/status'), fetch('/api/mq/results?limit=15')]);
+                if (stRes.ok) {
+                    const st = await stRes.json();
+                    const box = document.getElementById('mqStatusBox');
+                    const sel = document.getElementById('mqModeSelect');
+                    if (sel && st.configuredMode) sel.value = st.configuredMode;
+                    if (box) {
+                        const badge = st.running ? `<span style="color:var(--success)${S}font-weight:700${S}">● ONLINE (${escapeHtml(st.activeMode)})</span>` : `<span style="color:var(--muted)${S}font-weight:700${S}">○ OFFLINE</span>`;
+                        box.innerHTML = `<div style="display:flex${S}justify-content:space-between${S}margin-bottom:6px${S}"><span>Status:</span>${badge}</div>
+                            <div style="font-family:JetBrains Mono,monospace${S}font-size:11px${S}color:var(--ink-secondary)${S}">Pending: ${st.pendingCount} • Active: ${st.activeTasks} • Done: ${st.tasksSucceeded} • Failed: ${st.tasksFailed} • DLQ: ${st.dlqCount}</div>`;
+                    }
+                }
+                if (resRes.ok) {
+                    const data = await resRes.json();
+                    const list = data.results || [];
+                    const rc = document.getElementById('mqResultsContainer');
+                    if (rc) {
+                        rc.innerHTML = list.length === 0 ? `<div style="color:var(--muted)${S}font-size:12px${S}font-style:italic${S}">No completed jobs yet.</div>` : list.map(r => {
+                            const ok = String(r.status).toUpperCase() === 'SUCCESS';
+                            const col = ok ? 'var(--success)' : 'var(--danger)';
+                            const txt = ok ? (r.output || '') : (r.errorMessage || '');
+                            return `<div class="note-card" style="border-left:3px solid ${col}${S}"><div class="note-card-header"><span style="color:${col}${S}font-weight:700${S}font-size:11px${S}">[${escapeHtml(r.status)}] ${escapeHtml(r.agentUsed || 'Coordinator')}</span><span style="font-size:10px${S}color:var(--muted)${S}">${r.durationMs || 0}ms</span></div><div style="font-size:10px${S}font-family:JetBrains Mono,monospace${S}color:var(--muted)${S}">ID: ${escapeHtml(r.taskId)}</div><div class="note-card-content" style="margin-top:4px${S}font-size:12px${S}">${escapeHtml(txt)}</div></div>`;
+                        }).join('');
+                    }
+                }
+            } catch (e) { console.error('MQ status error:', e); }
+        }
+
+        async function controlMqWorker(action) {
+            const sel = document.getElementById('mqModeSelect');
+            const mode = sel ? sel.value : 'AUTO';
+            try {
+                await fetch('/api/mq/control', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action, mode }) });
+                fetchMqStatusAndResults();
+            } catch (e) { console.error('MQ control error:', e); }
+        }
+
+        async function submitMqJobFromUi() {
+            const pEl = document.getElementById('mqJobPrompt');
+            const aEl = document.getElementById('mqJobAgent');
+            if (!pEl || !pEl.value.trim()) return;
+            const prompt = pEl.value.trim();
+            const targetAgent = aEl ? aEl.value : 'Coordinator';
+            try {
+                const res = await fetch('/api/mq/send', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ prompt, targetAgent }) });
+                if (res.ok) {
+                    pEl.value = '';
+                    fetchMqStatusAndResults();
+                    setTimeout(fetchMqStatusAndResults, 1200);
+                }
+            } catch (e) { console.error('MQ send error:', e); }
         }
 
         function renderNotesTab() {

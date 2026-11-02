@@ -716,6 +716,7 @@ public class AgentManager {
                     coordinatorTools.add(delegationTool);
                 }
             }
+            coordinatorTools.add(createParallelDelegationTool());
 
             List<BaseAgent> agents = new ArrayList<>();
 
@@ -798,6 +799,7 @@ public class AgentManager {
                 coordInstruction += peersContext.toString();
             }
 
+            coordInstruction += "\n\n── PARALLEL SUB-AGENT FAN-OUT ──\nYou can use `ask_parallel_agents` to execute multiple specialist sub-agents concurrently in parallel (fan-out / fan-in) and combine their results.\n";
             coordInstruction += "\n\n── MULTIMODAL VISION & AUDIO ──\n"
                 + "When the user attaches inline images or audio in the conversation turn, you HAVE direct multimodal vision/audio access to them in the current message parts.\n"
                 + "- Do NOT claim you cannot see attached images or ask for a file path when inline image/audio attachments are present in your prompt.\n"
@@ -1060,6 +1062,75 @@ public class AgentManager {
      * @param chunkConsumer optional streaming chunk listener
      * @return the execution response text
      */
+    private BaseTool createParallelDelegationTool() {
+        String toolName = "ask_parallel_agents";
+        String description = "Executes multiple specialist sub-agent tasks concurrently in parallel (fan-out / fan-in) and returns their combined results. Pass a JSON array in 'tasks_json' (e.g. [{\"agent\":\"Architect\",\"instruction\":\"...\"},{\"agent\":\"SecurityAuditor\",\"instruction\":\"...\"}]) OR use agent_1/instruction_1, agent_2/instruction_2, agent_3/instruction_3.";
+        return new BaseTool(toolName, description) {
+            @Override
+            public Optional<FunctionDeclaration> declaration() {
+                Map<String, Schema> props = new LinkedHashMap<>();
+                props.put("tasks_json", Schema.builder().type("STRING").description("JSON array of tasks").build());
+                for (int i = 1; i <= 3; i++) {
+                    props.put("agent_" + i, Schema.builder().type("STRING").description("Specialist agent " + i).build());
+                    props.put("instruction_" + i, Schema.builder().type("STRING").description("Instruction for agent_" + i).build());
+                }
+                return Optional.of(FunctionDeclaration.builder().name(name()).description(description()).parameters(Schema.builder().type("OBJECT").properties(ImmutableMap.copyOf(props)).build()).build());
+            }
+            @Override
+            public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
+                return Single.fromCallable(() -> executeParallelTasks(args));
+            }
+        };
+    }
+
+    private Map<String, Object> executeParallelTasks(Map<String, Object> args) {
+        long startMs = System.currentTimeMillis();
+        List<String[]> tasks = new ArrayList<>();
+        Object tj = args != null ? args.get("tasks_json") : null;
+        if (tj instanceof String && !((String) tj).isBlank()) {
+            try {
+                var root = new ObjectMapper().readTree(((String) tj).trim());
+                if (root.isArray()) {
+                    for (var n : root) {
+                        String ag = n.has("agent") ? n.get("agent").asText("") : n.path("agentName").asText("");
+                        String in = n.has("instruction") ? n.get("instruction").asText("") : n.path("prompt").asText("");
+                        if (!ag.isBlank() && !in.isBlank()) tasks.add(new String[]{ag.trim(), in.trim()});
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        for (int i = 1; i <= 3; i++) {
+            Object ag = args != null ? args.get("agent_" + i) : null, in = args != null ? args.get("instruction_" + i) : null;
+            if (ag instanceof String && in instanceof String && !((String) ag).isBlank() && !((String) in).isBlank()) tasks.add(new String[]{((String) ag).trim(), ((String) in).trim()});
+        }
+        if (tasks.isEmpty()) return Map.of("result", "Error: No tasks provided", "agents_count", 0, "duration_ms", 0L);
+        int count = tasks.size();
+        List<java.util.concurrent.CompletableFuture<String>> futures = new ArrayList<>();
+        for (String[] pair : tasks) {
+            futures.add(java.util.concurrent.CompletableFuture.supplyAsync(() -> runSingleParallelTask(pair[0], pair[1])));
+        }
+        java.util.concurrent.CompletableFuture.allOf(futures.toArray(new java.util.concurrent.CompletableFuture[0])).join();
+        String combined = futures.stream().map(java.util.concurrent.CompletableFuture::join).collect(java.util.stream.Collectors.joining("\n\n"));
+        long elapsed = System.currentTimeMillis() - startMs;
+        return Map.of("result", combined, "agents_count", count, "duration_ms", elapsed);
+    }
+
+    private String runSingleParallelTask(String rawAgent, String instruction) {
+        String ag = rawAgent.startsWith("ask_") ? rawAgent.substring(4) : rawAgent;
+        if (agentDefinitions != null && !agentDefinitions.containsKey(ag)) {
+            for (String k : agentDefinitions.keySet()) if (k.replace("_", "").equalsIgnoreCase(ag.replace("_", ""))) { ag = k; break; }
+        }
+        AgentManager.lastDelegatedAgent = ag;
+        AgentConfig cfg = activeAgentConfigs != null ? activeAgentConfigs.get(ag) : (agentConfigs != null ? agentConfigs.get(ag) : null);
+        if (cfg == null) cfg = new AgentConfig(Provider.OLLAMA, "llama3");
+        AgentDefinition def = agentDefinitions != null ? agentDefinitions.get(ag) : null;
+        String defInst = (def != null && def.getInstruction() != null) ? def.getInstruction() : "";
+        String ctxInfo = (def == null || def.isNeedsContext()) && projectContext != null && !projectContext.isEmpty() ? "\n\n" + projectContext : "";
+        List<BaseTool> tools = agentToolMap.getOrDefault(ag, Collections.emptyList());
+        String out = executeSubAgent(new AgentRequest(ag, BASE_AGENT_POLICY + "\n" + defInst + ctxInfo, cfg.getModelName(), cfg.getProvider(), instruction, tools, cfg.getServerUrl()));
+        return "=== [" + ag + "] ===\n" + com.mkpro.plugins.ToolOutputPruner.pruneText(out, 10_000);
+    }
+
     public String executeDirectDispatch(String agentName, String userPrompt, Consumer<String> chunkConsumer) {
         if (agentName == null || userPrompt == null) {
             return "Error: Agent name and prompt must not be null.";

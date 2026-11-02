@@ -57,6 +57,7 @@ public class CentralMemory {
     private final DB localDb;
     private final List<MemoryListener> listeners = new ArrayList<>();
     private static CentralMemory instance;
+    public static final java.util.List<String> activeTurnTaskIds = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     // --- Local Cache ---
     private final ConcurrentHashMap<String, AgentConfig> configCache = new ConcurrentHashMap<>();
@@ -577,6 +578,13 @@ public class CentralMemory {
                         || id.equalsIgnoreCase(query)) {
                     String uniqueKey = !id.isEmpty() ? id : title;
                     if (resolvedTaskIds.add(uniqueKey)) {
+                        if (!id.isEmpty() && !activeTurnTaskIds.contains(id)) {
+                            activeTurnTaskIds.add(id);
+                        }
+                        if (task.getStatus() == null || task.getStatus().isBlank() || "TODO".equalsIgnoreCase(task.getStatus())) {
+                            task.setStatus("IN_PROGRESS");
+                            saveTask(task);
+                        }
                         appended.append("\n\n--- Referenced Task: ")
                                 .append(task.getTitle())
                                 .append(" [Status: ")
@@ -598,6 +606,23 @@ public class CentralMemory {
                 }
             }
         }
+    }
+
+    public List<TaskItem> completeActiveTurnTasks(boolean success) {
+        if (activeTurnTaskIds.isEmpty()) return Collections.emptyList();
+        List<String> ids = new ArrayList<>(activeTurnTaskIds);
+        activeTurnTaskIds.clear();
+        if (!success) return Collections.emptyList();
+        List<TaskItem> updated = new ArrayList<>();
+        for (String tid : ids) {
+            TaskItem t = getTask(tid);
+            if (t != null && !"DONE".equalsIgnoreCase(t.getStatus())) {
+                t.setStatus("DONE");
+                TaskItem saved = saveTask(t);
+                if (saved != null) updated.add(saved);
+            }
+        }
+        return updated;
     }
 
     private String slugifyTitle(String title) {

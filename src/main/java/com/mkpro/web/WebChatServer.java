@@ -445,24 +445,38 @@ public class WebChatServer {
     }
 
     private void serveResource(com.sun.net.httpserver.HttpExchange exchange, String resourcePath, String contentType) throws IOException {
-        try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
-            if (is == null) {
-                exchange.sendResponseHeaders(404, -1);
-                exchange.close();
-                return;
+        byte[] content = null;
+        java.nio.file.Path[] diskPaths = new java.nio.file.Path[] {
+            java.nio.file.Paths.get("src/main/resources" + resourcePath),
+            java.nio.file.Paths.get("mkpro/src/main/resources" + resourcePath),
+            java.nio.file.Paths.get("target/classes" + resourcePath)
+        };
+        for (java.nio.file.Path diskPath : diskPaths) {
+            if (java.nio.file.Files.exists(diskPath) && java.nio.file.Files.isRegularFile(diskPath)) {
+                content = java.nio.file.Files.readAllBytes(diskPath);
+                break;
             }
-            byte[] content = is.readAllBytes();
-            // Replace WS_PORT placeholder with actual port
-            if (contentType.contains("html")) {
-                String html = new String(content, StandardCharsets.UTF_8);
-                html = html.replace("{{WS_PORT}}", String.valueOf(wsPort));
-                content = html.getBytes(StandardCharsets.UTF_8);
+        }
+        if (content == null) {
+            try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
+                if (is == null) {
+                    exchange.sendResponseHeaders(404, -1);
+                    exchange.close();
+                    return;
+                }
+                content = is.readAllBytes();
             }
-            exchange.getResponseHeaders().set("Content-Type", contentType + "; charset=UTF-8");
-            exchange.sendResponseHeaders(200, content.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(content);
-            }
+        }
+        // Replace WS_PORT placeholder with actual port
+        if (contentType.contains("html")) {
+            String html = new String(content, StandardCharsets.UTF_8);
+            html = html.replace("{{WS_PORT}}", String.valueOf(wsPort));
+            content = html.getBytes(StandardCharsets.UTF_8);
+        }
+        exchange.getResponseHeaders().set("Content-Type", contentType + "; charset=UTF-8");
+        exchange.sendResponseHeaders(200, content.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(content);
         }
     }
 

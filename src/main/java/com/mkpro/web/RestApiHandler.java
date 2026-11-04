@@ -85,6 +85,8 @@ class RestApiHandler {
                 handleCommandApi(exchange); return true;
             case "/api/status":
                 handleStatusApi(exchange); return true;
+            case "/api/telemetry":
+                serveTelemetry(exchange); return true;
             case "/api/agents":
                 handleAgentsApi(exchange); return true;
             case "/api/edit/approve":
@@ -93,6 +95,14 @@ class RestApiHandler {
                 handleEditRejectApi(exchange); return true;
             case "/api/edit/pending":
                 handleEditPendingApi(exchange); return true;
+            case "/api/edit/turn-summary":
+                handleEditTurnSummaryApi(exchange); return true;
+            case "/api/edit/revert":
+                handleEditRevertApi(exchange); return true;
+            case "/api/edit/revert-turn":
+                handleEditRevertTurnApi(exchange); return true;
+            case "/api/verify":
+                handleVerifyApi(exchange); return true;
             case "/api/git/branch":
                 handleGitBranchApi(exchange); return true;
             case "/api/git/switch":
@@ -133,9 +143,13 @@ class RestApiHandler {
                 handleMqSendApi(exchange); return true;
             case "/api/mq/results":
                 handleMqResultsApi(exchange); return true;
+            case "/api/mq/schedules":
+                handleMqSchedules(exchange); return true;
             default:
                 // Prefix-based routes
-                if (path.startsWith("/api/tasks/")) {
+                if (path.startsWith("/api/db/")) {
+                    serveDbApi(exchange); return true;
+                } else if (path.startsWith("/api/tasks/")) {
                     handleTasksWithIdApi(exchange, path); return true;
                 } else if (path.startsWith("/api/notes/")) {
                     handleNotesWithIdApi(exchange, path); return true;
@@ -472,6 +486,9 @@ class RestApiHandler {
             status.put("runner", mkproContext.getCurrentRunnerType().get() != null ?
                 mkproContext.getCurrentRunnerType().get().name() : "UNKNOWN");
             status.put("scheduler_active", mkproContext.getKnowledgeScheduler() != null);
+            status.put("auto_verify", mkproContext.isAutoVerify());
+            status.put("last_verify_passed", mkproContext.isLastVerifyPassed());
+            status.put("last_verify_summary", mkproContext.getLastVerifySummary());
             status.put("instance_name", mkproContext.getInstanceName());
 
             status.put("git_branch", getGitBranch());
@@ -493,6 +510,171 @@ class RestApiHandler {
         } catch (Exception e) {
             sendJsonError(exchange, 500, e.getMessage());
         }
+    }
+
+    /**
+     * GET /api/telemetry — Live agent telemetry, token usage, latency, and cost breakdown.
+     */
+    private void serveTelemetry(HttpExchange exchange) throws IOException {
+        try {
+            com.mkpro.CentralMemory memory = centralMemory != null ? centralMemory :
+                (mkproContext != null && mkproContext.getCentralMemory() != null
+                    ? mkproContext.getCentralMemory()
+                    : com.mkpro.CentralMemory.getInstance());
+
+            List<com.mkpro.models.AgentStat> allStats = memory != null ? memory.getAgentStats() : Collections.emptyList();
+
+            String sessionFilter = null;
+            String rawQuery = exchange.getRequestURI().getQuery();
+            if (rawQuery != null) {
+                for (String param : rawQuery.split("&")) {
+                    if (param.startsWith("session=")) {
+                        sessionFilter = URLDecoder.decode(param.substring(8), StandardCharsets.UTF_8).trim();
+                    }
+                }
+            }
+
+            List<com.mkpro.models.AgentStat> filtered = allStats;
+            if (sessionFilter != null && !sessionFilter.isEmpty() && !"all".equalsIgnoreCase(sessionFilter)) {
+                final String sf = sessionFilter;
+                filtered = allStats.stream()
+                    .filter(s -> sf.equalsIgnoreCase(s.getSessionId()))
+                    .collect(Collectors.toList());
+            }
+
+            long totalRequests = filtered.size();
+            long totalSuccesses = 0;
+            long totalFailures = 0;
+            long totalInputTokens = 0;
+            long totalOutputTokens = 0;
+            long totalTokens = 0;
+            long totalDurationMs = 0;
+            double totalEstimatedCostUsd = 0.0;
+
+            Map<String, List<com.mkpro.models.AgentStat>> byAgentGroup = new LinkedHashMap<>();
+            Map<String, List<com.mkpro.models.AgentStat>> byModelGroup = new LinkedHashMap<>();
+
+            for (com.mkpro.models.AgentStat s : filtered) {
+                if (s.isSuccess()) {
+                    totalSuccesses++;
+                } else {
+                    totalFailures++;
+                }
+                long inTok = Math.max(0, s.getInputTokens());
+                long outTok = Math.max(0, s.getOutputTokens());
+                long totTok = Math.max(inTok + outTok, s.getTotalTokens());
+                long dur = Math.max(0, s.getDurationMs());
+                double cost = estimateStatCostUsd(s.getProvider(), s.getModel(), inTok, outTok);
+
+                totalInputTokens += inTok;
+                totalOutputTokens += outTok;
+                totalTokens += totTok;
+                totalDurationMs += dur;
+                totalEstimatedCostUsd += cost;
+
+                String agentKey = s.getAgentName() != null && !s.getAgentName().isBlank() ? s.getAgentName() : "Unknown";
+                byAgentGroup.computeIfAbsent(agentKey, k -> new ArrayList<>()).add(s);
+
+                String prov = s.getProvider() != null && !s.getProvider().isBlank() ? s.getProvider() : "UNKNOWN";
+                String mod = s.getModel() != null && !s.getModel().isBlank() ? s.getModel() : "unknown";
+                String modelKey = prov + "::" + mod;
+                byModelGroup.computeIfAbsent(modelKey, k -> new ArrayList<>()).add(s);
+            }
+
+            long avgLatencyMs = totalRequests > 0 ? Math.round((double) totalDurationMs / totalRequests) : 0L;
+
+            List<Map<String, Object>> byAgent = new ArrayList<>();
+            for (Map.Entry<String, List<com.mkpro.models.AgentStat>> entry : byAgentGroup.entrySet()) {
+                List<com.mkpro.models.AgentStat> list = entry.getValue();
+                long reqs = list.size();
+                long succ = list.stream().filter(com.mkpro.models.AgentStat::isSuccess).count();
+                long fail = reqs - succ;
+                double succRate = reqs > 0 ? Math.round((succ * 1000.0) / reqs) / 10.0 : 100.0;
+                long sumLat = list.stream().mapToLong(st -> Math.max(0, st.getDurationMs())).sum();
+                long maxLat = list.stream().mapToLong(st -> Math.max(0, st.getDurationMs())).max().orElse(0L);
+                long avgLat = reqs > 0 ? Math.round((double) sumLat / reqs) : 0L;
+                long inT = list.stream().mapToLong(st -> Math.max(0, st.getInputTokens())).sum();
+                long outT = list.stream().mapToLong(st -> Math.max(0, st.getOutputTokens())).sum();
+                long totT = list.stream().mapToLong(st -> Math.max(Math.max(0, st.getInputTokens()) + Math.max(0, st.getOutputTokens()), st.getTotalTokens())).sum();
+                double cost = list.stream().mapToDouble(st -> estimateStatCostUsd(st.getProvider(), st.getModel(), Math.max(0, st.getInputTokens()), Math.max(0, st.getOutputTokens()))).sum();
+
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("agentName", entry.getKey());
+                row.put("requests", reqs);
+                row.put("successes", succ);
+                row.put("failures", fail);
+                row.put("successRate", succRate);
+                row.put("avgLatencyMs", avgLat);
+                row.put("maxLatencyMs", maxLat);
+                row.put("inputTokens", inT);
+                row.put("outputTokens", outT);
+                row.put("totalTokens", totT);
+                row.put("estimatedCostUsd", Math.round(cost * 1_000_000.0) / 1_000_000.0);
+                byAgent.add(row);
+            }
+            byAgent.sort((a, b) -> Long.compare(((Number) b.get("totalTokens")).longValue(), ((Number) a.get("totalTokens")).longValue()));
+
+            List<Map<String, Object>> byModel = new ArrayList<>();
+            for (Map.Entry<String, List<com.mkpro.models.AgentStat>> entry : byModelGroup.entrySet()) {
+                List<com.mkpro.models.AgentStat> list = entry.getValue();
+                com.mkpro.models.AgentStat first = list.get(0);
+                String prov = first.getProvider() != null && !first.getProvider().isBlank() ? first.getProvider() : "UNKNOWN";
+                String mod = first.getModel() != null && !first.getModel().isBlank() ? first.getModel() : "unknown";
+                long reqs = list.size();
+                long sumLat = list.stream().mapToLong(st -> Math.max(0, st.getDurationMs())).sum();
+                long avgLat = reqs > 0 ? Math.round((double) sumLat / reqs) : 0L;
+                long inT = list.stream().mapToLong(st -> Math.max(0, st.getInputTokens())).sum();
+                long outT = list.stream().mapToLong(st -> Math.max(0, st.getOutputTokens())).sum();
+                long totT = list.stream().mapToLong(st -> Math.max(Math.max(0, st.getInputTokens()) + Math.max(0, st.getOutputTokens()), st.getTotalTokens())).sum();
+                double cost = list.stream().mapToDouble(st -> estimateStatCostUsd(st.getProvider(), st.getModel(), Math.max(0, st.getInputTokens()), Math.max(0, st.getOutputTokens()))).sum();
+
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("provider", prov);
+                row.put("modelName", mod);
+                row.put("requests", reqs);
+                row.put("avgLatencyMs", avgLat);
+                row.put("inputTokens", inT);
+                row.put("outputTokens", outT);
+                row.put("totalTokens", totT);
+                row.put("estimatedCostUsd", Math.round(cost * 1_000_000.0) / 1_000_000.0);
+                byModel.add(row);
+            }
+            byModel.sort((a, b) -> Long.compare(((Number) b.get("totalTokens")).longValue(), ((Number) a.get("totalTokens")).longValue()));
+
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("totalRequests", totalRequests);
+            response.put("totalSuccesses", totalSuccesses);
+            response.put("totalFailures", totalFailures);
+            response.put("totalInputTokens", totalInputTokens);
+            response.put("totalOutputTokens", totalOutputTokens);
+            response.put("totalTokens", totalTokens);
+            response.put("avgLatencyMs", avgLatencyMs);
+            response.put("totalEstimatedCostUsd", Math.round(totalEstimatedCostUsd * 1_000_000.0) / 1_000_000.0);
+            response.put("byAgent", byAgent);
+            response.put("byModel", byModel);
+
+            sendJsonResponse(exchange, 200, response);
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    private static double estimateStatCostUsd(String provider, String model, long inputTokens, long outputTokens) {
+        String p = provider != null ? provider.toUpperCase(Locale.ROOT) : "";
+        String m = model != null ? model.toLowerCase(Locale.ROOT) : "";
+        if (p.contains("OLLAMA") || m.contains("local") || m.contains("qwen") || m.contains("llama")) {
+            return 0.0;
+        }
+        double inRatePerMillion;
+        double outRatePerMillion;
+        if (m.contains("flash") || m.contains("mini") || m.contains("haiku") || m.contains("lite") || m.contains("nano")) {
+            inRatePerMillion = 0.15;
+            outRatePerMillion = 0.60;
+        } else {
+            inRatePerMillion = 1.25;
+            outRatePerMillion = 5.00;
+        }
+        return (inputTokens * inRatePerMillion / 1_000_000.0) + (outputTokens * outRatePerMillion / 1_000_000.0);
     }
 
     /**
@@ -688,6 +870,174 @@ class RestApiHandler {
             }
 
             sendJsonResponse(exchange, 200, Map.of("pending", pending));
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * GET /api/edit/turn-summary — Cumulative diff and modified file summary for the active/last turn.
+     */
+    private void handleEditTurnSummaryApi(HttpExchange exchange) throws IOException {
+        try {
+            com.mkpro.events.EditApprovalService service = com.mkpro.events.EditApprovalService.INSTANCE;
+            if (service == null) {
+                sendJsonResponse(exchange, 200, Map.of(
+                    "fileCount", 0,
+                    "totalAdded", 0,
+                    "totalRemoved", 0,
+                    "files", List.of()
+                ));
+                return;
+            }
+
+            Map<String, com.mkpro.events.EditApprovalService.TurnEditRecord> snapshots = service.getTurnSnapshots();
+            int totalAdded = 0;
+            int totalRemoved = 0;
+            List<Map<String, Object>> files = new ArrayList<>();
+
+            for (com.mkpro.events.EditApprovalService.TurnEditRecord rec : snapshots.values()) {
+                int added = rec.getAddedCount();
+                int removed = rec.getRemovedCount();
+                totalAdded += added;
+                totalRemoved += removed;
+
+                List<Map<String, Object>> diffList = new ArrayList<>();
+                if (rec.getCumulativeDiff() != null) {
+                    for (com.mkpro.events.EditProposal.DiffLine d : rec.getCumulativeDiff()) {
+                        Map<String, Object> dl = new LinkedHashMap<>();
+                        dl.put("type", d.getType().name());
+                        dl.put("text", d.getText());
+                        dl.put("line", d.getLineNumber());
+                        diffList.add(dl);
+                    }
+                }
+
+                Map<String, Object> fileItem = new LinkedHashMap<>();
+                fileItem.put("path", rec.getFilePath());
+                fileItem.put("filePath", rec.getFilePath());
+                fileItem.put("resolvedPath", rec.getResolvedPath());
+                fileItem.put("isNewFile", !rec.isExistedBeforeFirstEdit());
+                fileItem.put("existedBeforeFirstEdit", rec.isExistedBeforeFirstEdit());
+                fileItem.put("added", added);
+                fileItem.put("removed", removed);
+                fileItem.put("timestamp", rec.getTimestamp());
+                fileItem.put("diff", diffList);
+                files.add(fileItem);
+            }
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("fileCount", files.size());
+            result.put("totalAdded", totalAdded);
+            result.put("totalRemoved", totalRemoved);
+            result.put("files", files);
+            sendJsonResponse(exchange, 200, result);
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * POST /api/edit/revert — Revert a single file to its pre-turn state.
+     */
+    private void handleEditRevertApi(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1); exchange.close(); return;
+        }
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            JsonNode req = mapper.readTree(body);
+            String path = req.has("path") ? req.get("path").asText() : "";
+
+            com.mkpro.events.EditApprovalService service = com.mkpro.events.EditApprovalService.INSTANCE;
+            if (service == null || path.isBlank()) {
+                sendJsonError(exchange, 400, "path field required");
+                return;
+            }
+
+            boolean reverted = service.revertFile(path);
+            sendJsonResponse(exchange, 200, Map.of(
+                "status", reverted ? "reverted" : "not_found",
+                "path", path
+            ));
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * POST /api/edit/revert-turn — Revert all files modified in the active turn snapshot.
+     */
+    private void handleEditRevertTurnApi(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1); exchange.close(); return;
+        }
+        try {
+            com.mkpro.events.EditApprovalService service = com.mkpro.events.EditApprovalService.INSTANCE;
+            List<String> reverted = service != null ? service.revertTurn() : List.of();
+            sendJsonResponse(exchange, 200, Map.of(
+                "status", "reverted",
+                "revertedFiles", reverted
+            ));
+        } catch (Exception e) {
+            sendJsonError(exchange, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * GET / POST /api/verify — Query, toggle, or trigger the Self-Healing Auto-Verify Gate.
+     */
+    private void handleVerifyApi(HttpExchange exchange) throws IOException {
+        try {
+            if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                JsonNode req = body.isBlank() ? mapper.createObjectNode() : mapper.readTree(body);
+
+                if (req.has("enabled") || req.has("autoVerify")) {
+                    boolean enabled = req.has("enabled") ? req.get("enabled").asBoolean() : req.get("autoVerify").asBoolean();
+                    if (mkproContext != null) {
+                        mkproContext.setAutoVerify(enabled);
+                    }
+                }
+
+                if (req.has("action")) {
+                    String action = req.get("action").asText("");
+                    if ("on".equalsIgnoreCase(action) || "enable".equalsIgnoreCase(action)) {
+                        if (mkproContext != null) mkproContext.setAutoVerify(true);
+                    } else if ("off".equalsIgnoreCase(action) || "disable".equalsIgnoreCase(action)) {
+                        if (mkproContext != null) mkproContext.setAutoVerify(false);
+                    } else if ("toggle".equalsIgnoreCase(action)) {
+                        if (mkproContext != null) mkproContext.setAutoVerify(!mkproContext.isAutoVerify());
+                    } else if ("run".equalsIgnoreCase(action)) {
+                        Collection<String> files = com.mkpro.events.EditApprovalService.INSTANCE != null
+                            ? com.mkpro.events.EditApprovalService.INSTANCE.getTurnSnapshots().keySet()
+                            : List.of();
+                        com.mkpro.events.AutoVerifyGate.VerifyResult res =
+                            com.mkpro.events.AutoVerifyGate.verifyFiles(mkproContext, files, true);
+                        Map<String, Object> out = new LinkedHashMap<>();
+                        out.put("autoVerify", mkproContext != null && mkproContext.isAutoVerify());
+                        out.put("enabled", mkproContext != null && mkproContext.isAutoVerify());
+                        out.put("ran", res.ran());
+                        out.put("passed", res.passed());
+                        out.put("lastPassed", res.passed());
+                        out.put("command", res.command());
+                        out.put("summary", res.summary());
+                        out.put("lastSummary", res.summary());
+                        out.put("errorOutput", res.errorOutput());
+                        out.put("checkedFiles", res.checkedFiles());
+                        sendJsonResponse(exchange, 200, out);
+                        return;
+                    }
+                }
+            }
+
+            Map<String, Object> status = new LinkedHashMap<>();
+            boolean enabled = mkproContext != null && mkproContext.isAutoVerify();
+            status.put("autoVerify", enabled);
+            status.put("enabled", enabled);
+            status.put("lastPassed", mkproContext == null || mkproContext.isLastVerifyPassed());
+            status.put("lastSummary", mkproContext != null ? mkproContext.getLastVerifySummary() : "Not run yet");
+            sendJsonResponse(exchange, 200, status);
         } catch (Exception e) {
             sendJsonError(exchange, 500, e.getMessage());
         }
@@ -1270,6 +1620,167 @@ class RestApiHandler {
         }
     }
 
+    private void handleMqSchedules(HttpExchange exchange) throws IOException {
+        String method = exchange.getRequestMethod().toUpperCase();
+        com.mkpro.infra.mq.JobScheduleManager mgr = com.mkpro.infra.mq.JobScheduleManager.getInstance();
+
+        if ("GET".equals(method)) {
+            sendJsonResponse(exchange, 200, Map.of("schedules", mgr.listSchedules()));
+            return;
+        }
+
+        if ("DELETE".equals(method)) {
+            String id = "";
+            String rawQuery = exchange.getRequestURI().getQuery();
+            if (rawQuery != null) {
+                for (String param : rawQuery.split("&")) {
+                    if (param.startsWith("id=")) {
+                        id = URLDecoder.decode(param.substring(3), StandardCharsets.UTF_8).trim();
+                    }
+                }
+            }
+            if (id.isEmpty()) {
+                try {
+                    String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                    if (!body.isBlank()) {
+                        JsonNode req = mapper.readTree(body);
+                        if (req.has("id")) id = req.get("id").asText("").trim();
+                    }
+                } catch (Exception ignored) {}
+            }
+            if (id.isEmpty()) {
+                sendJsonError(exchange, 400, "id is required");
+                return;
+            }
+            boolean removed = mgr.removeSchedule(id);
+            sendJsonResponse(exchange, 200, Map.of("status", removed ? "deleted" : "not_found", "id", id, "schedules", mgr.listSchedules()));
+            return;
+        }
+
+        if ("POST".equals(method)) {
+            try {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                JsonNode req = body.isBlank() ? mapper.createObjectNode() : mapper.readTree(body);
+                String action = req.has("action") ? req.get("action").asText("").trim().toLowerCase() : "";
+                if (action.isEmpty() && req.has("prompt")) {
+                    action = "create";
+                }
+
+                switch (action) {
+                    case "create":
+                    case "add": {
+                        String name = req.has("name") ? req.get("name").asText("").trim() : "";
+                        String prompt = req.has("prompt") ? req.get("prompt").asText("").trim() : "";
+                        String targetAgent = req.has("targetAgent") ? req.get("targetAgent").asText("Coordinator").trim()
+                            : (req.has("agent") ? req.get("agent").asText("Coordinator").trim() : "Coordinator");
+                        int intervalSeconds = req.has("intervalSeconds") ? req.get("intervalSeconds").asInt(0)
+                            : (req.has("interval") ? req.get("interval").asInt(0) : 0);
+                        boolean triggerOnEdit = req.has("triggerOnEdit") && req.get("triggerOnEdit").asBoolean(false);
+
+                        if (prompt.isEmpty()) {
+                            sendJsonError(exchange, 400, "prompt is required");
+                            return;
+                        }
+
+                        ensureMqWorkerRunning();
+                        com.mkpro.infra.mq.JobScheduleManager.ScheduledJob job =
+                            mgr.addSchedule(name, prompt, targetAgent, intervalSeconds, triggerOnEdit);
+                        sendJsonResponse(exchange, 200, Map.of(
+                            "status", "created",
+                            "schedule", job,
+                            "schedules", mgr.listSchedules()
+                        ));
+                        return;
+                    }
+                    case "toggle": {
+                        String id = req.has("id") ? req.get("id").asText("").trim() : "";
+                        if (id.isEmpty()) {
+                            sendJsonError(exchange, 400, "id is required");
+                            return;
+                        }
+                        boolean ok;
+                        if (req.has("enabled") && !req.get("enabled").isNull()) {
+                            ok = mgr.toggleSchedule(id, req.get("enabled").asBoolean());
+                        } else {
+                            ok = mgr.toggleSchedule(id);
+                        }
+                        if (!ok) {
+                            sendJsonError(exchange, 404, "Schedule not found: " + id);
+                            return;
+                        }
+                        sendJsonResponse(exchange, 200, Map.of(
+                            "status", "toggled",
+                            "id", id,
+                            "schedule", mgr.getSchedule(id),
+                            "schedules", mgr.listSchedules()
+                        ));
+                        return;
+                    }
+                    case "run":
+                    case "trigger": {
+                        String id = req.has("id") ? req.get("id").asText("").trim() : "";
+                        if (id.isEmpty()) {
+                            sendJsonError(exchange, 400, "id is required");
+                            return;
+                        }
+                        ensureMqWorkerRunning();
+                        boolean ok = mgr.triggerNow(id);
+                        if (!ok) {
+                            sendJsonError(exchange, 404, "Schedule not found: " + id);
+                            return;
+                        }
+                        sendJsonResponse(exchange, 200, Map.of(
+                            "status", "triggered",
+                            "id", id,
+                            "schedule", mgr.getSchedule(id),
+                            "schedules", mgr.listSchedules()
+                        ));
+                        return;
+                    }
+                    case "delete":
+                    case "remove": {
+                        String id = req.has("id") ? req.get("id").asText("").trim() : "";
+                        if (id.isEmpty()) {
+                            sendJsonError(exchange, 400, "id is required");
+                            return;
+                        }
+                        boolean removed = mgr.removeSchedule(id);
+                        sendJsonResponse(exchange, 200, Map.of(
+                            "status", removed ? "deleted" : "not_found",
+                            "id", id,
+                            "schedules", mgr.listSchedules()
+                        ));
+                        return;
+                    }
+                    default:
+                        sendJsonError(exchange, 400, "Unsupported action: " + action);
+                        return;
+                }
+            } catch (Exception e) {
+                sendJsonError(exchange, 500, e.getMessage());
+                return;
+            }
+        }
+
+        exchange.sendResponseHeaders(405, -1);
+        exchange.close();
+    }
+
+    private void ensureMqWorkerRunning() {
+        try {
+            com.mkpro.infra.mq.RabbitMqWorkerService w = mkproContext != null
+                ? mkproContext.getRabbitMqWorkerService()
+                : com.mkpro.infra.mq.RabbitMqWorkerService.getInstance();
+            if (w == null || !w.isRunning()) {
+                com.mkpro.CentralMemory cm = centralMemory != null ? centralMemory : com.mkpro.CentralMemory.getInstance();
+                com.mkpro.infra.mq.MqConfig cfg = com.mkpro.infra.mq.MqConfig.fromEnvAndMemory(cm);
+                w = new com.mkpro.infra.mq.RabbitMqWorkerService(cfg, mkproContext);
+                try { w.start(); } catch (Exception ignored) {}
+                if (mkproContext != null) mkproContext.setRabbitMqWorkerService(w);
+            }
+        } catch (Exception ignored) {}
+    }
+
     private com.mkpro.CentralMemory resolveCm() { return centralMemory != null ? centralMemory : (mkproContext != null && mkproContext.getCentralMemory() != null ? mkproContext.getCentralMemory() : com.mkpro.CentralMemory.getInstance()); }
     private String resolveProjectName() { return java.nio.file.Paths.get(com.mkpro.CentralMemory.getCurrentProjectPath()).getFileName().toString(); }
     private void handleSessionsApi(HttpExchange exchange) throws IOException { handleSessionsListApi(exchange); }
@@ -1491,27 +2002,48 @@ private void handleNewSessionApi(HttpExchange exchange) throws IOException {
     }
 
     private void serveDbApi(HttpExchange exchange) throws IOException {
-        if (centralMemory == null) {
-            byte[] err = "{\"error\":\"CentralMemory not available\"}".getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
-            exchange.sendResponseHeaders(503, err.length);
-            try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+        com.mkpro.CentralMemory cm = resolveCm();
+        if (cm == null) {
+            sendJsonError(exchange, 503, "CentralMemory not available");
             return;
         }
 
         try {
-            Map<String, Map<String, String>> stores = centralMemory.dumpAllStores();
-            String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(stores);
+            Map<String, Map<String, String>> stores = cm.dumpAllStores();
+            String reqPath = exchange.getRequestURI().getPath();
+            String targetStore = null;
+            if (reqPath != null && reqPath.startsWith("/api/db/") && reqPath.length() > "/api/db/".length()) {
+                targetStore = URLDecoder.decode(reqPath.substring("/api/db/".length()), StandardCharsets.UTF_8).trim();
+                if (targetStore.endsWith("/")) {
+                    targetStore = targetStore.substring(0, targetStore.length() - 1);
+                }
+            }
+            if ((targetStore == null || targetStore.isEmpty()) && exchange.getRequestURI().getQuery() != null) {
+                for (String param : exchange.getRequestURI().getQuery().split("&")) {
+                    if (param.startsWith("store=")) {
+                        targetStore = URLDecoder.decode(param.substring(6), StandardCharsets.UTF_8).trim();
+                    }
+                }
+            }
+
+            Object payload = stores;
+            if (targetStore != null && !targetStore.isEmpty()) {
+                if (stores.containsKey(targetStore)) {
+                    payload = Map.of(targetStore, stores.get(targetStore));
+                } else {
+                    sendJsonError(exchange, 404, "Store not found: " + targetStore);
+                    return;
+                }
+            }
+
+            String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload);
             byte[] content = json.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
             exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
             exchange.sendResponseHeaders(200, content.length);
             try (OutputStream os = exchange.getResponseBody()) { os.write(content); }
-        } catch (Exception e) {
-            byte[] err = ("{\"error\":\"" + e.getMessage() + "\"}").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
-            exchange.sendResponseHeaders(500, err.length);
-            try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+        } catch (Throwable e) {
+            sendJsonError(exchange, 500, e.getMessage() != null ? e.getMessage() : e.toString());
         }
     }
 

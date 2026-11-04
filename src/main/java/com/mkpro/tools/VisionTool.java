@@ -49,11 +49,123 @@ public class VisionTool {
         ".bmp", "image/bmp"
     );
 
-    private static final long MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
+    private static final long MAX_IMAGE_SIZE = 20 * 1024 * 1024;
+    private static final long MAX_MEDIA_SIZE = 50 * 1024 * 1024;
+
+    private static final Map<String, String> MEDIA_MIME_TYPES = Map.ofEntries(
+        Map.entry(".jpg", "image/jpeg"),
+        Map.entry(".jpeg", "image/jpeg"),
+        Map.entry(".png", "image/png"),
+        Map.entry(".webp", "image/webp"),
+        Map.entry(".gif", "image/gif"),
+        Map.entry(".bmp", "image/bmp"),
+        Map.entry(".mp3", "audio/mpeg"),
+        Map.entry(".wav", "audio/wav"),
+        Map.entry(".ogg", "audio/ogg"),
+        Map.entry(".flac", "audio/flac"),
+        Map.entry(".m4a", "audio/mp4"),
+        Map.entry(".webm", "audio/webm"),
+        Map.entry(".aac", "audio/aac")
+    );
+
+    public static String analyzeImageFile(Path path, String prompt) {
+        if (path == null) return "Image path cannot be null.";
+        java.util.Map<String, Object> args = new java.util.HashMap<>();
+        args.put("image_path", path.toAbsolutePath().toString());
+        if (prompt != null && !prompt.isBlank()) args.put("prompt", prompt);
+        Map<String, Object> res = create().runAsync(args, null).blockingGet();
+        if (res.containsKey("analysis")) return String.valueOf(res.get("analysis"));
+        if (res.containsKey("message")) return String.valueOf(res.get("message"));
+        if (res.containsKey("error")) return String.valueOf(res.get("error"));
+        return res.toString();
+    }
+ // 20MB
 
     /**
      * Creates the analyze_image tool.
      */
+    public static String getMediaMimeType(String fileNameOrPath) {
+        if (fileNameOrPath == null) return null;
+        String lower = fileNameOrPath.toLowerCase();
+        for (Map.Entry<String, String> entry : MEDIA_MIME_TYPES.entrySet()) {
+            if (lower.endsWith(entry.getKey())) return entry.getValue();
+        }
+        return null;
+    }
+
+    public static List<Path> extractLocalMediaPaths(String text) {
+        if (text == null || text.isBlank()) return Collections.emptyList();
+        java.util.Set<Path> found = new java.util.LinkedHashSet<>();
+        char[] quotes = new char[]{34, 39, 96};
+        for (int qi = 0; qi < quotes.length; qi++) {
+            char q = quotes[qi];
+            int idx = 0;
+            while ((idx = text.indexOf(q, idx)) >= 0) {
+                int end = text.indexOf(q, idx + 1);
+                if (end > idx + 1) {
+                    resolveCandidateMediaPath(text.substring(idx + 1, end), found);
+                    idx = end + 1;
+                } else break;
+            }
+        }
+        for (String tok : text.split("\\s+")) {
+            resolveCandidateMediaPath(tok, found);
+            int eq = tok.indexOf("=");
+            if (eq >= 0 && eq + 1 < tok.length()) resolveCandidateMediaPath(tok.substring(eq + 1), found);
+        }
+        return new java.util.ArrayList<>(found);
+    }
+
+    private static void resolveCandidateMediaPath(String raw, java.util.Set<Path> target) {
+        if (raw == null) return;
+        String c = raw.trim();
+        while (!c.isEmpty() && ("([{" + (char)60 + (char)59 + (char)34 + (char)39 + "`,").indexOf(c.charAt(0)) >= 0) c = c.substring(1).trim();
+        while (!c.isEmpty() && (")]}" + (char)62 + (char)59 + (char)34 + (char)39 + "`,.?!").indexOf(c.charAt(c.length() - 1)) >= 0) c = c.substring(0, c.length() - 1).trim();
+        if (c.isEmpty()) return;
+        String lower = c.toLowerCase();
+        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("data:")) return;
+        if (getMediaMimeType(lower) == null) return;
+        try {
+            Path p = Paths.get(c);
+            if (!p.isAbsolute()) p = Paths.get("").toAbsolutePath().resolve(p);
+            p = p.toAbsolutePath().normalize();
+            if (Files.exists(p) && Files.isRegularFile(p) && Files.size(p) <= MAX_MEDIA_SIZE) target.add(p);
+        } catch (Exception ignored) {}
+    }
+
+    public static List<Part> extractLocalMediaParts(String text) {
+        List<Path> paths = extractLocalMediaPaths(text);
+        if (paths.isEmpty()) return Collections.emptyList();
+        List<Part> parts = new java.util.ArrayList<>();
+        for (Path p : paths) {
+            try {
+                String mime = getMediaMimeType(p.getFileName().toString());
+                if (mime != null) {
+                    byte[] bytes = Files.readAllBytes(p);
+                    parts.add(Part.builder().inlineData(Blob.builder().mimeType(mime).data(bytes).build()).build());
+                }
+            } catch (Exception ignored) {}
+        }
+        return parts;
+    }
+
+    public static List<com.mkpro.web.WebChatServer.ImageAttachment> extractLocalMediaAttachments(String text) {
+        List<Path> paths = extractLocalMediaPaths(text);
+        if (paths.isEmpty()) return Collections.emptyList();
+        List<com.mkpro.web.WebChatServer.ImageAttachment> list = new java.util.ArrayList<>();
+        for (Path p : paths) {
+            try {
+                String name = p.getFileName().toString();
+                String mime = getMediaMimeType(name);
+                if (mime != null) {
+                    byte[] bytes = Files.readAllBytes(p);
+                    list.add(new com.mkpro.web.WebChatServer.ImageAttachment(name, mime, bytes));
+                }
+            } catch (Exception ignored) {}
+        }
+        return list;
+    }
+
     public static BaseTool create() {
         return new BaseTool(
             "analyze_image",
@@ -134,6 +246,7 @@ public class VisionTool {
                                 .data(imageBytes)
                                 .build())
                             .build();
+                        if (com.mkpro.agents.AgentManager.currentTurnMediaParts != null) { com.mkpro.agents.AgentManager.currentTurnMediaParts.add(imagePart); }
                         Part textPart = Part.fromText(prompt);
 
                         Content content = Content.builder()

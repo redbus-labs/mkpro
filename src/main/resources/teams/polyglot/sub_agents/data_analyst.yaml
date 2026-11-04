@@ -8,4 +8,5 @@ tools:
   - read_file
   - edit_file
   - write_file
+  - scripting
 generate_content_config: !include ../configs/sampling.yaml

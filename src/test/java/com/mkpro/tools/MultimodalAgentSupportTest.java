@@ -114,4 +114,49 @@ public class MultimodalAgentSupportTest {
         assertTrue(result.get("transcription").toString().contains("Mock Ollama response"));
         assertTrue(capturedRequests.get("ollama").contains("\"images\":["));
     }
+
+    @Test
+    void testCoordinatorHasVisionAndAudioTools() throws Exception {
+        com.mkpro.agents.AgentManager am = new com.mkpro.agents.AgentManager(null, null, null, "test-key", "http://localhost:11434", null, memory, com.mkpro.models.RunnerType.IN_MEMORY, java.nio.file.Paths.get("teams/default.yaml"), null, null);
+        java.util.List<String> coordToolNames = am.getCoordinatorTools().stream().map(com.google.adk.tools.BaseTool::name).toList();
+        assertTrue(coordToolNames.contains("analyze_image"), "Coordinator must have analyze_image tool");
+        assertTrue(coordToolNames.contains("transcribe_audio"), "Coordinator must have transcribe_audio tool");
+        com.mkpro.models.AgentDefinition coordDef = am.getAgentDefinitions().get("Coordinator");
+        assertTrue(coordDef.getInstruction().contains("analyze_image") && coordDef.getInstruction().contains("transcribe_audio"));
+        for (String ag : java.util.List.of("Coder", "SysAdmin", "Tester", "DocWriter", "SecurityAuditor", "Architect", "DataAnalyst", "AndroidDev", "IosDev", "ProductManager")) {
+            com.mkpro.models.AgentDefinition def = am.getAgentDefinitions().get(ag);
+            assertTrue(def.getTools().contains("vision"), ag + " should have vision tool");
+            assertTrue(def.getTools().contains("audio"), ag + " should have audio tool");
+        }
+    }
+
+    @Test
+    void testDirectDiskFileReadVisionAnalysis() throws Exception {
+        com.mkpro.security.PathValidator.initialize(tempDir, null);
+        Path img = tempDir.resolve("bus.png");
+        Files.write(img, new byte[]{1, 2, 3, 4});
+        String vllmUrl = "http://localhost:" + vllmServer.getAddress().getPort() + "/v1";
+        memory.saveAgentConfig("Coordinator", new AgentConfig(Provider.OPENAI, "gemma-4-test", vllmUrl));
+        com.mkpro.agents.AgentManager.currentTurnMediaParts.clear();
+
+        Map<String, Object> result = FileSystemTools.create().runAsync(Map.of("path", img.toString()), null).blockingGet();
+
+        assertTrue(result.get("content").toString().contains("Mock vLLM response"));
+        assertTrue(result.get("analysis").toString().contains("Mock vLLM response"));
+        assertTrue(!com.mkpro.agents.AgentManager.currentTurnMediaParts.isEmpty());
+        assertTrue(capturedRequests.get("vllm").contains("image_url"));
+    }
+
+    @Test
+    void testAutoAttachLocalDiskMediaInTerminalUiAndWebChatServer() throws Exception {
+        Path img = tempDir.resolve("screenshot.png");
+        Files.write(img, new byte[]{9, 8, 7});
+        com.google.genai.types.Content cliContent = com.mkpro.ui.TerminalUI.buildUserMessageContent("Check " + img.toString());
+        assertTrue(cliContent.parts().orElse(java.util.List.of()).size() >= 2);
+        assertTrue(!com.mkpro.agents.AgentManager.currentTurnMediaParts.isEmpty());
+
+        com.google.genai.types.Content webContent = com.mkpro.web.WebChatServer.buildUserMessageContent("Check " + img.toString(), null);
+        assertTrue(webContent.parts().orElse(java.util.List.of()).size() >= 2);
+        assertTrue(!com.mkpro.agents.AgentManager.currentTurnMediaParts.isEmpty());
+    }
 }

@@ -10,4 +10,5 @@ tools:
   - write_file
   - get_status
   - submit_patch
+  - scripting
 generate_content_config: !include ../configs/sampling.yaml

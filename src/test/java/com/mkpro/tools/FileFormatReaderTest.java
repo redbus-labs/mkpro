@@ -165,4 +165,14 @@ public class FileFormatReaderTest {
         // Should either have error or handle gracefully
         assertNotNull(result);
     }
+
+    @Test
+    void imageExtensionsAreSpecialFormat() {
+        assertTrue(FileFormatReader.isSpecialFormat("bus.png"));
+        assertTrue(FileFormatReader.isSpecialFormat("photo.jpg"));
+        assertTrue(FileFormatReader.isSpecialFormat("photo.jpeg"));
+        assertTrue(FileFormatReader.isSpecialFormat("anim.gif"));
+        assertTrue(FileFormatReader.isSpecialFormat("pic.webp"));
+        assertTrue(FileFormatReader.isSpecialFormat("icon.bmp"));
+    }
 }

@@ -480,6 +480,25 @@ public class CentralMemoryTest {
         assertEquals("default-session", memory.getActiveSessionId());
     }
 
+    @Test
+    void testDumpAllStores() {
+        memory.saveMemory("/project/path", "Test memory");
+        memory.saveAgentConfig("Coder", new AgentConfig(Provider.GEMINI, "gemini-2.5-flash"));
+        memory.saveFilterConfig(new com.mkpro.plugins.FilterConfig());
+        memory.saveAgentStat(createStat("Coder", true, 250));
+
+        Map<String, Map<String, String>> dump = memory.dumpAllStores();
+        assertNotNull(dump);
+        assertTrue(dump.containsKey("memories"));
+        assertTrue(dump.containsKey("agent_configs"));
+        assertTrue(dump.containsKey("filter_config"));
+        assertTrue(dump.containsKey("generic_store"));
+        assertTrue(dump.containsKey("project_sessions"));
+        assertTrue(dump.containsKey("agent_stats (local, last 100)"));
+        assertEquals("Test memory", dump.get("memories").get("/project/path"));
+        assertTrue(dump.get("agent_configs").values().stream().anyMatch(v -> v.contains("GEMINI:gemini-2.5-flash")));
+    }
+
     // ==========================================================================
     // HELPERS
     // ==========================================================================

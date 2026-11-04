@@ -13,7 +13,7 @@ import java.util.*;
 public class FileFormatReader {
 
     private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(
-        "pdf", "docx", "xlsx", "pptx", "svg", "dxf", "stl", "obj"
+        "pdf", "docx", "xlsx", "pptx", "svg", "dxf", "stl", "obj", "png", "jpg", "jpeg", "gif", "webp", "bmp"
     );
 
     /**
@@ -39,6 +39,7 @@ public class FileFormatReader {
                 case "dxf" -> readDxf(filePath);
                 case "stl" -> readStl(filePath);
                 case "obj" -> readObj(filePath);
+                case "png", "jpg", "jpeg", "gif", "webp", "bmp" -> readImage(filePath, ext);
                 default -> Map.of("error", "Unsupported format: " + ext);
             };
         } catch (Exception e) {
@@ -486,6 +487,29 @@ public class FileFormatReader {
         result.put("format", "obj");
         result.put("vertices", vertices);
         result.put("faces", faces);
+        return result;
+    }
+
+    private static Map<String, Object> readImage(Path path, String ext) throws Exception {
+        if (!Files.exists(path)) return Map.of("error", "File not found: " + path);
+        long fileSize = Files.size(path);
+        int width = -1, height = -1;
+        try {
+            java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(path.toFile());
+            if (img != null) { width = img.getWidth(); height = img.getHeight(); }
+        } catch (Exception ignored) {}
+        String analysis = VisionTool.analyzeImageFile(path, "Describe and extract all visible text and details from this image.");
+        StringBuilder sb = new StringBuilder();
+        sb.append("Image File (").append(ext.toUpperCase()).append("):\n");
+        if (width > 0 && height > 0) sb.append("  Dimensions: ").append(width).append("x").append(height).append(" px\n");
+        sb.append("  File size: ").append(fileSize).append(" bytes\n");
+        if (analysis != null && !analysis.isBlank()) sb.append("  Vision Analysis:\n").append(analysis).append("\n");
+        Map<String, Object> result = new HashMap<>();
+        result.put("content", sb.toString());
+        result.put("format", ext);
+        result.put("file_size_bytes", fileSize);
+        if (width > 0 && height > 0) { result.put("width", width); result.put("height", height); }
+        if (analysis != null) result.put("analysis", analysis);
         return result;
     }
 

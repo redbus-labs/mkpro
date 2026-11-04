@@ -632,96 +632,104 @@ public class CentralMemory {
         return title.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
     }
 
-public Map<String, Map<String, String>> dumpAllStores() {
-        Map<String, Map<String, String>> result = new java.util.LinkedHashMap<>();
-        
-        // Shared stores
-        Map<String, Map<String, String>> shared = withSharedDb(db -> {
-            Map<String, Map<String, String>> r = new java.util.LinkedHashMap<>();
-
-            // Memories
-            Map<String, String> memories = db.hashMap("memories", Serializer.STRING, Serializer.STRING).createOrOpen();
-            r.put("memories", new java.util.LinkedHashMap<>(memories));
-
-            // Agent configs
-            Map<String, Object> configs = db.hashMap("agent_configs", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            Map<String, String> configStrings = new java.util.LinkedHashMap<>();
-            configs.forEach((k, v) -> configStrings.put(k, v != null ? v.toString() : "null"));
-            r.put("agent_configs", configStrings);
-
-            // MCP servers
-            Map<String, Object> mcpMap = db.hashMap("mcp_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            Map<String, String> mcpStrings = new java.util.LinkedHashMap<>();
-            mcpMap.forEach((k, v) -> mcpStrings.put(k, v != null ? v.toString() : "null"));
-            r.put("mcp_servers", mcpStrings);
-
-            // Ollama servers
-            Map<String, Object> ollamaMap = db.hashMap("ollama_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            Map<String, String> ollamaStrings = new java.util.LinkedHashMap<>();
-            ollamaMap.forEach((k, v) -> ollamaStrings.put(k, v != null ? v.toString() : "null"));
-            r.put("ollama_servers", ollamaStrings);
-
-            // OpenAI servers
-            Map<String, Object> openAiMap = db.hashMap("openai_servers", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            Map<String, String> openAiStrings = new java.util.LinkedHashMap<>();
-            openAiMap.forEach((k, v) -> openAiStrings.put(k, v != null ? v.toString() : "null"));
-            r.put("openai_servers", openAiStrings);
-
-            // Goals
-            Map<String, Object> goalsMap = db.hashMap("project_goals", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            Map<String, String> goalStrings = new java.util.LinkedHashMap<>();
-            goalsMap.forEach((k, v) -> goalStrings.put(k, v != null ? v.toString() : "null"));
-            r.put("project_goals", goalStrings);
-
-            // SSH Sandbox Config (dump safe representation)
-            Map<String, Object> sshMap = db.hashMap("ssh_sandbox_config", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            Map<String, String> sshStrings = new java.util.LinkedHashMap<>();
-            sshMap.forEach((k, v) -> {
-                if (v instanceof SshSandboxConfig) {
-                    sshStrings.put(k, ((SshSandboxConfig) v).toSafeMap().toString());
-                } else {
-                    sshStrings.put(k, v != null ? v.toString() : "null");
+    private Map<String, String> dumpStringStore(DB db, String storeName) {
+        Map<String, String> strings = new java.util.LinkedHashMap<>();
+        try {
+            Map<String, String> map = db.hashMap(storeName, Serializer.STRING, Serializer.STRING).createOrOpen();
+            for (String key : map.keySet()) {
+                try {
+                    String val = map.get(key);
+                    strings.put(key, val != null ? val : "null");
+                } catch (Throwable t) {
+                    strings.put(key, "[Error: " + formatErrorMessage(t) + "]");
                 }
+            }
+        } catch (Throwable t) {
+            strings.put("error", formatErrorMessage(t));
+        }
+        return strings;
+    }
+
+    private Map<String, String> dumpJavaStore(DB db, String storeName) {
+        Map<String, String> strings = new java.util.LinkedHashMap<>();
+        try {
+            Map<String, Object> map = db.hashMap(storeName, Serializer.STRING, Serializer.JAVA).createOrOpen();
+            for (String key : map.keySet()) {
+                try {
+                    Object val = map.get(key);
+                    if (val instanceof SshSandboxConfig) {
+                        strings.put(key, ((SshSandboxConfig) val).toSafeMap().toString());
+                    } else {
+                        strings.put(key, val != null ? val.toString() : "null");
+                    }
+                } catch (Throwable t) {
+                    strings.put(key, "[DeserializationError: " + formatErrorMessage(t) + "]");
+                }
+            }
+        } catch (Throwable t) {
+            strings.put("error", formatErrorMessage(t));
+        }
+        return strings;
+    }
+
+    private static String formatErrorMessage(Throwable t) {
+        if (t == null) return "Unknown error";
+        if (t.getMessage() != null && !t.getMessage().isBlank()) return t.getMessage();
+        if (t.getCause() != null && t.getCause().getMessage() != null && !t.getCause().getMessage().isBlank()) {
+            return t.getCause().getClass().getSimpleName() + ": " + t.getCause().getMessage();
+        }
+        return t.toString();
+    }
+
+    public Map<String, Map<String, String>> dumpAllStores() {
+        Map<String, Map<String, String>> result = new java.util.LinkedHashMap<>();
+
+        // Shared stores
+        try {
+            Map<String, Map<String, String>> shared = withSharedDb(db -> {
+                Map<String, Map<String, String>> r = new java.util.LinkedHashMap<>();
+
+                r.put("memories", dumpStringStore(db, "memories"));
+                r.put("agent_configs", dumpJavaStore(db, "agent_configs"));
+                r.put("mcp_servers", dumpJavaStore(db, "mcp_servers"));
+                r.put("ollama_servers", dumpJavaStore(db, "ollama_servers"));
+                r.put("openai_servers", dumpJavaStore(db, "openai_servers"));
+                r.put("project_goals", dumpJavaStore(db, "project_goals"));
+                r.put("ssh_sandbox_config", dumpJavaStore(db, "ssh_sandbox_config"));
+                r.put("filter_config", dumpJavaStore(db, "filter_config"));
+                r.put("generic_store", dumpJavaStore(db, "generic_store"));
+                r.put("mkpro_tasks", dumpStringStore(db, "mkpro_tasks"));
+                r.put("mkpro_notes", dumpStringStore(db, "mkpro_notes"));
+                r.put("project_sessions", dumpStringStore(db, "project_sessions"));
+
+                return r;
             });
-            r.put("ssh_sandbox_config", sshStrings);
-
-            // Filter Config
-            Map<String, Object> filterMap = db.hashMap("filter_config", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            Map<String, String> filterStrings = new java.util.LinkedHashMap<>();
-            filterMap.forEach((k, v) -> filterStrings.put(k, v != null ? v.toString() : "null"));
-            r.put("filter_config", filterStrings);
-
-            // Generic store
-            Map<String, Object> genericMap = db.hashMap("generic_store", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            Map<String, String> genericStrings = new java.util.LinkedHashMap<>();
-            genericMap.forEach((k, v) -> genericStrings.put(k, v != null ? v.toString() : "null"));
-            r.put("generic_store", genericStrings);
-
-            // Tasks
-            Map<String, String> tasksMap = db.hashMap("mkpro_tasks", Serializer.STRING, Serializer.STRING).createOrOpen();
-            r.put("mkpro_tasks", new java.util.LinkedHashMap<>(tasksMap));
-
-            // Notes
-            Map<String, String> notesMap = db.hashMap("mkpro_notes", Serializer.STRING, Serializer.STRING).createOrOpen();
-            r.put("mkpro_notes", new java.util.LinkedHashMap<>(notesMap));
-
-            return r;
-        });
-        result.putAll(shared);
+            if (shared != null) {
+                result.putAll(shared);
+            }
+        } catch (Throwable t) {
+            result.put("shared_db", Map.of("error", formatErrorMessage(t)));
+        }
 
         // Local stats (agent_stats from local DB)
         try {
-            @SuppressWarnings("unchecked")
-            List<AgentStat> stats = (List<AgentStat>) localDb.indexTreeList("agent_stats", Serializer.JAVA).createOrOpen();
-            Map<String, String> statsMap = new java.util.LinkedHashMap<>();
-            int count = Math.min(stats.size(), 100); // Last 100 entries
-            for (int i = Math.max(0, stats.size() - count); i < stats.size(); i++) {
-                AgentStat stat = stats.get(i);
-                statsMap.put(String.valueOf(i), stat != null ? stat.toString() : "null");
+            synchronized (localDb) {
+                @SuppressWarnings("unchecked")
+                List<AgentStat> stats = (List<AgentStat>) localDb.indexTreeList("agent_stats", Serializer.JAVA).createOrOpen();
+                Map<String, String> statsMap = new java.util.LinkedHashMap<>();
+                int count = Math.min(stats.size(), 100); // Last 100 entries
+                for (int i = Math.max(0, stats.size() - count); i < stats.size(); i++) {
+                    try {
+                        AgentStat stat = stats.get(i);
+                        statsMap.put(String.valueOf(i), stat != null ? stat.toString() : "null");
+                    } catch (Throwable t) {
+                        statsMap.put(String.valueOf(i), "[Error: " + formatErrorMessage(t) + "]");
+                    }
+                }
+                result.put("agent_stats (local, last 100)", statsMap);
             }
-            result.put("agent_stats (local, last 100)", statsMap);
-        } catch (Exception e) {
-            result.put("agent_stats (local)", Map.of("error", e.getMessage()));
+        } catch (Throwable e) {
+            result.put("agent_stats (local)", Map.of("error", formatErrorMessage(e)));
         }
 
         // Session logs (from ActionLogger)
@@ -730,11 +738,12 @@ public Map<String, Map<String, String>> dumpAllStores() {
             Map<String, String> logMap = new java.util.LinkedHashMap<>();
             int start = Math.max(0, logs.size() - 50); // Last 50 log entries
             for (int i = start; i < logs.size(); i++) {
-                logMap.put(String.valueOf(i), logs.get(i));
+                String logEntry = logs.get(i);
+                logMap.put(String.valueOf(i), logEntry != null ? logEntry : "");
             }
             result.put("session_logs (last 50)", logMap);
-        } catch (Exception e) {
-            result.put("session_logs", Map.of("error", e.getMessage()));
+        } catch (Throwable e) {
+            result.put("session_logs", Map.of("error", formatErrorMessage(e)));
         }
 
         return result;
@@ -1846,17 +1855,21 @@ public Map<String, Map<String, String>> dumpAllStores() {
 
     public FilterConfig getFilterConfig() {
         String scopedKey = getCurrentProjectKeyPrefix() + "current";
-        FilterConfig cfg = withSharedDb(db -> {
-            Map<String, FilterConfig> map = db.hashMap("filter_config", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            return map.get(scopedKey);
-        });
-        if (cfg != null) {
-            return cfg;
-        }
-        FilterConfig projectConfig = get(getCurrentProjectKeyPrefix() + StoreKeys.FILTER_CONFIG, FilterConfig.class);
-        if (projectConfig != null) {
-            return projectConfig;
-        }
+        try {
+            FilterConfig cfg = withSharedDb(db -> {
+                Map<String, FilterConfig> map = db.hashMap("filter_config", Serializer.STRING, Serializer.JAVA).createOrOpen();
+                return map.get(scopedKey);
+            });
+            if (cfg != null) {
+                return cfg;
+            }
+        } catch (Throwable ignored) {}
+        try {
+            FilterConfig projectConfig = get(getCurrentProjectKeyPrefix() + StoreKeys.FILTER_CONFIG, FilterConfig.class);
+            if (projectConfig != null) {
+                return projectConfig;
+            }
+        } catch (Throwable ignored) {}
         return new FilterConfig();
     }
 
@@ -1866,14 +1879,19 @@ public Map<String, Map<String, String>> dumpAllStores() {
 
     @SuppressWarnings("unchecked")
     public <T> T get(String key, Class<T> clazz) {
-        return withSharedDb(db -> {
-            Map<String, Object> genericStore = db.hashMap("generic_store", Serializer.STRING, Serializer.JAVA).createOrOpen();
-            Object val = genericStore.get(key);
-            if (val != null && clazz.isInstance(val)) {
-                return (T) val;
-            }
+        try {
+            return withSharedDb(db -> {
+                Map<String, Object> genericStore = db.hashMap("generic_store", Serializer.STRING, Serializer.JAVA).createOrOpen();
+                Object val = genericStore.get(key);
+                if (val != null && clazz.isInstance(val)) {
+                    return (T) val;
+                }
+                return null;
+            });
+        } catch (Throwable t) {
+            logger.warn("Failed to deserialize generic_store key '{}': {}", key, formatErrorMessage(t));
             return null;
-        });
+        }
     }
 
     public void put(String key, Object value) {

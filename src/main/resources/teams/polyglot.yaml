@@ -25,6 +25,22 @@ agents:
 
   - name: GoalTracker
     description: "Delegates project goal and task tracking to the Goal Tracker agent."
+    needs_context: false
+    routingKeywords:
+      - "goal"
+      - "goals"
+      - "todo"
+      - "milestone"
+      - "roadmap"
+      - "task list"
+    tools:
+      - file_read
+      - file_write
+      - safe_write
+      - clipboard
+      - central_memory
+      - vision
+      - audio
     instruction: |
       Role: Goal Tracker.
       Responsibilities:
@@ -33,14 +49,54 @@ agents:
 
   - name: CodeEditor
     description: "Delegates code modification tasks to the CodeEditor agent."
+    routingKeywords:
+      - "edit"
+      - "modify"
+      - "refactor"
+      - "rename"
+      - "replace"
+      - "rewrite"
+      - "patch"
+    tools:
+      - file_read
+      - file_write
+      - safe_write
+      - replace_in_file
+      - clipboard
+      - codebase_search
+      - vision
+      - audio
     instruction: |
       Role: Code Editor.
       Responsibilities:
       - Apply code changes in a safe and controlled manner.
-      - Use the `safe_write_file` tool to preview all changes.
+      - Use the `safe_write_file` or `replace_in_file` tool to preview all changes.
 
   - name: JavaCoder
     description: "Expert Java Developer."
+    routingKeywords:
+      - "java"
+      - "spring"
+      - "spring boot"
+      - "maven"
+      - "gradle"
+      - "pom.xml"
+      - "jakarta"
+      - "jvm"
+    tools:
+      - file_read
+      - file_write
+      - safe_write
+      - replace_in_file
+      - clipboard
+      - codebase_search
+      - mcp_scan
+      - graph_memory
+      - fetch_url
+      - scripting
+      - request_knowledge
+      - vision
+      - audio
     instruction: |
       Role: Java Specialist.
       Responsibilities:
@@ -50,6 +106,30 @@ agents:
 
   - name: PythonCoder
     description: "Expert Python Developer."
+    routingKeywords:
+      - "python"
+      - "pip"
+      - "pytest"
+      - "django"
+      - "flask"
+      - "fastapi"
+      - "pandas"
+      - "numpy"
+      - "pep8"
+    tools:
+      - file_read
+      - file_write
+      - safe_write
+      - replace_in_file
+      - clipboard
+      - codebase_search
+      - mcp_scan
+      - graph_memory
+      - fetch_url
+      - scripting
+      - request_knowledge
+      - vision
+      - audio
     instruction: |
       Role: Python Specialist.
       Responsibilities:
@@ -59,6 +139,30 @@ agents:
 
   - name: ReactCoder
     description: "Expert Frontend Developer (React)."
+    routingKeywords:
+      - "react"
+      - "jsx"
+      - "tsx"
+      - "typescript"
+      - "frontend"
+      - "component"
+      - "redux"
+      - "tailwind"
+      - "css"
+    tools:
+      - file_read
+      - file_write
+      - safe_write
+      - replace_in_file
+      - clipboard
+      - codebase_search
+      - mcp_scan
+      - graph_memory
+      - fetch_url
+      - scripting
+      - request_knowledge
+      - vision
+      - audio
     instruction: |
       Role: React Specialist.
       Responsibilities:
@@ -68,6 +172,26 @@ agents:
 
   - name: GoCoder
     description: "Expert Go Developer."
+    routingKeywords:
+      - "golang"
+      - "go.mod"
+      - "goroutine"
+      - "go build"
+      - "go test"
+    tools:
+      - file_read
+      - file_write
+      - safe_write
+      - replace_in_file
+      - clipboard
+      - codebase_search
+      - mcp_scan
+      - graph_memory
+      - fetch_url
+      - scripting
+      - request_knowledge
+      - vision
+      - audio
     instruction: |
       Role: Golang Specialist.
       Responsibilities:
@@ -76,6 +200,24 @@ agents:
 
   - name: SysAdmin
     description: "System Administrator."
+    routingKeywords:
+      - "shell"
+      - "bash"
+      - "process"
+      - "port"
+      - "disk"
+      - "memory"
+      - "environment"
+    tools:
+      - shell
+      - file_read
+      - file_write
+      - safe_write
+      - clipboard
+      - scripting
+      - ssh
+      - vision
+      - audio
     instruction: |
       Role: System Administrator.
       Responsibilities:
@@ -109,14 +251,35 @@ agents:
     tools:
       - ssh
       - file_read
+      - file_write
       - safe_write
       - shell
       - clipboard
+      - codebase_search
       - central_memory
       - fetch_url
+      - vision
+      - audio
 
   - name: Tester
     description: "QA Engineer."
+    routingKeywords:
+      - "test"
+      - "unit test"
+      - "integration test"
+      - "qa"
+      - "selenium"
+      - "assert"
+      - "verify"
+    tools:
+      - file_read
+      - file_write
+      - safe_write
+      - clipboard
+      - shell
+      - selenium
+      - vision
+      - audio
     instruction: |
       Role: QA / Test Engineer.
       Responsibilities:
@@ -125,6 +288,22 @@ agents:
 
   - name: "GitAgent"
     description: "Dedicated version control specialist responsible for committing, branching, and pushing code."
+    routingKeywords:
+      - "git"
+      - "commit"
+      - "push"
+      - "branch"
+      - "merge"
+      - "pull request"
+      - "stage"
+    tools:
+      - shell
+      - file_read
+      - file_write
+      - safe_write
+      - stats
+      - vision
+      - audio
     instruction: |
       You are the GitAgent, an expert in version control.
       Your sole responsibility is managing the Git repository for this project.
@@ -143,4 +322,3 @@ agents:
       ---
       AI Resource Usage (Session [sessionId]):
       [Token breakdown output from get_session_stats]
-    model: "llama3"

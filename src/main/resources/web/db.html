@@ -170,7 +170,7 @@
             for (const [storeName, entries] of Object.entries(data)) {
                 const keys = Object.keys(entries).filter(k => {
                     if (!filter) return true;
-                    const v = entries[k] || '';
+                    const v = String(entries[k] ?? '');
                     return k.toLowerCase().includes(filter) || v.toLowerCase().includes(filter);
                 });
                 
@@ -178,7 +178,7 @@
 
                 html += `<div class="store">
                     <div class="store-header" onclick="toggleStore(this)">
-                        <h2>${storeName}</h2>
+                        <h2>${escapeHtml(storeName)}</h2>
                         <span class="count">${keys.length} entries</span>
                         <span class="toggle">▼</span>
                     </div>
@@ -188,7 +188,7 @@
                     html += '<div class="empty">No entries' + (filter ? ' matching filter' : '') + '</div>';
                 } else {
                     for (const key of keys.sort()) {
-                        const value = entries[key];
+                        const value = entries[key] !== null && entries[key] !== undefined ? String(entries[key]) : '';
                         const isJson = value && (value.startsWith('{') || value.startsWith('['));
                         let displayValue = value;
                         

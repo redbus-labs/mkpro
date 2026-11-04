@@ -99,4 +99,11 @@ public class MqConfig implements Serializable {
     public void setTaskTimeoutSeconds(long taskTimeoutSeconds) { this.taskTimeoutSeconds = Math.max(1, taskTimeoutSeconds); }
     public boolean isAutoStart() { return autoStart; }
     public void setAutoStart(boolean autoStart) { this.autoStart = autoStart; }
+
+    @Override
+    public String toString() {
+        return String.format(
+                "MqConfig{mode='%s', host='%s', port=%d, internalHttpPort=%d, taskQueue='%s', resultQueue='%s', dlqQueue='%s', autoStart=%s}",
+                getMode(), host, port, getInternalHttpPort(), taskQueue, resultQueue, dlqQueue, autoStart);
+    }
 }

@@ -593,4 +593,30 @@ public class MkProContext {
 
     public com.mkpro.infra.mq.RabbitMqWorkerService getRabbitMqWorkerService() { return rabbitMqWorkerService; }
     public void setRabbitMqWorkerService(com.mkpro.infra.mq.RabbitMqWorkerService rabbitMqWorkerService) { this.rabbitMqWorkerService = rabbitMqWorkerService; }
+
+    // Self-Healing Auto-Verify Gate
+    private final AtomicBoolean autoVerify = new AtomicBoolean(false);
+    private volatile String lastVerifySummary = "Not run yet";
+    private volatile boolean lastVerifyPassed = true;
+
+    public boolean isAutoVerify() {
+        return autoVerify.get();
+    }
+
+    public void setAutoVerify(boolean enabled) {
+        autoVerify.set(enabled);
+    }
+
+    public String getLastVerifySummary() {
+        return lastVerifySummary;
+    }
+
+    public boolean isLastVerifyPassed() {
+        return lastVerifyPassed;
+    }
+
+    public void setLastVerifyResult(boolean passed, String summary) {
+        this.lastVerifyPassed = passed;
+        this.lastVerifySummary = summary != null ? summary : "";
+    }
 }

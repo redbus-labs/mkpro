@@ -9,7 +9,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static com.mkpro.MkPro.ANSI_BLUE;
@@ -43,12 +45,15 @@ public class TeamCommand implements Command {
         if (subCommand.equalsIgnoreCase("list")) {
             System.out.println(ANSI_BLUE + "Available teams:" + ANSI_RESET);
             try (Stream<Path> stream = Files.list(context.getTeamsDir())) {
-                stream.filter(p -> p.toString().endsWith(".yaml") || p.toString().endsWith(".yml"))
-                      .map(p -> p.getFileName().toString())
-                      .forEach(name -> {
+                stream.filter(this::isValidTeamEntry)
+                      .sorted()
+                      .forEach(p -> {
+                          String name = p.getFileName().toString();
                           String teamId = name.replace(".yaml", "").replace(".yml", "");
+                          boolean isModular = Files.isDirectory(p);
+                          String display = isModular ? name + "/ (modular ADK)" : name;
                           String marker = (name.equals(currentTeam) || teamId.equals(currentTeam)) ? " (*)" : "";
-                          System.out.println(" - " + name + marker);
+                          System.out.println(" - " + display + marker);
                       });
             }
         } else {
@@ -56,40 +61,55 @@ public class TeamCommand implements Command {
         }
     }
 
+    private boolean isValidTeamEntry(Path p) {
+        if (Files.isRegularFile(p)) {
+            String fileName = p.getFileName().toString();
+            return fileName.endsWith(".yaml") || fileName.endsWith(".yml");
+        } else if (Files.isDirectory(p)) {
+            return Files.exists(p.resolve("agent.yaml")) || Files.exists(p.resolve("agent.yml"));
+        }
+        return false;
+    }
+
     private List<String> getAvailableTeams(MkProContext context) throws IOException {
-        List<String> teams = new ArrayList<>();
+        Set<String> teams = new LinkedHashSet<>();
         try (Stream<Path> stream = Files.list(context.getTeamsDir())) {
-            stream.filter(p -> p.toString().endsWith(".yaml") || p.toString().endsWith(".yml"))
+            stream.filter(this::isValidTeamEntry)
+                  .sorted()
                   .map(p -> p.getFileName().toString().replace(".yaml", "").replace(".yml", ""))
                   .forEach(teams::add);
         }
-        return teams;
+        return new ArrayList<>(teams);
     }
 
     private void applyTeamSwitch(String teamName, MkProContext context, ConfigService configService) {
-        Path teamFile = context.getTeamsDir().resolve(teamName);
-        
-        // Try adding extensions if not provided
-        if (!Files.exists(teamFile)) {
-            if (Files.exists(context.getTeamsDir().resolve(teamName + ".yaml"))) {
-                teamFile = context.getTeamsDir().resolve(teamName + ".yaml");
-            } else if (Files.exists(context.getTeamsDir().resolve(teamName + ".yml"))) {
-                teamFile = context.getTeamsDir().resolve(teamName + ".yml");
+        String cleanTeamName = teamName.endsWith("/") ? teamName.substring(0, teamName.length() - 1) : teamName;
+        Path teamPath = context.getTeamsDir().resolve(cleanTeamName);
+
+        // Prefer modular directory if it contains agent.yaml / agent.yml, otherwise check .yaml / .yml files
+        if (Files.isDirectory(teamPath) && (Files.exists(teamPath.resolve("agent.yaml")) || Files.exists(teamPath.resolve("agent.yml")))) {
+            // Use modular directory
+        } else if (!Files.exists(teamPath) || Files.isDirectory(teamPath)) {
+            if (Files.exists(context.getTeamsDir().resolve(cleanTeamName + ".yaml"))) {
+                teamPath = context.getTeamsDir().resolve(cleanTeamName + ".yaml");
+            } else if (Files.exists(context.getTeamsDir().resolve(cleanTeamName + ".yml"))) {
+                teamPath = context.getTeamsDir().resolve(cleanTeamName + ".yml");
             }
         }
 
-        if (Files.exists(teamFile)) {
-            context.getCurrentTeam().set(teamName);
-            configService.saveSetting(ConfigService.PROP_TEAM, teamName); // Persist selection
-            context.getAgentManager().reloadAgents(teamFile);
+        if (Files.exists(teamPath)) {
+            String teamId = cleanTeamName.replace(".yaml", "").replace(".yml", "");
+            context.getCurrentTeam().set(teamId);
+            configService.saveSetting(ConfigService.PROP_TEAM, teamId); // Persist selection
+            context.getAgentManager().reloadAgents(teamPath);
             
             // Also update the runner to use the new definitions
             context.setAgentConfigs(context.getCentralMemory().getAllAgentConfigs());
             context.setRunner(context.getAgentManager().createRunner(context.getAgentConfigs(), "", context.getMaxTurns()));
             
-            System.out.println(ANSI_BRIGHT_GREEN + "Switched to team: " + teamName + ANSI_RESET);
+            System.out.println(ANSI_BRIGHT_GREEN + "Switched to team: " + teamId + ANSI_RESET);
         } else {
-            System.err.println("Team file not found: " + teamFile);
+            System.err.println("Team file or modular directory not found: " + teamPath);
             System.out.println("Usage: team [list | <team_name>]");
         }
     }

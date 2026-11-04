@@ -125,7 +125,10 @@ public class MarkovRouter {
         if ("CodeEditor".equalsIgnoreCase(agent)) {
             return "Coder";
         }
-        if ("CODING".equals(catKey) && ("AndroidDev".equalsIgnoreCase(agent) || "IosDev".equalsIgnoreCase(agent))) {
+        if (!"ANDROID".equals(catKey) && "AndroidDev".equalsIgnoreCase(agent)) {
+            return "Coder";
+        }
+        if (!"IOS".equals(catKey) && "IosDev".equalsIgnoreCase(agent)) {
             return "Coder";
         }
         return agent;

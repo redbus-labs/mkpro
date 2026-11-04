@@ -18,12 +18,16 @@ public class EditProposal {
     private final boolean isNewFile;
 
     public EditProposal(String id, String filePath, String oldContent, String newContent) {
+        this(id, filePath, oldContent, newContent, oldContent == null || oldContent.isEmpty());
+    }
+
+    public EditProposal(String id, String filePath, String oldContent, String newContent, boolean isNewFile) {
         this.id = id;
         this.filePath = filePath;
         this.oldContent = oldContent;
         this.newContent = newContent;
         this.createdAt = System.currentTimeMillis();
-        this.isNewFile = (oldContent == null || oldContent.isEmpty());
+        this.isNewFile = isNewFile;
         this.diffLines = computeDiff(oldContent, newContent);
     }
 

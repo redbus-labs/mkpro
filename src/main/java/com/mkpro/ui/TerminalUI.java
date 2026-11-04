@@ -28,6 +28,18 @@ public class TerminalUI {
         this.registry = registry;
     }
 
+    public static Content buildUserMessageContent(String line) {
+        com.mkpro.agents.AgentManager.currentTurnMediaParts.clear();
+        java.util.List<Part> parts = new java.util.ArrayList<>();
+        parts.add(Part.fromText(line));
+        java.util.List<Part> localMedia = com.mkpro.tools.VisionTool.extractLocalMediaParts(line);
+        if (!localMedia.isEmpty()) {
+            parts.addAll(localMedia);
+            com.mkpro.agents.AgentManager.currentTurnMediaParts.addAll(localMedia);
+        }
+        return Content.builder().role("user").parts(parts).build();
+    }
+
     public static void start(MkProContext context, CommandRegistry registry) {
         new TerminalUI(context, registry).start();
     }
@@ -35,19 +47,21 @@ public class TerminalUI {
     public void start() {
         printBanner();
 
-        String[] autoContHolder = {null}; // Set by Maker to auto-continue without user input
+        String[] autoContHolder = {null}; // Set by Maker or Auto-Verify to auto-continue without user input
+        int[] selfHealCount = {0};
 
         while (true) {
             String line = null;
             boolean isAutoContinue = false;
             try {
-                // Auto-continue: if Maker set a continuation message, use it instead of prompting
+                // Auto-continue: if Maker or Auto-Verify set a continuation message, use it instead of prompting
                 if (autoContHolder[0] != null) {
                     line = autoContHolder[0];
                     autoContHolder[0] = null;
                     isAutoContinue = true;
-                    System.out.println(ANSI_PURPLE + "  [Maker] Auto-continuing..." + ANSI_RESET);
+                    System.out.println(ANSI_PURPLE + "  [Auto-Continue] Running follow-up turn..." + ANSI_RESET);
                 } else {
+                    selfHealCount[0] = 0;
                     String timestamp = LocalTime.now().format(PROMPT_TIME_FORMATTER);
                     java.nio.file.Path cwdPath = java.nio.file.Paths.get("").toAbsolutePath();
                     String cwd;
@@ -80,6 +94,9 @@ public class TerminalUI {
                         // Fast-route evaluation prior to Coordinator turn
                         String routedAgent = null;
                         if (!isAutoContinue) {
+                            if (com.mkpro.events.EditApprovalService.INSTANCE != null) {
+                                com.mkpro.events.EditApprovalService.INSTANCE.startNewTurn();
+                            }
                             com.mkpro.routing.FastRouteEvaluator.EvaluationResult eval = 
                                 com.mkpro.routing.FastRouteEvaluator.evaluate(line, context);
                             
@@ -135,9 +152,7 @@ public class TerminalUI {
                             }
                         }
 
-                        com.google.genai.types.Content message = com.google.genai.types.Content.fromParts(
-                            new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(line)}
-                        );
+                        com.google.genai.types.Content message = buildUserMessageContent(line);
 
                         AtomicBoolean isThinking = new AtomicBoolean(true);
                         AtomicBoolean firstChunkReceived = new AtomicBoolean(false);
@@ -405,8 +420,24 @@ public class TerminalUI {
                                             autoContHolder[0] = context.getMakerLoop().generateAutoContMessage();
                                         }
                                     }
+
+                                    // Self-Healing Auto-Verify Gate
+                                    if (context.isAutoVerify() && com.mkpro.events.EditApprovalService.INSTANCE != null) {
+                                        java.util.Set<String> modifiedFiles = com.mkpro.events.EditApprovalService.INSTANCE.getCurrentTurnModifiedFiles();
+                                        if (!modifiedFiles.isEmpty()) {
+                                            com.mkpro.events.EditApprovalService.INSTANCE.clearTurnModifiedFiles();
+                                            com.mkpro.events.AutoVerifyGate.VerifyResult verifyRes =
+                                                com.mkpro.events.AutoVerifyGate.verifyFiles(context, modifiedFiles, false);
+                                            if (verifyRes.ran() && !verifyRes.passed() && selfHealCount[0] < 1) {
+                                                selfHealCount[0]++;
+                                                System.out.println(ANSI_YELLOW + "  [Auto-Verify] Verification failed — triggering self-healing turn..." + ANSI_RESET);
+                                                autoContHolder[0] = com.mkpro.events.AutoVerifyGate.buildSelfHealPrompt(verifyRes);
+                                            }
+                                        }
+                                    }
                                 });
                         } finally {
+                            com.mkpro.agents.AgentManager.currentTurnMediaParts.clear();
                             isThinking.set(false);
                             spinnerThread.interrupt();
                             System.out.print(ANSI_RESET);

@@ -191,8 +191,18 @@ public class MkProTools {
 
                     try {
                         Path validated = com.mkpro.security.PathValidator.getInstance().validateForRead(pathStr);
+                        if (!Files.exists(validated)) {
+                            Path mkproPath = Paths.get("mkpro").resolve(pathStr);
+                            if (Files.exists(mkproPath)) {
+                                validated = mkproPath;
+                            } else {
+                                return Collections.singletonMap("error", "File not found: " + pathStr);
+                            }
+                        }
+                        if (Files.isDirectory(validated)) {
+                            return Collections.singletonMap("error", "Path is a directory (use list_dir instead): " + pathStr);
+                        }
 
-                        // Special format detection (PDF, DOCX, XLSX, PPTX, SVG, DXF, STL, OBJ)
                         if (FileFormatReader.isSpecialFormat(pathStr)) {
                             return FileFormatReader.read(validated, startLine, endLine);
                         }
@@ -271,15 +281,46 @@ public class MkProTools {
                     String replacementText = (String) args.get("replacement_text");
                     try {
                         Path validated = com.mkpro.security.PathValidator.getInstance().validate(pathStr);
-                        String content = Files.readString(validated);
-                        String updatedContent = content.replace(targetText, replacementText);
+                        boolean existedBefore = Files.exists(validated);
+                        String oldContent = existedBefore ? Files.readString(validated) : "";
+                        String updatedContent = oldContent.replace(targetText, replacementText);
                         
-                        // Use writeFile to ensure approval process is followed if integrated
-                        // But since we need to return line count as requested, let's just write and report
-                        Files.writeString(validated, updatedContent);
-                        
-                        int lineCount = updatedContent.split("\r\n|\r|\n").length;
-                        return Map.of("result", "Successfully replaced text in " + pathStr, "line_count", lineCount);
+                        com.mkpro.events.EditApprovalService approvalService = com.mkpro.events.EditApprovalService.INSTANCE;
+                        com.mkpro.events.MkProEventBus eventBus = com.mkpro.events.MkProEventBus.INSTANCE;
+
+                        String proposalId = "edit-" + System.currentTimeMillis();
+                        com.mkpro.events.EditProposal proposal = new com.mkpro.events.EditProposal(proposalId, pathStr, oldContent, updatedContent, !existedBefore);
+
+                        if (approvalService == null || eventBus == null) {
+                            Files.writeString(validated, updatedContent);
+                            if (approvalService != null) {
+                                approvalService.recordAppliedEdit(proposal, validated, existedBefore);
+                            }
+                            return Map.of("result", "Successfully replaced text (no approval service)", "line_count", updatedContent.split("\r\n|\r|\n").length);
+                        }
+
+                        java.util.concurrent.CompletableFuture<Boolean> future = approvalService.submitProposal(proposal);
+                        eventBus.emit(com.mkpro.events.MkProEvent.editProposal(proposal));
+
+                        boolean approved;
+                        try {
+                            int timeoutSec = (eventBus.hasWebSink()) ? 8 : 30;
+                            approved = future.get(timeoutSec, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (java.util.concurrent.TimeoutException e) {
+                            approved = true;
+                            approvalService.approve(proposalId);
+                        }
+
+                        if (approved) {
+                            eventBus.emit(com.mkpro.events.MkProEvent.editApproved(proposalId, pathStr));
+                            Maker.backItUp(validated.toFile());
+                            Files.writeString(validated, updatedContent);
+                            approvalService.recordAppliedEdit(proposal, validated, existedBefore);
+                            return Map.of("result", "Successfully replaced text in " + pathStr, "line_count", updatedContent.split("\r\n|\r|\n").length);
+                        } else {
+                            eventBus.emit(com.mkpro.events.MkProEvent.editRejected(proposalId, pathStr));
+                            return Map.of("error", "User rejected changes for: " + pathStr);
+                        }
                     } catch (Exception e) {
                         return Map.of("error", e.getMessage());
                     }
@@ -391,8 +432,9 @@ public class MkProTools {
                     String content = (String) args.get("content");
                     try {
                         Path validated = com.mkpro.security.PathValidator.getInstance().validate(pathStr);
+                        boolean existedBefore = Files.exists(validated);
                         String oldContent = "";
-                        if (Files.exists(validated)) {
+                        if (existedBefore) {
                             oldContent = Files.readString(validated);
                         }
 
@@ -400,16 +442,19 @@ public class MkProTools {
                         com.mkpro.events.EditApprovalService approvalService = com.mkpro.events.EditApprovalService.INSTANCE;
                         com.mkpro.events.MkProEventBus eventBus = com.mkpro.events.MkProEventBus.INSTANCE;
 
+                        String proposalId = "edit-" + System.currentTimeMillis();
+                        com.mkpro.events.EditProposal proposal = new com.mkpro.events.EditProposal(
+                            proposalId, pathStr, oldContent, content, !existedBefore);
+
                         if (approvalService == null || eventBus == null) {
                             // Fallback: no approval service, write directly
                             if (validated.getParent() != null) Files.createDirectories(validated.getParent());
                             Files.writeString(validated, content);
+                            if (approvalService != null) {
+                                approvalService.recordAppliedEdit(proposal, validated, existedBefore);
+                            }
                             return Collections.<String, Object>singletonMap("status", "Success (no approval service)");
                         }
-
-                        String proposalId = "edit-" + System.currentTimeMillis();
-                        com.mkpro.events.EditProposal proposal = new com.mkpro.events.EditProposal(
-                            proposalId, pathStr, oldContent, content);
 
                         java.util.concurrent.CompletableFuture<Boolean> future = approvalService.submitProposal(proposal);
                         eventBus.emit(com.mkpro.events.MkProEvent.editProposal(proposal));
@@ -419,7 +464,7 @@ public class MkProTools {
                             // In web mode, auto-approve after 5s (user sees diff post-hoc, can revert via git)
                             // In CLI mode, TerminalSink has its own 7s countdown with reject option
                             int timeoutSec = (com.mkpro.events.MkProEventBus.INSTANCE != null 
-                                && com.mkpro.events.MkProEventBus.INSTANCE.hasWebSink()) ? 5 : 30;
+                                && com.mkpro.events.MkProEventBus.INSTANCE.hasWebSink()) ? 8 : 30;
                             approved = future.get(timeoutSec, java.util.concurrent.TimeUnit.SECONDS);
                         } catch (java.util.concurrent.TimeoutException e) {
                             approved = true;
@@ -433,6 +478,7 @@ public class MkProTools {
                             Files.writeString(validated, content,
                                 java.nio.file.StandardOpenOption.CREATE,
                                 java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                            approvalService.recordAppliedEdit(proposal, validated, existedBefore);
                             return Collections.<String, Object>singletonMap("status", "File written successfully: " + pathStr);
                         } else {
                             eventBus.emit(com.mkpro.events.MkProEvent.editRejected(proposalId, pathStr));
@@ -489,15 +535,16 @@ public class MkProTools {
                     try {
                         // Validate path before any operation
                         Path path = com.mkpro.security.PathValidator.getInstance().validate(finalFilePath);
+                        boolean existedBefore = Files.exists(path);
                         String oldContent = "";
-                        if (Files.exists(path)) {
+                        if (existedBefore) {
                             oldContent = Files.readString(path);
                         }
 
                         // Create edit proposal
                         String proposalId = "edit-" + System.currentTimeMillis();
                         com.mkpro.events.EditProposal proposal = new com.mkpro.events.EditProposal(
-                            proposalId, finalFilePath, oldContent, newContent);
+                            proposalId, finalFilePath, oldContent, newContent, !existedBefore);
 
                         // Get approval service and event bus
                         com.mkpro.events.EditApprovalService approvalService = com.mkpro.events.EditApprovalService.INSTANCE;
@@ -506,6 +553,9 @@ public class MkProTools {
                         if (approvalService == null || eventBus == null) {
                             // Fallback: no event bus available, auto-approve
                             writeFile(path, newContent, finalFilePath);
+                            if (approvalService != null) {
+                                approvalService.recordAppliedEdit(proposal, path, existedBefore);
+                            }
                             return Collections.singletonMap("status", "File written (no approval service): " + finalFilePath);
                         }
 
@@ -517,7 +567,7 @@ public class MkProTools {
                         boolean approved;
                         try {
                             int timeoutSec = (com.mkpro.events.MkProEventBus.INSTANCE != null 
-                                && com.mkpro.events.MkProEventBus.INSTANCE.hasWebSink()) ? 5 : 30;
+                                && com.mkpro.events.MkProEventBus.INSTANCE.hasWebSink()) ? 8 : 30;
                             approved = future.get(timeoutSec, java.util.concurrent.TimeUnit.SECONDS);
                         } catch (java.util.concurrent.TimeoutException e) {
                             // Timeout = auto-approve (headless safety)
@@ -528,6 +578,7 @@ public class MkProTools {
                         if (approved) {
                             eventBus.emit(com.mkpro.events.MkProEvent.editApproved(proposalId, finalFilePath));
                             writeFile(path, newContent, finalFilePath);
+                            approvalService.recordAppliedEdit(proposal, path, existedBefore);
                             return Collections.singletonMap("status", "File written successfully: " + finalFilePath);
                         } else {
                             eventBus.emit(com.mkpro.events.MkProEvent.editRejected(proposalId, finalFilePath));
@@ -565,7 +616,10 @@ public class MkProTools {
                 return Single.fromCallable(() -> {
                     String pathStr = (String) args.get("path");
                     BufferedImage img = ImageIO.read(new File(pathStr));
-                    return ImmutableMap.of("width", img.getWidth(), "height", img.getHeight(), "format", "unknown");
+                    String analysis = VisionTool.analyzeImageFile(Paths.get(pathStr), "Describe and extract all visible text and details from this image.");
+                    int w = img != null ? img.getWidth() : -1;
+                    int h = img != null ? img.getHeight() : -1;
+                    return ImmutableMap.of("width", w, "height", h, "format", "unknown", "analysis", analysis != null ? analysis : "");
                 });
             }
         };

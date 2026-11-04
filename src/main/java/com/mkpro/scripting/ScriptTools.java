@@ -17,13 +17,32 @@ import java.util.stream.Collectors;
  * - create_script: write and save a new Groovy script
  * - list_scripts: show all available scripts in the repository
  * 
- * Scripts are restricted to core Java libraries only (no third-party deps).
+ * Scripts are restricted to core Java libraries only (no third-party deps) and are strictly read-only.
  * Designed for algorithm/data processing tasks: sorting, filtering, parsing,
- * transformations, calculations, text processing.
+ * transformations, calculations, text processing, and inspection.
  */
 public class ScriptTools {
 
     private static ScriptRepository repository;
+
+    private static final List<String> BLOCKED_FILE_WRITE_PATTERNS = List.of(
+        "Files.write", "Files.writeString", "Files.delete", "Files.move", "Files.copy",
+        "FileWriter", "FileOutputStream", "PrintWriter", "RandomAccessFile",
+        ".delete()", ".deleteDir(", ".setText(", ".setBytes("
+    );
+    private static final java.util.regex.Pattern GROOVY_FILE_ASSIGN_PATTERN = java.util.regex.Pattern.compile("\\.(text|bytes)\\s*=");
+
+    public static String validateReadOnlyForAgent(String code) {
+        for (String writePattern : BLOCKED_FILE_WRITE_PATTERNS) {
+            if (code.contains(writePattern)) {
+                return "Blocked: Groovy scripts are read-only and cannot modify or delete files.";
+            }
+        }
+        if (GROOVY_FILE_ASSIGN_PATTERN.matcher(code).find()) {
+            return "Blocked: Groovy scripts are read-only and cannot modify or delete files.";
+        }
+        return null;
+    }
 
     /**
      * Initialize with a CentralMemory-backed repository.
@@ -44,7 +63,8 @@ public class ScriptTools {
         return new BaseTool("execute_script",
             "Execute a Groovy script by name (from repository) or inline code. " +
             "Scripts can only use core Java libraries (java.util, java.io, java.math, java.time, etc). " +
-            "No third-party libraries. Designed for algorithms, data transformation, text processing, calculations.") {
+            "No third-party libraries. Strictly read-only: designed for algorithms, data transformation, text processing, computation, and inspection. " +
+            "Cannot write, modify, or delete files (use replace_in_file, safe_write_file, or write_file instead).") {
 
             @Override
             public Optional<FunctionDeclaration> declaration() {
@@ -90,6 +110,12 @@ public class ScriptTools {
                         return Collections.singletonMap("error", (Object) "No script name or code provided.");
                     }
 
+                    // Security: Read-only validation
+                    String readOnlyError = validateReadOnlyForAgent(code);
+                    if (readOnlyError != null) {
+                        return Collections.singletonMap("error", (Object) readOnlyError);
+                    }
+
                     // Parse args
                     Map<String, Object> scriptArgs = new HashMap<>();
                     if (argsJson != null && !argsJson.isBlank()) {
@@ -132,8 +158,8 @@ public class ScriptTools {
         return new BaseTool("create_script",
             "Create and save a reusable Groovy script to the repository. " +
             "Scripts must only use core Java classes (java.util, java.io, java.math, java.time, java.nio, java.text, java.util.regex). " +
-            "Blocked: Runtime, ProcessBuilder, System.exit, Thread, ClassLoader, reflection, networking, SQL. " +
-            "Good for: sorting, filtering, parsing, formatting, calculations, text processing, file operations.") {
+            "Blocked: Runtime, ProcessBuilder, System.exit, Thread, ClassLoader, reflection, networking, SQL, and all file writing/modification/deletion. " +
+            "Strictly read-only — good for: sorting, filtering, parsing, formatting, calculations, text processing, and read-only file inspection.") {
 
             @Override
             public Optional<FunctionDeclaration> declaration() {
@@ -165,6 +191,12 @@ public class ScriptTools {
                     String name = args.get("name") != null ? args.get("name").toString() : null;
                     String code = args.get("code") != null ? args.get("code").toString() : null;
                     String description = args.get("description") != null ? args.get("description").toString() : "";
+
+                    // Security: Read-only validation
+                    String readOnlyError = validateReadOnlyForAgent(code);
+                    if (readOnlyError != null) {
+                        return Collections.singletonMap("error", (Object) readOnlyError);
+                    }
 
                     String error = repository.save(name, code, description);
                     if (error != null) {

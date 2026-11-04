@@ -4,7 +4,7 @@ import java.io.Serializable;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FilterConfig implements Serializable {
-    private static final long serialVersionUID = 2L;
+    private static final long serialVersionUID = 1L;
 
     private int maxTurns = 10;
     private boolean pruneToolOutputs = true;
@@ -152,5 +152,13 @@ public class FilterConfig implements Serializable {
      */
     public boolean isPrefixCacheOptimized() {
         return sessionStartFilterOnly && !slidingWindowEnabled;
+    }
+
+    @Override
+    public String toString() {
+        return String.format(
+                "FilterConfig{maxTurns=%d, pruneToolOutputs=%s, maxToolPayloadChars=%d, evictStaleToolChurn=%s, pinInitialPrompt=%s, pinMemoryEvents=%s, slidingWindowEnabled=%s, sessionStartFilterOnly=%s}",
+                maxTurns, pruneToolOutputs, maxToolPayloadChars, evictStaleToolChurn,
+                pinInitialPrompt, pinMemoryEvents, slidingWindowEnabled, sessionStartFilterOnly);
     }
 }

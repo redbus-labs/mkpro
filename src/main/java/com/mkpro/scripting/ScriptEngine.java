@@ -13,6 +13,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.regex.Pattern;
 
 /**
  * Sandboxed Groovy script execution engine.
@@ -20,6 +21,7 @@ import java.util.concurrent.*;
  * Restrictions:
  * - Core Java classes only (no third-party imports)
  * - Blocked: Runtime, ProcessBuilder, System.exit, Thread, ClassLoader, reflection, networking
+ * - Strictly read-only: file writing, modification, and deletion are blocked
  * - Execution timeout: configurable (default 30s)
  * - Output captured from stdout/stderr
  */
@@ -44,6 +46,19 @@ public class ScriptEngine {
         "java.awt", "javax.swing",  // No GUI
         "java.sql", "javax.sql"     // No direct DB access
     );
+
+    // File modification/deletion patterns that are NEVER allowed (scripts are read-only)
+    private static final List<String> BLOCKED_FILE_WRITE_PATTERNS = List.of(
+        "Files.write", "Files.writeString", "Files.delete", "Files.move", "Files.copy",
+        "FileWriter", "FileOutputStream", "PrintWriter", "RandomAccessFile",
+        ".delete()", ".deleteDir(", ".setText(", ".setBytes("
+    );
+
+    private static final Pattern GROOVY_FILE_ASSIGN_PATTERN = Pattern.compile("\\.(text|bytes)\\s*=");
+
+    private static final String READ_ONLY_ERROR_MESSAGE =
+        "Blocked: Groovy scripts are read-only and cannot modify or delete files. " +
+        "Use replace_in_file, safe_write_file, or write_file so edits go through EditApprovalService and backup.";
 
     // Allowed import packages (core Java only)
     private static final List<String> ALLOWED_STAR_IMPORTS = List.of(
@@ -103,11 +118,9 @@ public class ScriptEngine {
             }
         }
 
-        // Check for suspicious patterns
-        if (code.contains("exec(") || code.contains(".execute(")) {
-            if (code.contains("Runtime") || code.contains("Process")) {
-                return "Blocked: script attempts to execute system commands.";
-            }
+        // Check for subprocess execution patterns
+        if (code.contains(".execute(") || (code.contains("exec(") && (code.contains("Runtime") || code.contains("Process")))) {
+            return "Blocked: script attempts to execute system commands.";
         }
 
         // Try compilation (catches syntax errors)

@@ -573,6 +573,80 @@
         }
         .send-btn:hover { opacity: 0.9; }
         .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .turn-edit-summary-bar {
+            background: var(--surface, #1e1e2e);
+            border: 1px solid rgba(128, 128, 128, 0.25);
+            border-radius: 10px;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .turn-edit-summary-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .turn-edit-summary-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .turn-summary-btn {
+            background: var(--bg, #11111b);
+            color: var(--text, #cdd6f4);
+            border: 1px solid rgba(128, 128, 128, 0.3);
+            border-radius: 6px;
+            padding: 3px 9px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .turn-summary-btn-danger {
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+        .turn-edit-summary-details {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(128, 128, 128, 0.2);
+            max-height: 220px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .turn-file-card {
+            background: var(--bg, #11111b);
+            border: 1px solid rgba(128, 128, 128, 0.2);
+            border-radius: 6px;
+            padding: 6px 8px;
+        }
+        .turn-file-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .turn-file-diff-box {
+            max-height: 110px;
+            overflow-y: auto;
+            font-size: 11px;
+            line-height: 1.4;
+            padding: 4px 6px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.2);
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .verify-toggle-btn.verify-on {
+            background: rgba(16, 185, 129, 0.15) !important;
+            color: #10b981 !important;
+            border-color: rgba(16, 185, 129, 0.4) !important;
+        }
 
         /* Scrollbar */
         .chat::-webkit-scrollbar { width: 6px; }
@@ -1172,6 +1246,8 @@
             <span class="ssh-status-dot disconnected" id="sshStatusDot"></span>
             <span>📦 Sandbox</span>
         </button>
+        <button class="ssh-header-btn" onclick="openJobsModal()" title="Background Jobs &amp; Schedules">🐇 Jobs</button>
+        <button class="ssh-header-btn" onclick="openTelemetryModal()" title="Live Agent Telemetry &amp; Cost/Latency Breakdown">📊 Telemetry</button>
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
         <span class="status disconnected" id="status">● Disconnected</span>
     </div>
@@ -1210,12 +1286,23 @@
             </div>
             <div class="chat" id="chat"></div>
             <div class="input-area">
+                <div class="turn-edit-summary-bar" id="turnEditSummaryBar" style="display:none;">
+                    <div class="turn-edit-summary-header">
+                        <span id="turnEditSummaryTitle" style="font-weight:600;">📝 0 file(s) modified (+0 / -0 lines)</span>
+                        <div class="turn-edit-summary-actions">
+                            <button class="turn-summary-btn" id="btnToggleTurnDiffs" onclick="toggleTurnSummaryDiffs()">View Diffs</button>
+                            <button class="turn-summary-btn turn-summary-btn-danger" onclick="revertTurnEdits()" title="Restore all files modified in the turn back to their pre-turn snapshot">⏪ Revert Turn</button>
+                        </div>
+                    </div>
+                    <div class="turn-edit-summary-details" id="turnEditSummaryDetails" style="display:none;"></div>
+                </div>
                 <div class="at-note-palette" id="atNotePalette"></div>
                 <div class="attachments-bar" id="attachments"></div>
                 <div class="input-row">
                     <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Attach file">📎</button>
                     <input type="file" id="fileInput" multiple accept=".txt,.java,.py,.js,.ts,.json,.yaml,.yml,.md,.csv,.log,.xml,.html,.css,.sh,.bat,.sql,.groovy,.kt,.swift,.rs,.go,.c,.cpp,.h,.png,.jpg,.jpeg,.gif,.webp,.wav,.mp3,.ogg,.flac,.m4a,.aac,.webm,.mp4" onchange="handleFiles(event)" />
                     <input type="text" id="input" placeholder="Type a message, or @ for notes..." autocomplete="off" />
+                    <button class="attach-btn verify-toggle-btn" id="verifyToggleBtn" onclick="toggleAutoVerify()" title="Toggle Self-Healing Auto-Verify Gate" style="font-size:11px; font-weight:600; padding:4px 8px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); white-space:nowrap;">🛡️ Verify: OFF</button>
                     <button class="attach-btn" onclick="openModelConfigModal()" title="Configure Agent Models &amp; Servers">🧠</button>
                     <button class="send-btn" id="send" onclick="sendMessage()">Send</button>
                 </div>
@@ -1824,6 +1911,8 @@
                     endStreaming();
                     // Auto-refresh file tree after agent completes (may have edited files)
                     refreshFileTree();
+                    refreshTurnEditSummary();
+                    refreshVerifyStatus();
                     break;
                 case 'maker':
                     addMakerMessage(msg.message);
@@ -1854,6 +1943,7 @@
                     break;
                 case 'edit_approved':
                     resolveEditProposal(msg.id, true, msg.path);
+                    refreshTurnEditSummary();
                     break;
                 case 'edit_rejected':
                     resolveEditProposal(msg.id, false, msg.path);
@@ -2902,7 +2992,164 @@
         loadDirectory('', fileTree, 0);
 
         // Start connection
+        // ========== Turn Change Summary, Rollback & Auto-Verify Gate ==========
+        let turnSummaryDiffsExpanded = false;
+
+        async function refreshTurnEditSummary() {
+            const bar = document.getElementById('turnEditSummaryBar');
+            const titleEl = document.getElementById('turnEditSummaryTitle');
+            const detailsEl = document.getElementById('turnEditSummaryDetails');
+            const toggleBtn = document.getElementById('btnToggleTurnDiffs');
+            if (!bar || !titleEl || !detailsEl) return;
+
+            try {
+                const resp = await fetch('/api/edit/turn-summary');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const fileCount = data.fileCount || 0;
+                if (fileCount === 0) {
+                    bar.style.display = 'none';
+                    detailsEl.innerHTML = '';
+                    return;
+                }
+
+                bar.style.display = 'block';
+                const added = data.totalAdded || 0;
+                const removed = data.totalRemoved || 0;
+                titleEl.textContent = `📝 ${fileCount} file(s) modified (+${added} / -${removed} lines)`;
+                if (toggleBtn) {
+                    toggleBtn.textContent = turnSummaryDiffsExpanded ? 'Hide Diffs' : 'View Diffs';
+                }
+                detailsEl.style.display = turnSummaryDiffsExpanded ? 'flex' : 'none';
+
+                detailsEl.innerHTML = '';
+                (data.files || []).forEach(file => {
+                    const card = document.createElement('div');
+                    card.className = 'turn-file-card';
+
+                    const hdr = document.createElement('div');
+                    hdr.className = 'turn-file-card-header';
+
+                    const pathSpan = document.createElement('span');
+                    pathSpan.style.fontWeight = '600';
+                    pathSpan.innerHTML = `${escapeHtml(file.path)} <span style="color:#10b981;">+${file.added || 0}</span> / <span style="color:#ef4444;">-${file.removed || 0}</span>${file.isNewFile ? ' <span style="font-size:10px; padding:1px 5px; border-radius:4px; background:rgba(16,185,129,0.15); color:#10b981;">NEW</span>' : ''}`;
+
+                    const revBtn = document.createElement('button');
+                    revBtn.className = 'turn-summary-btn turn-summary-btn-danger';
+                    revBtn.textContent = '↩ Revert File';
+                    revBtn.onclick = () => revertSingleTurnFile(file.path);
+
+                    hdr.appendChild(pathSpan);
+                    hdr.appendChild(revBtn);
+                    card.appendChild(hdr);
+
+                    if (file.diff && file.diff.length > 0) {
+                        const diffBox = document.createElement('div');
+                        diffBox.className = 'turn-file-diff-box';
+                        file.diff.forEach(dl => {
+                            const lineDiv = document.createElement('div');
+                            if (dl.type === 'ADDED') {
+                                lineDiv.style.color = '#10b981';
+                                lineDiv.textContent = `+ ${dl.text || ''}`;
+                            } else if (dl.type === 'REMOVED') {
+                                lineDiv.style.color = '#ef4444';
+                                lineDiv.textContent = `- ${dl.text || ''}`;
+                            } else {
+                                lineDiv.style.opacity = '0.75';
+                                lineDiv.textContent = `  ${dl.text || ''}`;
+                            }
+                            diffBox.appendChild(lineDiv);
+                        });
+                        card.appendChild(diffBox);
+                    }
+
+                    detailsEl.appendChild(card);
+                });
+            } catch (e) {
+                console.warn('Failed to fetch turn edit summary:', e);
+            }
+        }
+
+        function toggleTurnSummaryDiffs() {
+            turnSummaryDiffsExpanded = !turnSummaryDiffsExpanded;
+            const detailsEl = document.getElementById('turnEditSummaryDetails');
+            const toggleBtn = document.getElementById('btnToggleTurnDiffs');
+            if (detailsEl) {
+                detailsEl.style.display = turnSummaryDiffsExpanded ? 'flex' : 'none';
+            }
+            if (toggleBtn) {
+                toggleBtn.textContent = turnSummaryDiffsExpanded ? 'Hide Diffs' : 'View Diffs';
+            }
+        }
+
+        async function revertSingleTurnFile(filePath) {
+            if (!filePath) return;
+            try {
+                const resp = await fetch('/api/edit/revert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: filePath })
+                });
+                if (resp.ok) {
+                    await refreshTurnEditSummary();
+                    if (typeof refreshFileTree === 'function') refreshFileTree();
+                }
+            } catch (e) {
+                console.error('Failed to revert file:', e);
+            }
+        }
+
+        async function revertTurnEdits() {
+            try {
+                const resp = await fetch('/api/edit/revert-turn', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                if (resp.ok) {
+                    turnSummaryDiffsExpanded = false;
+                    await refreshTurnEditSummary();
+                    if (typeof refreshFileTree === 'function') refreshFileTree();
+                }
+            } catch (e) {
+                console.error('Failed to revert turn edits:', e);
+            }
+        }
+
+        async function refreshVerifyStatus() {
+            const btn = document.getElementById('verifyToggleBtn');
+            if (!btn) return;
+            try {
+                const resp = await fetch('/api/verify');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const enabled = !!(data.enabled || data.autoVerify);
+                btn.textContent = enabled ? '🛡️ Verify: ON' : '🛡️ Verify: OFF';
+                btn.classList.toggle('verify-on', enabled);
+                if (data.lastSummary) {
+                    btn.title = `Self-Healing Auto-Verify Gate (${enabled ? 'ON' : 'OFF'}) — Last: ${data.lastSummary}`;
+                }
+            } catch (e) {}
+        }
+
+        async function toggleAutoVerify() {
+            try {
+                const resp = await fetch('/api/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'toggle' })
+                });
+                if (resp.ok) {
+                    await refreshVerifyStatus();
+                }
+            } catch (e) {
+                console.error('Failed to toggle auto-verify:', e);
+            }
+        }
+
         connect();
+        refreshTurnEditSummary();
+        refreshVerifyStatus();
 
         // ========================================================================
         // Remote SSH Credentials & Management Module
@@ -3735,6 +3982,295 @@
             }
         }
 
+        // ========== Live Agent Telemetry Modal ==========
+        function openTelemetryModal() {
+            const overlay = document.getElementById('telemetryModalOverlay');
+            if (overlay) {
+                overlay.classList.add('active');
+                loadTelemetryData();
+            }
+        }
+
+        function closeTelemetryModal() {
+            const overlay = document.getElementById('telemetryModalOverlay');
+            if (overlay) overlay.classList.remove('active');
+        }
+
+        async function loadTelemetryData() {
+            const statusEl = document.getElementById('telemetryStatusBanner');
+            if (statusEl) { statusEl.className = 'ssh-status-banner'; statusEl.style.display = 'none'; }
+            try {
+                const resp = await fetch('/api/telemetry');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+
+                const fmtNum = n => Number(n || 0).toLocaleString();
+                const fmtCost = c => '$' + Number(c || 0).toFixed(4);
+
+                const reqEl = document.getElementById('telCardRequests');
+                const tokEl = document.getElementById('telCardTokens');
+                const latEl = document.getElementById('telCardLatency');
+                const costEl = document.getElementById('telCardCost');
+
+                if (reqEl) reqEl.textContent = `${fmtNum(data.totalRequests)} (${fmtNum(data.totalSuccesses)} OK / ${fmtNum(data.totalFailures)} Fail)`;
+                if (tokEl) tokEl.textContent = `${fmtNum(data.totalTokens)} (${fmtNum(data.totalInputTokens)} in / ${fmtNum(data.totalOutputTokens)} out)`;
+                if (latEl) latEl.textContent = `${fmtNum(data.avgLatencyMs)} ms`;
+                if (costEl) costEl.textContent = fmtCost(data.totalEstimatedCostUsd);
+
+                const agentBody = document.getElementById('telemetryByAgentBody');
+                if (agentBody) {
+                    const agents = data.byAgent || [];
+                    if (agents.length === 0) {
+                        agentBody.innerHTML = `<tr><td colspan="7" style="padding:10px; text-align:center; opacity:0.65;">No agent telemetry recorded yet.</td></tr>`;
+                    } else {
+                        agentBody.innerHTML = agents.map(a => `
+                            <tr style="border-bottom:1px solid rgba(128,128,128,0.12);">
+                                <td style="padding:7px 8px; font-weight:600;">${escapeHtml(a.agentName || '')}</td>
+                                <td style="padding:7px 8px;">${fmtNum(a.requests)}</td>
+                                <td style="padding:7px 8px;">${Number(a.successRate || 0).toFixed(1)}%</td>
+                                <td style="padding:7px 8px;">${fmtNum(a.avgLatencyMs)} ms (max ${fmtNum(a.maxLatencyMs)} ms)</td>
+                                <td style="padding:7px 8px;">${fmtNum(a.inputTokens)} / ${fmtNum(a.outputTokens)}</td>
+                                <td style="padding:7px 8px; font-weight:600;">${fmtNum(a.totalTokens)}</td>
+                                <td style="padding:7px 8px; color:var(--accent); font-weight:600;">${fmtCost(a.estimatedCostUsd)}</td>
+                            </tr>
+                        `).join('');
+                    }
+                }
+
+                const modelBody = document.getElementById('telemetryByModelBody');
+                if (modelBody) {
+                    const models = data.byModel || [];
+                    if (models.length === 0) {
+                        modelBody.innerHTML = `<tr><td colspan="6" style="padding:10px; text-align:center; opacity:0.65;">No model telemetry recorded yet.</td></tr>`;
+                    } else {
+                        modelBody.innerHTML = models.map(m => `
+                            <tr style="border-bottom:1px solid rgba(128,128,128,0.12);">
+                                <td style="padding:7px 8px;"><span class="mc-scope-badge global">${escapeHtml(m.provider || '')}</span></td>
+                                <td style="padding:7px 8px; font-weight:600;">${escapeHtml(m.modelName || '')}</td>
+                                <td style="padding:7px 8px;">${fmtNum(m.requests)}</td>
+                                <td style="padding:7px 8px;">${fmtNum(m.avgLatencyMs)} ms</td>
+                                <td style="padding:7px 8px; font-weight:600;">${fmtNum(m.totalTokens)} (${fmtNum(m.inputTokens)} in / ${fmtNum(m.outputTokens)} out)</td>
+                                <td style="padding:7px 8px; color:var(--accent); font-weight:600;">${fmtCost(m.estimatedCostUsd)}</td>
+                            </tr>
+                        `).join('');
+                    }
+                }
+            } catch (err) {
+                if (statusEl) {
+                    statusEl.textContent = 'Failed to load telemetry: ' + err.message;
+                    statusEl.className = 'ssh-status-banner error';
+                    statusEl.style.display = 'block';
+                }
+            }
+        }
+
+        // ========== Background Jobs & Scheduled/Event-Triggered Jobs Modal ==========
+        function openJobsModal() {
+            const overlay = document.getElementById('jobsModalOverlay');
+            if (overlay) {
+                overlay.classList.add('active');
+                fetchMqStatusAndResults();
+                fetchMqSchedules();
+            }
+        }
+
+        function closeJobsModal() {
+            const overlay = document.getElementById('jobsModalOverlay');
+            if (overlay) overlay.classList.remove('active');
+        }
+
+        async function fetchMqStatusAndResults() {
+            try {
+                const [stRes, resRes] = await Promise.all([fetch('/api/mq/status'), fetch('/api/mq/results?limit=15')]);
+                if (stRes.ok) {
+                    const st = await stRes.json();
+                    const box = document.getElementById('mqStatusBox');
+                    const sel = document.getElementById('mqModeSelect');
+                    if (sel && st.configuredMode) sel.value = st.configuredMode;
+                    if (box) {
+                        const badge = st.running
+                            ? `<span style="color:var(--green);font-weight:700;">● ONLINE (${escapeHtml(st.activeMode)})</span>`
+                            : `<span style="color:var(--text-dim);font-weight:700;">○ OFFLINE</span>`;
+                        box.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Worker Status:</span>${badge}</div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);">Pending: ${st.pendingCount} • Active: ${st.activeTasks} • Done: ${st.tasksSucceeded} • Failed: ${st.tasksFailed} • DLQ: ${st.dlqCount}</div>`;
+                    }
+                }
+                if (resRes.ok) {
+                    const data = await resRes.json();
+                    const list = data.results || [];
+                    const rc = document.getElementById('mqResultsContainer');
+                    if (rc) {
+                        rc.innerHTML = list.length === 0
+                            ? `<div style="color:var(--text-dim);font-size:12px;font-style:italic;">No completed jobs yet.</div>`
+                            : list.map(r => {
+                                const ok = String(r.status).toUpperCase() === 'SUCCESS';
+                                const col = ok ? 'var(--green)' : 'var(--red)';
+                                const txt = ok ? (r.output || '') : (r.errorMessage || '');
+                                return `<div style="background:var(--bg);border:1px solid rgba(128,128,128,0.2);border-left:3px solid ${col};border-radius:6px;padding:8px 10px;">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                                        <span style="color:${col};font-weight:700;font-size:11px;">[${escapeHtml(r.status)}] ${escapeHtml(r.agentUsed || 'Coordinator')}</span>
+                                        <span style="font-size:10px;color:var(--text-dim);">${r.durationMs || 0}ms</span>
+                                    </div>
+                                    <div style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-dim);">ID: ${escapeHtml(r.taskId)}</div>
+                                    <div style="margin-top:4px;font-size:12px;white-space:pre-wrap;">${escapeHtml(txt)}</div>
+                                </div>`;
+                            }).join('');
+                    }
+                }
+            } catch (e) { console.error('MQ status error:', e); }
+        }
+
+        async function controlMqWorker(action) {
+            const sel = document.getElementById('mqModeSelect');
+            const mode = sel ? sel.value : 'AUTO';
+            try {
+                await fetch('/api/mq/control', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action, mode })
+                });
+                fetchMqStatusAndResults();
+            } catch (e) { console.error('MQ control error:', e); }
+        }
+
+        async function submitMqJobFromUi() {
+            const pEl = document.getElementById('mqJobPrompt');
+            const aEl = document.getElementById('mqJobAgent');
+            if (!pEl || !pEl.value.trim()) return;
+            const prompt = pEl.value.trim();
+            const targetAgent = aEl ? aEl.value : 'Coordinator';
+            try {
+                const res = await fetch('/api/mq/send', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ prompt, targetAgent })
+                });
+                if (res.ok) {
+                    pEl.value = '';
+                    fetchMqStatusAndResults();
+                    setTimeout(fetchMqStatusAndResults, 1200);
+                }
+            } catch (e) { console.error('MQ send error:', e); }
+        }
+
+        async function fetchMqSchedules() {
+            try {
+                const res = await fetch('/api/mq/schedules');
+                if (!res.ok) return;
+                const data = await res.json();
+                renderMqSchedulesList(data.schedules || []);
+            } catch (e) { console.error('MQ schedules error:', e); }
+        }
+
+        function renderMqSchedulesList(schedules) {
+            const container = document.getElementById('mqSchedulesContainer');
+            if (!container) return;
+            if (!schedules || schedules.length === 0) {
+                container.innerHTML = `<div style="color:var(--text-dim);font-size:12px;font-style:italic;">No scheduled or event-triggered jobs configured.</div>`;
+                return;
+            }
+            container.innerHTML = schedules.map(s => {
+                const enabledBadge = s.enabled
+                    ? `<span style="color:var(--green);font-weight:700;font-size:10px;">● ENABLED</span>`
+                    : `<span style="color:var(--text-dim);font-weight:700;font-size:10px;">○ DISABLED</span>`;
+                const triggers = [];
+                if (s.intervalSeconds > 0) triggers.push(`⏱️ Every ${s.intervalSeconds}s`);
+                if (s.triggerOnEdit) triggers.push(`📝 On File Edit`);
+                const triggerLabel = triggers.length > 0 ? triggers.join(' • ') : 'Manual only';
+                const toggleLabel = s.enabled ? 'Disable' : 'Enable';
+                return `<div style="background:var(--bg);border:1px solid rgba(128,128,128,0.2);border-left:3px solid ${s.enabled ? 'var(--accent)' : 'var(--text-dim)'};border-radius:6px;padding:8px 10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-weight:700;font-size:12px;">${escapeHtml(s.name || s.id)}</span>
+                        ${enabledBadge}
+                    </div>
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">
+                        Agent: <strong>${escapeHtml(s.targetAgent || 'Coordinator')}</strong> • ${triggerLabel} • Runs: <strong>${s.runCount || 0}</strong>
+                    </div>
+                    <div style="margin-top:4px;font-size:12px;white-space:pre-wrap;">${escapeHtml(s.prompt || '')}</div>
+                    <div style="display:flex;gap:6px;margin-top:8px;">
+                        <button class="ssh-btn ssh-btn-connect" style="padding:3px 9px;font-size:11px;" onclick="runMqScheduleNow('${escapeHtml(s.id)}')">▶ Run Now</button>
+                        <button class="ssh-btn ssh-btn-cancel" style="padding:3px 9px;font-size:11px;" onclick="toggleMqSchedule('${escapeHtml(s.id)}', ${!s.enabled})">${toggleLabel}</button>
+                        <button class="ssh-btn ssh-btn-disconnect" style="padding:3px 9px;font-size:11px;margin-left:auto;" onclick="deleteMqSchedule('${escapeHtml(s.id)}')">✕ Delete</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        async function createMqScheduleFromUi() {
+            const nameEl = document.getElementById('mqSchedName');
+            const promptEl = document.getElementById('mqSchedPrompt');
+            const agentEl = document.getElementById('mqSchedAgent');
+            const intervalEl = document.getElementById('mqSchedInterval');
+            const editEl = document.getElementById('mqSchedTriggerOnEdit');
+            if (!promptEl || !promptEl.value.trim()) return;
+
+            const payload = {
+                action: 'create',
+                name: nameEl && nameEl.value.trim() ? nameEl.value.trim() : 'Scheduled Job',
+                prompt: promptEl.value.trim(),
+                targetAgent: agentEl ? agentEl.value : 'Coordinator',
+                intervalSeconds: intervalEl ? (parseInt(intervalEl.value, 10) || 0) : 0,
+                triggerOnEdit: editEl ? !!editEl.checked : false
+            };
+            try {
+                const res = await fetch('/api/mq/schedules', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    if (nameEl) nameEl.value = '';
+                    promptEl.value = '';
+                    if (intervalEl) intervalEl.value = '0';
+                    if (editEl) editEl.checked = false;
+                    const data = await res.json();
+                    renderMqSchedulesList(data.schedules || []);
+                }
+            } catch (e) { console.error('Create schedule error:', e); }
+        }
+
+        async function toggleMqSchedule(id, enabled) {
+            try {
+                const res = await fetch('/api/mq/schedules', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'toggle', id, enabled })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    renderMqSchedulesList(data.schedules || []);
+                }
+            } catch (e) { console.error('Toggle schedule error:', e); }
+        }
+
+        async function runMqScheduleNow(id) {
+            try {
+                const res = await fetch('/api/mq/schedules', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'run', id })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    renderMqSchedulesList(data.schedules || []);
+                    fetchMqStatusAndResults();
+                    setTimeout(fetchMqStatusAndResults, 1200);
+                }
+            } catch (e) { console.error('Run schedule error:', e); }
+        }
+
+        async function deleteMqSchedule(id) {
+            try {
+                const res = await fetch('/api/mq/schedules?id=' + encodeURIComponent(id), {
+                    method: 'DELETE'
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    renderMqSchedulesList(data.schedules || []);
+                }
+            } catch (e) { console.error('Delete schedule error:', e); }
+        }
+
     </script>
 
     <!-- Read-Only Diff Inspection Modal -->
@@ -3961,6 +4497,190 @@
                 <span style="font-size:11px; opacity:0.7; font-family:'JetBrains Mono',monospace;">Changes take effect immediately across active runners.</span>
                 <div class="ssh-footer-actions" style="margin-left:auto;">
                     <button class="ssh-btn ssh-btn-cancel" onclick="closeModelConfigModal()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Agent Telemetry & Cost/Latency Breakdown Modal -->
+    <div class="ssh-modal-overlay" id="telemetryModalOverlay" onclick="if(event.target===this) closeTelemetryModal()">
+        <div class="ssh-modal-card" style="max-width:860px; width:94vw; max-height:86vh;">
+            <div class="ssh-modal-header">
+                <div>
+                    <h3 style="margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; gap:6px;">
+                        <span>📊 Live Agent Telemetry &amp; Cost/Latency Breakdown</span>
+                    </h3>
+                    <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.75; font-family:'JetBrains Mono',monospace;">
+                        Real-time token consumption, execution latency, success rates, and estimated USD cost.
+                    </p>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button class="ssh-btn ssh-btn-cancel" onclick="loadTelemetryData()" style="padding:4px 10px; font-size:11px;">🔄 Refresh</button>
+                    <button class="ssh-modal-close-btn" onclick="closeTelemetryModal()" title="Close (Esc)">✕</button>
+                </div>
+            </div>
+
+            <div class="ssh-modal-body" style="flex:1; overflow-y:auto; gap:16px;">
+                <div class="ssh-status-banner" id="telemetryStatusBanner"></div>
+
+                <!-- Summary Cards -->
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(175px, 1fr)); gap:10px;">
+                    <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:10px 12px;">
+                        <div style="font-size:10px; text-transform:uppercase; opacity:0.7; font-family:'JetBrains Mono',monospace;">Total Requests</div>
+                        <div id="telCardRequests" style="font-size:14px; font-weight:700; margin-top:4px; font-family:'JetBrains Mono',monospace;">0</div>
+                    </div>
+                    <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:10px 12px;">
+                        <div style="font-size:10px; text-transform:uppercase; opacity:0.7; font-family:'JetBrains Mono',monospace;">Total Tokens</div>
+                        <div id="telCardTokens" style="font-size:14px; font-weight:700; margin-top:4px; font-family:'JetBrains Mono',monospace;">0</div>
+                    </div>
+                    <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:10px 12px;">
+                        <div style="font-size:10px; text-transform:uppercase; opacity:0.7; font-family:'JetBrains Mono',monospace;">Avg Latency</div>
+                        <div id="telCardLatency" style="font-size:14px; font-weight:700; margin-top:4px; font-family:'JetBrains Mono',monospace;">0 ms</div>
+                    </div>
+                    <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:10px 12px;">
+                        <div style="font-size:10px; text-transform:uppercase; opacity:0.7; font-family:'JetBrains Mono',monospace;">Est. Cost</div>
+                        <div id="telCardCost" style="font-size:14px; font-weight:700; margin-top:4px; color:var(--accent); font-family:'JetBrains Mono',monospace;">$0.0000</div>
+                    </div>
+                </div>
+
+                <!-- Per-Agent Breakdown -->
+                <div>
+                    <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:var(--accent); font-family:'JetBrains Mono',monospace;">Per-Agent Breakdown</div>
+                    <div style="overflow-x:auto; background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px;">
+                        <table style="width:100%; border-collapse:collapse; font-size:11px; font-family:'JetBrains Mono',monospace; text-align:left;">
+                            <thead>
+                                <tr style="border-bottom:1px solid rgba(128,128,128,0.25); opacity:0.8;">
+                                    <th style="padding:8px;">Agent</th>
+                                    <th style="padding:8px;">Requests</th>
+                                    <th style="padding:8px;">Success Rate</th>
+                                    <th style="padding:8px;">Latency (Avg / Max)</th>
+                                    <th style="padding:8px;">In / Out Tokens</th>
+                                    <th style="padding:8px;">Total Tokens</th>
+                                    <th style="padding:8px;">Est. Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody id="telemetryByAgentBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Per-Model Breakdown -->
+                <div>
+                    <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:var(--accent); font-family:'JetBrains Mono',monospace;">Per-Model Breakdown</div>
+                    <div style="overflow-x:auto; background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px;">
+                        <table style="width:100%; border-collapse:collapse; font-size:11px; font-family:'JetBrains Mono',monospace; text-align:left;">
+                            <thead>
+                                <tr style="border-bottom:1px solid rgba(128,128,128,0.25); opacity:0.8;">
+                                    <th style="padding:8px;">Provider</th>
+                                    <th style="padding:8px;">Model</th>
+                                    <th style="padding:8px;">Requests</th>
+                                    <th style="padding:8px;">Avg Latency</th>
+                                    <th style="padding:8px;">Tokens (Total / In / Out)</th>
+                                    <th style="padding:8px;">Est. Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody id="telemetryByModelBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ssh-modal-footer">
+                <span style="font-size:11px; opacity:0.7; font-family:'JetBrains Mono',monospace;">Aggregated from CentralMemory AgentStat store.</span>
+                <div class="ssh-footer-actions" style="margin-left:auto;">
+                    <button class="ssh-btn ssh-btn-cancel" onclick="closeTelemetryModal()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background Jobs & Scheduled/Event-Triggered Jobs Modal -->
+    <div class="ssh-modal-overlay" id="jobsModalOverlay" onclick="if(event.target===this) closeJobsModal()">
+        <div class="ssh-modal-card" style="max-width:720px; width:92vw; max-height:86vh;">
+            <div class="ssh-modal-header">
+                <div>
+                    <h3 style="margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; gap:6px;">
+                        <span>🐇 Background Jobs &amp; Schedules</span>
+                    </h3>
+                    <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.75; font-family:'JetBrains Mono',monospace;">
+                        Dispatch background tasks and configure scheduled or file-edit triggered jobs.
+                    </p>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button class="ssh-btn ssh-btn-cancel" onclick="fetchMqStatusAndResults(); fetchMqSchedules();" style="padding:4px 10px; font-size:11px;">🔄 Refresh</button>
+                    <button class="ssh-modal-close-btn" onclick="closeJobsModal()" title="Close (Esc)">✕</button>
+                </div>
+            </div>
+
+            <div class="ssh-modal-body" style="flex:1; overflow-y:auto; gap:14px;">
+                <div id="mqStatusBox" style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); padding:10px 12px; border-radius:8px; font-size:12px;">
+                    Loading worker status...
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <select id="mqModeSelect" class="mc-select" style="flex:1;">
+                        <option value="AUTO">Mode: AUTO</option>
+                        <option value="INTERNAL">Mode: INTERNAL</option>
+                        <option value="RABBITMQ">Mode: RABBITMQ</option>
+                    </select>
+                    <button class="ssh-btn ssh-btn-connect" onclick="controlMqWorker('start')">▶ Start Worker</button>
+                    <button class="ssh-btn ssh-btn-disconnect" onclick="controlMqWorker('stop')">■ Stop Worker</button>
+                </div>
+
+                <!-- Enqueue Background Job -->
+                <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:8px;">
+                    <div style="font-size:12px; font-weight:700; color:var(--accent);">🚀 Enqueue Background Job</div>
+                    <select id="mqJobAgent" class="mc-select" style="width:100%;">
+                        <option value="Coordinator">Coordinator</option>
+                        <option value="Architect">Architect</option>
+                        <option value="Coder">Coder</option>
+                        <option value="SecurityAuditor">SecurityAuditor</option>
+                        <option value="Tester">Tester</option>
+                    </select>
+                    <textarea id="mqJobPrompt" class="ssh-form-textarea" rows="2" placeholder="Background task prompt..." style="min-height:54px;"></textarea>
+                    <button class="ssh-btn ssh-btn-connect" onclick="submitMqJobFromUi()">📤 Enqueue Job</button>
+                </div>
+
+                <!-- Scheduled & Event-Triggered Jobs -->
+                <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:12px; font-weight:700; color:var(--accent);">⏱️ Scheduled &amp; Event-Triggered Jobs</span>
+                        <button class="ssh-btn ssh-btn-cancel" onclick="fetchMqSchedules()" style="padding:2px 8px; font-size:11px;">🔄</button>
+                    </div>
+                    <input id="mqSchedName" class="mc-input" placeholder="Schedule Name (e.g. Lint on Edit)..." autocomplete="off" />
+                    <textarea id="mqSchedPrompt" class="ssh-form-textarea" rows="2" placeholder="Job prompt to execute..." style="min-height:50px;"></textarea>
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <select id="mqSchedAgent" class="mc-select" style="flex:1; min-width:120px;">
+                            <option value="Coordinator">Coordinator</option>
+                            <option value="Architect">Architect</option>
+                            <option value="Coder">Coder</option>
+                            <option value="SecurityAuditor">SecurityAuditor</option>
+                            <option value="Tester">Tester</option>
+                        </select>
+                        <input id="mqSchedInterval" type="number" min="0" step="10" value="0" class="mc-input" placeholder="Interval (sec)" title="Interval in seconds (0 = event-only)" style="width:130px;" />
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+                            <input id="mqSchedTriggerOnEdit" type="checkbox" style="cursor:pointer;" />
+                            <span>Trigger on File Edit</span>
+                        </label>
+                    </div>
+                    <button class="ssh-btn ssh-btn-connect" onclick="createMqScheduleFromUi()">➕ Add Schedule</button>
+                    <div id="mqSchedulesContainer" style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+                        <div style="color:var(--text-dim); font-size:12px;">Loading schedules...</div>
+                    </div>
+                </div>
+
+                <!-- Recent Job Results -->
+                <div>
+                    <div style="font-size:12px; font-weight:700; color:var(--accent); margin-bottom:6px;">📊 Recent Job Results</div>
+                    <div id="mqResultsContainer" style="display:flex; flex-direction:column; gap:8px;">
+                        <div style="color:var(--text-dim); font-size:12px;">Loading results...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ssh-modal-footer">
+                <span style="font-size:11px; opacity:0.7; font-family:'JetBrains Mono',monospace;">Schedules run via RabbitMqWorkerService.</span>
+                <div class="ssh-footer-actions" style="margin-left:auto;">
+                    <button class="ssh-btn ssh-btn-cancel" onclick="closeJobsModal()">Close</button>
                 </div>
             </div>
         </div>

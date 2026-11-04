@@ -364,6 +364,14 @@ public class AgentManager {
         return toolRegistry;
     }
 
+    public List<BaseTool> getCoordinatorTools() {
+        return agentToolMap.getOrDefault("Coordinator", List.of(FetchUrlTools.create(), com.mkpro.tools.VisionTool.create(), com.mkpro.tools.AudioTranscriptionTool.create()));
+    }
+
+    public Map<String, List<BaseTool>> getAgentToolMap() {
+        return Collections.unmodifiableMap(agentToolMap);
+    }
+
     public void setContext(MkProContext context) {
         this.context = context;
     }
@@ -691,6 +699,8 @@ public class AgentManager {
 
             List<BaseTool> coordinatorTools = new ArrayList<>();
             coordinatorTools.add(FetchUrlTools.create());
+            coordinatorTools.add(com.mkpro.tools.VisionTool.create());
+            coordinatorTools.add(com.mkpro.tools.AudioTranscriptionTool.create());
             coordinatorTools.add(CentralMemoryTools.commitToMemory());
             coordinatorTools.add(CentralMemoryTools.recallProjectMemory());
             // Direct SSH tool suite for Coordinator (enables seamless remote command execution)
@@ -717,6 +727,7 @@ public class AgentManager {
                 }
             }
             coordinatorTools.add(createParallelDelegationTool());
+            this.agentToolMap.put("Coordinator", coordinatorTools);
 
             List<BaseAgent> agents = new ArrayList<>();
 
@@ -801,6 +812,7 @@ public class AgentManager {
 
             coordInstruction += "\n\n── PARALLEL SUB-AGENT FAN-OUT ──\nYou can use `ask_parallel_agents` to execute multiple specialist sub-agents concurrently in parallel (fan-out / fan-in) and combine their results.\n";
             coordInstruction += "\n\n── MULTIMODAL VISION & AUDIO ──\n"
+                + "You CAN use analyze_image and transcribe_audio directly to read and analyze any image or audio file on disk without delegating, as well as inspecting inline image/audio attachments directly.\n"
                 + "When the user attaches inline images or audio in the conversation turn, you HAVE direct multimodal vision/audio access to them in the current message parts.\n"
                 + "- Do NOT claim you cannot see attached images or ask for a file path when inline image/audio attachments are present in your prompt.\n"
                 + "- You may analyze and answer questions about inline images/audio directly, or if you delegate to a specialist sub-agent, the inline attachments are automatically forwarded to them as well.";
@@ -955,8 +967,14 @@ public class AgentManager {
         if (agentName == null) return coderTools;
         String nameLower = agentName.toLowerCase();
 
-        if (nameLower.equals("codeeditor") || nameLower.equals("code_editor")
-                || nameLower.equals("coder") || nameLower.equals("developer")) {
+        if (nameLower.equals("codeeditor") || nameLower.equals("code_editor") || nameLower.equals("code_editor_agent")) {
+            return codeEditorTools;
+        } else if (nameLower.equals("coder") || nameLower.equals("coder_agent") || nameLower.equals("developer")
+                || nameLower.equals("javacoder") || nameLower.equals("java_coder")
+                || nameLower.equals("pythoncoder") || nameLower.equals("python_coder")
+                || nameLower.equals("reactcoder") || nameLower.equals("react_coder")
+                || nameLower.equals("gocoder") || nameLower.equals("go_coder")
+                || nameLower.equals("code_analyzer_agent") || nameLower.equals("codeanalyzer")) {
             return coderTools;
         } else if (nameLower.equals("securityauditor") || nameLower.equals("security_auditor") || nameLower.contains("security")) {
             return securityAuditorTools;
@@ -964,11 +982,11 @@ public class AgentManager {
             return databaseAdminTools;
         } else if (nameLower.equals("dataanalyst") || nameLower.equals("data_analyst")) {
             return dataAnalystTools;
-        } else if (nameLower.equals("sysadmin") || nameLower.equals("sys_admin")) {
+        } else if (nameLower.equals("sysadmin") || nameLower.equals("sys_admin") || nameLower.equals("sys_admin_agent")) {
             return sysAdminTools;
-        } else if (nameLower.equals("ubuntuops") || nameLower.equals("ubuntu_ops") || nameLower.equals("ubuntu")
-                || nameLower.equals("remoteops") || nameLower.equals("remote_ops") || nameLower.equals("ops")
-                || nameLower.equals("sysadmin_ssh") || nameLower.equals("ubuntusysadmin")) {
+        } else if (nameLower.equals("ubuntuops") || nameLower.equals("ubuntu_ops") || nameLower.equals("ubuntu_ops_agent")
+                || nameLower.equals("ubuntu") || nameLower.equals("remoteops") || nameLower.equals("remote_ops")
+                || nameLower.equals("ops") || nameLower.equals("sysadmin_ssh") || nameLower.equals("ubuntusysadmin")) {
             return ubuntuOpsTools;
         } else if (nameLower.equals("devops") || nameContains(nameLower, "sre")) {
             return devOpsTools;
@@ -993,6 +1011,67 @@ public class AgentManager {
 
     private static boolean nameContains(String name, String sub) {
         return name.contains(sub);
+    }
+
+    private String resolveCodingSpecialist(String agentName, String instruction, String contextInfo) {
+        if (agentName == null || agentDefinitions == null) {
+            return agentName;
+        }
+
+        // If the exact agent exists in current team definitions (e.g. modular polyglot agents or legacy polyglot specialists), keep it
+        if (agentDefinitions.containsKey(agentName)) {
+            if ("AndroidDev".equalsIgnoreCase(agentName) || "android_dev_agent".equalsIgnoreCase(agentName)
+                    || "IosDev".equalsIgnoreCase(agentName) || "ios_dev_agent".equalsIgnoreCase(agentName)) {
+                String ctx = contextInfo != null ? contextInfo.toLowerCase() : (projectContext != null ? projectContext.toLowerCase() : "");
+                if (("AndroidDev".equalsIgnoreCase(agentName) || "android_dev_agent".equalsIgnoreCase(agentName)) && ctx.contains("project: android")) {
+                    return agentName;
+                }
+                if (("IosDev".equalsIgnoreCase(agentName) || "ios_dev_agent".equalsIgnoreCase(agentName)) && ctx.contains("project: ios")) {
+                    return agentName;
+                }
+                if (instruction != null && instruction.matches("(?is).*\\b(android|apk|adb|logcat|jetpack|androidmanifest|ios|xcode|swift|swiftui|cocoapods|uikit)\\b.*")) {
+                    return agentName;
+                }
+                if (agentDefinitions.containsKey("Coder")) return "Coder";
+                if (agentDefinitions.containsKey("coder_agent")) return "coder_agent";
+            }
+            if (("CodeEditor".equalsIgnoreCase(agentName) || "code_editor".equalsIgnoreCase(agentName))
+                    && agentDefinitions.containsKey("Coder")) {
+                return "Coder";
+            }
+            return agentName;
+        }
+
+        // Case-insensitive / modular alias resolution when agentName is not directly a key in agentDefinitions
+        for (String key : agentDefinitions.keySet()) {
+            if (key.equalsIgnoreCase(agentName) || key.equalsIgnoreCase(agentName + "_agent")) {
+                return key;
+            }
+        }
+
+        if ("Coder".equalsIgnoreCase(agentName) || "coder_agent".equalsIgnoreCase(agentName)
+                || "JavaCoder".equalsIgnoreCase(agentName) || "PythonCoder".equalsIgnoreCase(agentName)
+                || "ReactCoder".equalsIgnoreCase(agentName) || "GoCoder".equalsIgnoreCase(agentName)) {
+            if (agentDefinitions.containsKey("Coder")) return "Coder";
+            if (agentDefinitions.containsKey("coder_agent")) return "coder_agent";
+            if (agentDefinitions.containsKey("JavaCoder")) return "JavaCoder";
+        }
+
+        if ("CodeEditor".equalsIgnoreCase(agentName) || "code_editor".equalsIgnoreCase(agentName)
+                || "code_editor_agent".equalsIgnoreCase(agentName)) {
+            if (agentDefinitions.containsKey("code_editor_agent")) return "code_editor_agent";
+            if (agentDefinitions.containsKey("CodeEditor")) return "CodeEditor";
+            if (agentDefinitions.containsKey("Coder")) return "Coder";
+            if (agentDefinitions.containsKey("coder_agent")) return "coder_agent";
+        }
+
+        if ("code_analyzer_agent".equalsIgnoreCase(agentName) || "CodeAnalyzer".equalsIgnoreCase(agentName)) {
+            if (agentDefinitions.containsKey("code_analyzer_agent")) return "code_analyzer_agent";
+            if (agentDefinitions.containsKey("Architect")) return "Architect";
+            if (agentDefinitions.containsKey("Coder")) return "Coder";
+        }
+
+        return agentName;
     }
 
     private BaseTool createDelegationToolFromDef(String agentName, String toolName, 
@@ -1028,9 +1107,22 @@ public class AgentManager {
             @Override
             public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
                 String instruction = (String) args.get("instruction");
-                System.out.println(ANSI_BLUE + ">> Delegating to " + agentName + "..." + ANSI_RESET);
-                AgentManager.lastDelegatedAgent = agentName;
-                AgentConfig config = agentConfigs != null ? agentConfigs.get(agentName) : null;
+                String effectiveAgent = resolveCodingSpecialist(agentName, instruction, contextInfo);
+                String effectiveInstruction = agentInstruction;
+                List<BaseTool> effectiveTools = subAgentTools;
+                if (!effectiveAgent.equals(agentName) && agentDefinitions != null && agentDefinitions.containsKey(effectiveAgent)) {
+                    AgentDefinition coderDef = agentDefinitions.get(effectiveAgent);
+                    if (coderDef != null && coderDef.getInstruction() != null) {
+                        effectiveInstruction = BASE_AGENT_POLICY + "\n" + coderDef.getInstruction();
+                    }
+                    effectiveTools = agentToolMap.getOrDefault(effectiveAgent, subAgentTools);
+                }
+                final String targetAgent = effectiveAgent;
+                final String targetAgentInstruction = effectiveInstruction;
+                final List<BaseTool> targetTools = effectiveTools;
+                System.out.println(ANSI_BLUE + ">> Delegating to " + targetAgent + "..." + ANSI_RESET);
+                AgentManager.lastDelegatedAgent = targetAgent;
+                AgentConfig config = agentConfigs != null ? agentConfigs.get(targetAgent) : null;
                 if (config == null) {
                     config = new AgentConfig(Provider.OLLAMA, "llama3");
                 }
@@ -1038,12 +1130,12 @@ public class AgentManager {
                 final AgentConfig finalConfig = config;
                 return Single.fromCallable(() -> {
                     String result = executeSubAgent(new AgentRequest(
-                        agentName, 
-                        agentInstruction + contextInfo,
+                        targetAgent, 
+                        targetAgentInstruction + contextInfo,
                         finalConfig.getModelName(),
                         finalConfig.getProvider(),
                         instruction,
-                        subAgentTools,
+                        targetTools,
                         finalConfig.getServerUrl()
                     ));
                     String pruned = com.mkpro.plugins.ToolOutputPruner.pruneText(result, 10_000);
@@ -1120,6 +1212,7 @@ public class AgentManager {
         if (agentDefinitions != null && !agentDefinitions.containsKey(ag)) {
             for (String k : agentDefinitions.keySet()) if (k.replace("_", "").equalsIgnoreCase(ag.replace("_", ""))) { ag = k; break; }
         }
+        ag = resolveCodingSpecialist(ag, instruction, projectContext);
         AgentManager.lastDelegatedAgent = ag;
         AgentConfig cfg = activeAgentConfigs != null ? activeAgentConfigs.get(ag) : (agentConfigs != null ? agentConfigs.get(ag) : null);
         if (cfg == null) cfg = new AgentConfig(Provider.OLLAMA, "llama3");
@@ -1135,6 +1228,7 @@ public class AgentManager {
         if (agentName == null || userPrompt == null) {
             return "Error: Agent name and prompt must not be null.";
         }
+        agentName = resolveCodingSpecialist(agentName, userPrompt, projectContext);
         AgentManager.lastDelegatedAgent = agentName;
         AgentConfig config = agentConfigs != null ? agentConfigs.get(agentName) : null;
         if (config == null) {

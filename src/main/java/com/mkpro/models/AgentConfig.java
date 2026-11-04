@@ -51,4 +51,11 @@ public class AgentConfig implements Serializable {
     public boolean hasServerUrl() {
         return serverUrl != null && !serverUrl.isEmpty();
     }
+
+    @Override
+    public String toString() {
+        String p = provider != null ? provider.name() : "UNKNOWN";
+        String m = modelName != null ? modelName : "";
+        return hasServerUrl() ? String.format("%s:%s @ %s", p, m, serverUrl) : String.format("%s:%s", p, m);
+    }
 }

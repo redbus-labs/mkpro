@@ -73,6 +73,10 @@ public class RabbitMqWorkerService {
     private volatile HttpServer internalHttpServer;
     private volatile int boundInternalHttpPort = -1;
     private volatile String activeMode = "NONE";
+    private static volatile RabbitMqWorkerService INSTANCE;
+
+    public static RabbitMqWorkerService getInstance() { return INSTANCE; }
+    public static void setInstance(RabbitMqWorkerService instance) { INSTANCE = instance; }
 
     public RabbitMqWorkerService(MqConfig config, MkProContext context) {
         this(config, createConnectionFactory(config), createRunnerTaskExecutor(context, config), resolveInstanceId(context));
@@ -86,6 +90,7 @@ public class RabbitMqWorkerService {
         this.config = config != null ? config : new MqConfig();
         this.connectionFactory = connectionFactory != null ? connectionFactory : createConnectionFactory(this.config);
         this.taskExecutor = taskExecutor;
+        INSTANCE = this;
         this.workerInstanceId = (workerInstanceId != null && !workerInstanceId.isBlank())
                 ? workerInstanceId
                 : "worker-" + UUID.randomUUID().toString().substring(0, 6);
@@ -357,6 +362,13 @@ public class RabbitMqWorkerService {
             }
             return responseText.toString().trim();
         };
+    }
+
+    public String sendLocalTask(String prompt, String targetAgent) {
+        String taskId = "sched-" + System.currentTimeMillis();
+        MqTaskMessage task = new MqTaskMessage(taskId, prompt, targetAgent);
+        enqueueInternalTask(task);
+        return taskId;
     }
 
     public void enqueueInternalTask(MqTaskMessage task) {

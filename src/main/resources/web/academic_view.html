@@ -1040,6 +1040,104 @@
             transform: scale(0.97);
         }
 
+        /* Turn Change Summary & Rollback Bar */
+        .turn-edit-summary-bar {
+            background: var(--surface-elevated);
+            border: 1px solid rgba(128, 128, 128, 0.22);
+            border-radius: 14px;
+            padding: 8px 14px;
+            margin-bottom: 8px;
+            box-shadow: var(--shadow-dock);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--ink);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+        .turn-edit-summary-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .turn-edit-summary-title {
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--ink);
+        }
+        .turn-edit-summary-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .turn-summary-btn {
+            background: var(--bg);
+            color: var(--ink);
+            border: 1px solid rgba(128, 128, 128, 0.25);
+            border-radius: 8px;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .turn-summary-btn:hover {
+            background: var(--surface-hover);
+            border-color: var(--accent);
+        }
+        .turn-summary-btn-danger {
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.35);
+        }
+        .turn-summary-btn-danger:hover {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: #ef4444;
+        }
+        .turn-edit-summary-details {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(128, 128, 128, 0.15);
+            max-height: 240px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .turn-file-card {
+            background: var(--bg);
+            border: 1px solid rgba(128, 128, 128, 0.15);
+            border-radius: 8px;
+            padding: 6px 10px;
+        }
+        .turn-file-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .turn-file-diff-box {
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: 11px;
+            line-height: 1.45;
+            padding: 4px 6px;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.04);
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        [data-theme="dark"] .turn-file-diff-box {
+            background: rgba(255, 255, 255, 0.04);
+        }
+        .verify-toggle-btn.verify-on {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            border-color: rgba(16, 185, 129, 0.4) !important;
+        }
+
         /* Slash Command Palette Popup */
         .slash-palette {
             position: absolute;
@@ -2710,6 +2808,18 @@
         <!-- Floating Input Dock -->
         <div class="dock-wrapper">
             <div class="dock-content">
+                <!-- Turn Change Summary & Rollback Bar -->
+                <div class="turn-edit-summary-bar" id="turnEditSummaryBar" style="display:none;">
+                    <div class="turn-edit-summary-header">
+                        <span class="turn-edit-summary-title" id="turnEditSummaryTitle">📝 0 file(s) modified (+0 / -0 lines)</span>
+                        <div class="turn-edit-summary-actions">
+                            <button class="turn-summary-btn" id="btnToggleTurnDiffs" onclick="toggleTurnSummaryDiffs()">View Diffs</button>
+                            <button class="turn-summary-btn turn-summary-btn-danger" onclick="revertTurnEdits()" title="Restore all files modified in the turn back to their pre-turn snapshot">⏪ Revert Turn</button>
+                        </div>
+                    </div>
+                    <div class="turn-edit-summary-details" id="turnEditSummaryDetails" style="display:none;"></div>
+                </div>
+
                 <!-- Multi-Modal Attachment Tray -->
                 <div class="dock-attachment-tray" id="dockAttachmentTray"></div>
 
@@ -2721,6 +2831,7 @@
                     <button class="dock-btn" onclick="document.getElementById('dockFileInput').click()" title="Attach images or documents">📎</button>
                     <input type="file" id="dockFileInput" multiple accept="*/*" style="display:none;" onchange="handleFileInput(event)" />
                     <input type="text" class="dock-input" id="userInput" placeholder="Inquire, propose hypothesis, type @ for notes, run /command..." autocomplete="off" />
+                    <button class="dock-btn verify-toggle-btn" id="verifyToggleBtn" onclick="toggleAutoVerify()" title="Toggle Self-Healing Auto-Verify Gate" style="font-size:11px; font-weight:600; padding:4px 8px; border-radius:12px; border:1px solid rgba(128,128,128,0.25); white-space:nowrap;">🛡️ Verify: OFF</button>
                     <button class="dock-btn" id="dockModelConfigBtn" onclick="openModelConfigModal()" title="Configure Agent Models &amp; Inference Servers" style="font-size:15px;">🧠</button>
                     <button class="dock-send-btn" id="sendBtn" onclick="sendMessage()">Send ↵</button>
                 </div>
@@ -3403,6 +3514,8 @@
                     hideThinkingLoader();
                     endStreamingCard();
                     refreshDrawerFiles();
+                    refreshTurnEditSummary();
+                    refreshVerifyStatus();
                     fetchTasks();
                     break;
 
@@ -3444,6 +3557,7 @@
                     break;
                 case 'edit_approved':
                     resolveEditProposal(msg.id, true);
+                    refreshTurnEditSummary();
                     break;
                 case 'edit_rejected':
                     resolveEditProposal(msg.id, false);
@@ -4633,12 +4747,157 @@ loadSessionsList();
                     <textarea id="mqJobPrompt" class="drawer-input" rows="3" placeholder="Background task prompt..." style="resize:vertical;"></textarea>
                     <button class="btn btn-sm btn-primary" onclick="submitMqJobFromUi()" style="width:100%; margin-top:6px;">📤 Enqueue Job</button>
                 </div>
+                <div class="drawer-section-title">
+                    <span>⏱️ Scheduled &amp; Event-Triggered Jobs</span>
+                    <button class="card-action-btn" onclick="fetchMqSchedules()" title="Refresh schedules" style="padding:2px 6px; font-size:11px;">🔄</button>
+                </div>
+                <div class="note-editor-box" style="margin-bottom:14px;">
+                    <input id="mqSchedName" class="drawer-input" placeholder="Schedule Name (e.g. Lint on Edit)..." autocomplete="off" style="margin-bottom:6px;" />
+                    <textarea id="mqSchedPrompt" class="drawer-input" rows="2" placeholder="Job prompt to execute..." style="resize:vertical; margin-bottom:6px;"></textarea>
+                    <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
+                        <select id="mqSchedAgent" class="drawer-select" style="flex:1; min-width:110px;">
+                            <option value="Coordinator">Coordinator</option>
+                            <option value="Architect">Architect</option>
+                            <option value="Coder">Coder</option>
+                            <option value="SecurityAuditor">SecurityAuditor</option>
+                            <option value="Tester">Tester</option>
+                        </select>
+                        <input id="mqSchedInterval" type="number" min="0" step="10" value="0" class="drawer-input" placeholder="Interval (sec)" title="Interval in seconds (0 = event-only)" style="width:110px;" />
+                    </div>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; margin-bottom:8px;">
+                        <input id="mqSchedTriggerOnEdit" type="checkbox" style="cursor:pointer;" />
+                        <span>Trigger on File Edit (15s cooldown)</span>
+                    </label>
+                    <button class="btn btn-sm btn-primary" onclick="createMqScheduleFromUi()" style="width:100%;">➕ Add Schedule</button>
+                </div>
+                <div id="mqSchedulesContainer" style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+                    <div style="color:var(--muted); font-size:12px;">Loading schedules...</div>
+                </div>
                 <div class="drawer-section-title"><span>📊 Recent Job Results</span></div>
                 <div id="mqResultsContainer" style="display:flex; flex-direction:column; gap:8px;">
                     <div style="color:var(--muted); font-size:12px;">Loading results...</div>
                 </div>
             `;
             fetchMqStatusAndResults();
+            fetchMqSchedules();
+        }
+
+        async function fetchMqSchedules() {
+            try {
+                const res = await fetch('/api/mq/schedules');
+                if (!res.ok) return;
+                const data = await res.json();
+                renderMqSchedulesList(data.schedules || []);
+            } catch (e) { console.error('MQ schedules error:', e); }
+        }
+
+        function renderMqSchedulesList(schedules) {
+            const container = document.getElementById('mqSchedulesContainer');
+            if (!container) return;
+            if (!schedules || schedules.length === 0) {
+                container.innerHTML = `<div style="color:var(--muted); font-size:12px; font-style:italic;">No scheduled or event-triggered jobs configured.</div>`;
+                return;
+            }
+            container.innerHTML = schedules.map(s => {
+                const enabledBadge = s.enabled
+                    ? `<span style="color:var(--success); font-weight:700; font-size:10px;">● ENABLED</span>`
+                    : `<span style="color:var(--muted); font-weight:700; font-size:10px;">○ DISABLED</span>`;
+                const triggers = [];
+                if (s.intervalSeconds > 0) triggers.push(`⏱️ Every ${s.intervalSeconds}s`);
+                if (s.triggerOnEdit) triggers.push(`📝 On File Edit`);
+                const triggerLabel = triggers.length > 0 ? triggers.join(' • ') : 'Manual only';
+                const toggleLabel = s.enabled ? 'Disable' : 'Enable';
+                return `<div class="note-card" style="border-left:3px solid ${s.enabled ? 'var(--accent)' : 'var(--muted)'};">
+                    <div class="note-card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700; font-size:12px;">${escapeHtml(s.name || s.id)}</span>
+                        ${enabledBadge}
+                    </div>
+                    <div style="font-size:11px; color:var(--muted); margin-top:2px;">
+                        Agent: <strong>${escapeHtml(s.targetAgent || 'Coordinator')}</strong> • ${triggerLabel} • Runs: <strong>${s.runCount || 0}</strong>
+                    </div>
+                    <div class="note-card-content" style="margin-top:4px; font-size:12px;">${escapeHtml(s.prompt || '')}</div>
+                    <div style="display:flex; gap:6px; margin-top:8px;">
+                        <button class="btn btn-sm btn-primary" style="padding:2px 8px; font-size:11px;" onclick="runMqScheduleNow('${escapeHtml(s.id)}')">▶ Run Now</button>
+                        <button class="btn btn-sm" style="padding:2px 8px; font-size:11px;" onclick="toggleMqSchedule('${escapeHtml(s.id)}', ${!s.enabled})">${toggleLabel}</button>
+                        <button class="btn btn-sm" style="padding:2px 8px; font-size:11px; background:var(--danger); color:#fff; margin-left:auto;" onclick="deleteMqSchedule('${escapeHtml(s.id)}')">✕ Delete</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        async function createMqScheduleFromUi() {
+            const nameEl = document.getElementById('mqSchedName');
+            const promptEl = document.getElementById('mqSchedPrompt');
+            const agentEl = document.getElementById('mqSchedAgent');
+            const intervalEl = document.getElementById('mqSchedInterval');
+            const editEl = document.getElementById('mqSchedTriggerOnEdit');
+            if (!promptEl || !promptEl.value.trim()) return;
+
+            const payload = {
+                action: 'create',
+                name: nameEl && nameEl.value.trim() ? nameEl.value.trim() : 'Scheduled Job',
+                prompt: promptEl.value.trim(),
+                targetAgent: agentEl ? agentEl.value : 'Coordinator',
+                intervalSeconds: intervalEl ? (parseInt(intervalEl.value, 10) || 0) : 0,
+                triggerOnEdit: editEl ? !!editEl.checked : false
+            };
+            try {
+                const res = await fetch('/api/mq/schedules', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    if (nameEl) nameEl.value = '';
+                    promptEl.value = '';
+                    if (intervalEl) intervalEl.value = '0';
+                    if (editEl) editEl.checked = false;
+                    const data = await res.json();
+                    renderMqSchedulesList(data.schedules || []);
+                }
+            } catch (e) { console.error('Create schedule error:', e); }
+        }
+
+        async function toggleMqSchedule(id, enabled) {
+            try {
+                const res = await fetch('/api/mq/schedules', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'toggle', id, enabled })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    renderMqSchedulesList(data.schedules || []);
+                }
+            } catch (e) { console.error('Toggle schedule error:', e); }
+        }
+
+        async function runMqScheduleNow(id) {
+            try {
+                const res = await fetch('/api/mq/schedules', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'run', id })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    renderMqSchedulesList(data.schedules || []);
+                    fetchMqStatusAndResults();
+                    setTimeout(fetchMqStatusAndResults, 1200);
+                }
+            } catch (e) { console.error('Run schedule error:', e); }
+        }
+
+        async function deleteMqSchedule(id) {
+            try {
+                const res = await fetch('/api/mq/schedules?id=' + encodeURIComponent(id), {
+                    method: 'DELETE'
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    renderMqSchedulesList(data.schedules || []);
+                }
+            } catch (e) { console.error('Delete schedule error:', e); }
         }
 
         async function fetchMqStatusAndResults() {
@@ -5973,7 +6232,164 @@ loadSessionsList();
         });
 
         // Initialize WebSocket on Load
+        // ========== Turn Change Summary, Rollback & Auto-Verify Gate ==========
+        let turnSummaryDiffsExpanded = false;
+
+        async function refreshTurnEditSummary() {
+            const bar = document.getElementById('turnEditSummaryBar');
+            const titleEl = document.getElementById('turnEditSummaryTitle');
+            const detailsEl = document.getElementById('turnEditSummaryDetails');
+            const toggleBtn = document.getElementById('btnToggleTurnDiffs');
+            if (!bar || !titleEl || !detailsEl) return;
+
+            try {
+                const resp = await fetch('/api/edit/turn-summary');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const fileCount = data.fileCount || 0;
+                if (fileCount === 0) {
+                    bar.style.display = 'none';
+                    detailsEl.innerHTML = '';
+                    return;
+                }
+
+                bar.style.display = 'block';
+                const added = data.totalAdded || 0;
+                const removed = data.totalRemoved || 0;
+                titleEl.textContent = `📝 ${fileCount} file(s) modified (+${added} / -${removed} lines)`;
+                if (toggleBtn) {
+                    toggleBtn.textContent = turnSummaryDiffsExpanded ? 'Hide Diffs' : 'View Diffs';
+                }
+                detailsEl.style.display = turnSummaryDiffsExpanded ? 'flex' : 'none';
+
+                detailsEl.innerHTML = '';
+                (data.files || []).forEach(file => {
+                    const card = document.createElement('div');
+                    card.className = 'turn-file-card';
+
+                    const hdr = document.createElement('div');
+                    hdr.className = 'turn-file-card-header';
+
+                    const pathSpan = document.createElement('span');
+                    pathSpan.style.fontWeight = '600';
+                    pathSpan.innerHTML = `${escapeHtml(file.path)} <span style="color:#10b981;">+${file.added || 0}</span> / <span style="color:#ef4444;">-${file.removed || 0}</span>${file.isNewFile ? ' <span style="font-size:10px; padding:1px 5px; border-radius:4px; background:rgba(16,185,129,0.15); color:#10b981;">NEW</span>' : ''}`;
+
+                    const revBtn = document.createElement('button');
+                    revBtn.className = 'turn-summary-btn turn-summary-btn-danger';
+                    revBtn.textContent = '↩ Revert File';
+                    revBtn.onclick = () => revertSingleTurnFile(file.path);
+
+                    hdr.appendChild(pathSpan);
+                    hdr.appendChild(revBtn);
+                    card.appendChild(hdr);
+
+                    if (file.diff && file.diff.length > 0) {
+                        const diffBox = document.createElement('div');
+                        diffBox.className = 'turn-file-diff-box';
+                        file.diff.forEach(dl => {
+                            const lineDiv = document.createElement('div');
+                            if (dl.type === 'ADDED') {
+                                lineDiv.style.color = '#10b981';
+                                lineDiv.textContent = `+ ${dl.text || ''}`;
+                            } else if (dl.type === 'REMOVED') {
+                                lineDiv.style.color = '#ef4444';
+                                lineDiv.textContent = `- ${dl.text || ''}`;
+                            } else {
+                                lineDiv.style.opacity = '0.75';
+                                lineDiv.textContent = `  ${dl.text || ''}`;
+                            }
+                            diffBox.appendChild(lineDiv);
+                        });
+                        card.appendChild(diffBox);
+                    }
+
+                    detailsEl.appendChild(card);
+                });
+            } catch (e) {
+                console.warn('Failed to fetch turn edit summary:', e);
+            }
+        }
+
+        function toggleTurnSummaryDiffs() {
+            turnSummaryDiffsExpanded = !turnSummaryDiffsExpanded;
+            const detailsEl = document.getElementById('turnEditSummaryDetails');
+            const toggleBtn = document.getElementById('btnToggleTurnDiffs');
+            if (detailsEl) {
+                detailsEl.style.display = turnSummaryDiffsExpanded ? 'flex' : 'none';
+            }
+            if (toggleBtn) {
+                toggleBtn.textContent = turnSummaryDiffsExpanded ? 'Hide Diffs' : 'View Diffs';
+            }
+        }
+
+        async function revertSingleTurnFile(filePath) {
+            if (!filePath) return;
+            try {
+                const resp = await fetch('/api/edit/revert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: filePath })
+                });
+                if (resp.ok) {
+                    await refreshTurnEditSummary();
+                    if (typeof refreshDrawerFiles === 'function') refreshDrawerFiles();
+                }
+            } catch (e) {
+                console.error('Failed to revert file:', e);
+            }
+        }
+
+        async function revertTurnEdits() {
+            try {
+                const resp = await fetch('/api/edit/revert-turn', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                if (resp.ok) {
+                    turnSummaryDiffsExpanded = false;
+                    await refreshTurnEditSummary();
+                    if (typeof refreshDrawerFiles === 'function') refreshDrawerFiles();
+                }
+            } catch (e) {
+                console.error('Failed to revert turn edits:', e);
+            }
+        }
+
+        async function refreshVerifyStatus() {
+            const btn = document.getElementById('verifyToggleBtn');
+            if (!btn) return;
+            try {
+                const resp = await fetch('/api/verify');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const enabled = !!(data.enabled || data.autoVerify);
+                btn.textContent = enabled ? '🛡️ Verify: ON' : '🛡️ Verify: OFF';
+                btn.classList.toggle('verify-on', enabled);
+                if (data.lastSummary) {
+                    btn.title = `Self-Healing Auto-Verify Gate (${enabled ? 'ON' : 'OFF'}) — Last: ${data.lastSummary}`;
+                }
+            } catch (e) {}
+        }
+
+        async function toggleAutoVerify() {
+            try {
+                const resp = await fetch('/api/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'toggle' })
+                });
+                if (resp.ok) {
+                    await refreshVerifyStatus();
+                }
+            } catch (e) {
+                console.error('Failed to toggle auto-verify:', e);
+            }
+        }
+
         connect();
+        refreshTurnEditSummary();
+        refreshVerifyStatus();
     
         // =========================================================
         // Remote SSH Credentials & Management Module (Academic View)

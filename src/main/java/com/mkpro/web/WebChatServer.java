@@ -138,7 +138,7 @@ public class WebChatServer {
                 serveResource(exchange, "/web/academic_view.html", "text/html");
             } else if ("/classic".equals(path) || "/classic/".equals(path) || "/classic.html".equals(path)) {
                 serveResource(exchange, "/web/index.html", "text/html");
-            } else if ("/db".equals(path) || "/db.html".equals(path)) {
+            } else if ("/db".equals(path) || "/db/".equals(path) || "/db.html".equals(path) || "/db_view.html".equals(path)) {
                 serveResource(exchange, "/web/db.html", "text/html");
             } else if ("/knowledge".equals(path) || "/knowledge.html".equals(path)) {
                 serveResource(exchange, "/web/knowledge.html", "text/html");
@@ -421,7 +421,18 @@ public class WebChatServer {
                     }
                     // Store sender on context for logging
                     lastWebSender = sender;
+                    for (ImageAttachment localAtt : com.mkpro.tools.VisionTool.extractLocalMediaAttachments(text)) {
+                        boolean dup = false;
+                        for (ImageAttachment ex : imageAttachments) {
+                            if (ex.name().equals(localAtt.name()) && java.util.Arrays.equals(ex.data(), localAtt.data())) { dup = true; break; }
+                        }
+                        if (!dup) imageAttachments.add(localAtt);
+                    }
                     if (!imageAttachments.isEmpty()) {
+                        com.mkpro.agents.AgentManager.currentTurnMediaParts.clear();
+                        for (ImageAttachment att : imageAttachments) {
+                            com.mkpro.agents.AgentManager.currentTurnMediaParts.add(com.google.genai.types.Part.builder().inlineData(com.google.genai.types.Blob.builder().mimeType(att.mimeType()).data(att.data()).build()).build());
+                        }
                         inputHandler.onWebInputWithImages(text, imageAttachments);
                     } else {
                         inputHandler.onWebInput(text);
@@ -547,6 +558,27 @@ public class WebChatServer {
         default void onWebInputWithImages(String text, java.util.List<ImageAttachment> images) {
             onWebInput(text); // fallback to text-only
         }
+    }
+
+    public static com.google.genai.types.Content buildUserMessageContent(String text, java.util.List<ImageAttachment> attachments) {
+        com.mkpro.agents.AgentManager.currentTurnMediaParts.clear();
+        java.util.List<com.google.genai.types.Part> parts = new java.util.ArrayList<>();
+        parts.add(com.google.genai.types.Part.fromText(text));
+        java.util.List<ImageAttachment> all = new java.util.ArrayList<>();
+        if (attachments != null) all.addAll(attachments);
+        for (ImageAttachment localAtt : com.mkpro.tools.VisionTool.extractLocalMediaAttachments(text)) {
+            boolean dup = false;
+            for (ImageAttachment ex : all) {
+                if (ex.name().equals(localAtt.name()) && java.util.Arrays.equals(ex.data(), localAtt.data())) { dup = true; break; }
+            }
+            if (!dup) all.add(localAtt);
+        }
+        for (ImageAttachment img : all) {
+            com.google.genai.types.Part p = com.google.genai.types.Part.builder().inlineData(com.google.genai.types.Blob.builder().mimeType(img.mimeType()).data(img.data()).build()).build();
+            parts.add(p);
+            com.mkpro.agents.AgentManager.currentTurnMediaParts.add(p);
+        }
+        return com.google.genai.types.Content.builder().role("user").parts(parts).build();
     }
 
     public record ImageAttachment(String name, String mimeType, byte[] data) {}

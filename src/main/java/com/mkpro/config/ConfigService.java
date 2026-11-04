@@ -136,14 +136,23 @@ public class ConfigService {
             // ignore fallback error
         }
 
-        // 4. Fallback check for known legacy YAML files
+        // 4. Fallback check for known legacy YAML files (and auto-upgrade stale pre-v4.9 default.yaml)
         String[] defaultFiles = {"default.yaml", "minimal.yaml", "polyglot.yaml", "adk_updater.yaml"};
         for (String file : defaultFiles) {
             Path dest = teamsDir.resolve(file);
-            if (!Files.exists(dest)) {
+            boolean needsCopy = !Files.exists(dest);
+            if (!needsCopy && "default.yaml".equals(file)) {
+                try {
+                    String existing = Files.readString(dest);
+                    if (existing.contains("- name: CodeEditor")) {
+                        needsCopy = true;
+                    }
+                } catch (IOException ignored) {}
+            }
+            if (needsCopy) {
                 try (InputStream is = ConfigService.class.getResourceAsStream("/teams/" + file)) {
                     if (is != null) {
-                        Files.copy(is, dest);
+                        Files.copy(is, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                     }
                 } catch (IOException ignored) {}
             }

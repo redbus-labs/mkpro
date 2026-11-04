@@ -150,6 +150,7 @@ public class AudioTranscriptionTool {
                                 .data(audioBytes)
                                 .build())
                             .build();
+                        if (com.mkpro.agents.AgentManager.currentTurnMediaParts != null) { com.mkpro.agents.AgentManager.currentTurnMediaParts.add(audioPart); }
                         Part textPart = Part.fromText(prompt);
 
                         Content content = Content.builder()

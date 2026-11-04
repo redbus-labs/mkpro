@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>mkpro - AI Software Engineering Team</title>
     <link rel="stylesheet" id="hljs-theme" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -417,6 +421,36 @@
         }
         .message.assistant strong { color: var(--green); }
         .message.assistant a { color: var(--cyan); }
+        .math-display, .katex-display {
+            margin: 12px 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 4px 0;
+        }
+        .math-inline {
+            display: inline;
+        }
+        .mermaid-wrapper {
+            margin: 12px 0;
+            padding: 14px;
+            border-radius: 8px;
+            background: var(--bg);
+            overflow-x: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .mermaid-wrapper .mermaid {
+            max-width: 100%;
+            overflow-x: auto;
+            display: flex;
+            justify-content: center;
+        }
+        .mermaid-wrapper .mermaid svg {
+            max-width: 100%;
+            height: auto;
+        }
 
         /* Streaming indicator */
         .streaming .content::after {
@@ -1316,6 +1350,19 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script>
         // ========== Theme Toggle ==========
+        function initMermaidTheme(theme) {
+            if (typeof mermaid !== 'undefined') {
+                try {
+                    mermaid.initialize({
+                        startOnLoad: false,
+                        theme: theme === 'dark' ? 'dark' : 'default',
+                        securityLevel: 'loose',
+                        fontFamily: 'JetBrains Mono, Fira Code, sans-serif'
+                    });
+                } catch (e) {}
+            }
+        }
+
         function toggleTheme() {
             const current = document.documentElement.getAttribute('data-theme') || 'dark';
             const next = current === 'dark' ? 'light' : 'dark';
@@ -1326,6 +1373,7 @@
             document.getElementById('hljs-theme').href = next === 'dark'
                 ? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css'
                 : 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+            initMermaidTheme(next);
         }
 
         // Load saved theme
@@ -1337,6 +1385,7 @@
             if (saved === 'light') {
                 document.getElementById('hljs-theme').href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
             }
+            initMermaidTheme(saved);
         })();
 
         // ========== Username Alias ==========
@@ -1540,7 +1589,7 @@
         }
         loadSessionsList();
 
-        // Configure marked for markdown rendering
+        // Configure marked for markdown, KaTeX math & Mermaid rendering
         marked.setOptions({
             highlight: (code, lang) => {
                 if (lang && hljs.getLanguage(lang)) {
@@ -1550,6 +1599,204 @@
             },
             breaks: true
         });
+
+        let mermaidDiagramCounter = 0;
+
+        function normalizeLatexMath(tex) {
+            if (!tex) return '';
+            let s = String(tex).trim();
+            s = s.replace(/(\\begin\{(?:[pbvBV]?matrix|smallmatrix|cases|aligned|align\*?|array)\})([\s\S]*?)(\\end\{(?:[pbvBV]?matrix|smallmatrix|cases|aligned|align\*?|array)\})/g, (match, beginTag, body, endTag) => {
+                const fixedBody = body.replace(/(^|[^\\])\\(\s+)/g, '$1\\\\$2');
+                return beginTag + fixedBody + endTag;
+            });
+            return s;
+        }
+
+        function fallbackLatexToHtml(tex, displayMode) {
+            let s = escapeHtml(normalizeLatexMath(tex));
+            s = s.replace(/\\begin\{([pbvBV]?matrix|smallmatrix)\}([\s\S]*?)\\end\{\1\}/g, (m, env, body) => {
+                const rows = body.trim().split(/\\\\/).map(r => r.trim()).filter(Boolean);
+                const trs = rows.map(r => {
+                    const cols = r.split('&').map(c => `<td style="padding:1px 5px;text-align:center;">${c.trim()}</td>`).join('');
+                    return `<tr>${cols}</tr>`;
+                }).join('');
+                const leftBr = env.startsWith('b') ? '[' : (env.startsWith('B') ? '{' : (env.startsWith('v') ? '|' : '('));
+                const rightBr = env.startsWith('b') ? ']' : (env.startsWith('B') ? '}' : (env.startsWith('v') ? '|' : ')'));
+                return `<span style="display:inline-flex;align-items:center;vertical-align:middle;"><span style="font-size:1.3em;line-height:1;">${leftBr}</span><table style="border-collapse:collapse;display:inline-table;margin:0 2px;">${trs}</table><span style="font-size:1.3em;line-height:1;">${rightBr}</span></span>`;
+            });
+            const symMap = {
+                '\\rightarrow': '→', '\\to': '→', '\\leftarrow': '←', '\\leftrightarrow': '↔',
+                '\\Rightarrow': '⇒', '\\Leftarrow': '⇐', '\\Leftrightarrow': '⇔', '\\mapsto': '↦',
+                '\\times': '×', '\\cdot': '⋅', '\\div': '÷', '\\pm': '±', '\\mp': '∓',
+                '\\neq': '≠', '\\ne': '≠', '\\leq': '≤', '\\le': '≤', '\\geq': '≥', '\\ge': '≥',
+                '\\approx': '≈', '\\equiv': '≡', '\\sim': '∼', '\\propto': '∝',
+                '\\infty': '∞', '\\partial': '∂', '\\nabla': '∇', '\\forall': '∀', '\\exists': '∃',
+                '\\in': '∈', '\\notin': '∉', '\\subset': '⊂', '\\subseteq': '⊆', '\\cup': '∪', '\\cap': '∩',
+                '\\sum': '∑', '\\prod': '∏', '\\int': '∫', '\\sqrt': '√',
+                '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\delta': 'δ', '\\epsilon': 'ϵ', '\\varepsilon': 'ε',
+                '\\zeta': 'ζ', '\\eta': 'η', '\\theta': 'θ', '\\iota': 'ι', '\\kappa': 'κ', '\\lambda': 'λ',
+                '\\mu': 'μ', '\\nu': 'ν', '\\xi': 'ξ', '\\pi': 'π', '\\rho': 'ρ', '\\sigma': 'σ',
+                '\\tau': 'τ', '\\upsilon': 'υ', '\\phi': 'ϕ', '\\varphi': 'φ', '\\chi': 'χ', '\\psi': 'ψ', '\\omega': 'ω',
+                '\\Gamma': 'Γ', '\\Delta': 'Δ', '\\Theta': 'Θ', '\\Lambda': 'Λ', '\\Xi': 'Ξ', '\\Pi': 'Π',
+                '\\Sigma': 'Σ', '\\Phi': 'Φ', '\\Psi': 'Ψ', '\\Omega': 'Ω'
+            };
+            for (const [k, v] of Object.entries(symMap)) {
+                s = s.split(k).join(v);
+            }
+            s = s.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
+            s = s.replace(/\\(?:mathbf|mathbb|mathrm|mathcal|text|textbf|textit)\{([^{}]+)\}/g, '<strong>$1</strong>');
+            s = s.replace(/\^\{([^{}]+)\}/g, '<sup>$1</sup>').replace(/\^([a-zA-Z0-9+\-])/g, '<sup>$1</sup>');
+            s = s.replace(/_\{([^{}]+)\}/g, '<sub>$1</sub>').replace(/_([a-zA-Z0-9+\-])/g, '<sub>$1</sub>');
+            return displayMode
+                ? `<div class="math-display" style="text-align:center;margin:10px 0;">${s}</div>`
+                : `<span class="math-inline">${s}</span>`;
+        }
+
+        function renderLatexToHtml(tex, displayMode) {
+            const normalized = normalizeLatexMath(tex);
+            if (typeof katex !== 'undefined' && typeof katex.renderToString === 'function') {
+                try {
+                    const rendered = katex.renderToString(normalized, {
+                        displayMode: !!displayMode,
+                        throwOnError: false,
+                        strict: false,
+                        trust: true
+                    });
+                    return displayMode
+                        ? `<div class="math-display">${rendered}</div>`
+                        : `<span class="math-inline">${rendered}</span>`;
+                } catch (e) {
+                    return fallbackLatexToHtml(normalized, displayMode);
+                }
+            }
+            return fallbackLatexToHtml(normalized, displayMode);
+        }
+
+        function renderMarkdown(md) {
+            if (!md) return '';
+            const mermaidBlocks = [];
+            const codeBlocks = [];
+            const mathBlocks = [];
+
+            let text = String(md);
+
+            // 1. Extract complete ```mermaid ... ``` blocks before marked.parse
+            text = text.replace(/```mermaid[ \t]*\r?\n([\s\S]*?)```/gi, (match, code) => {
+                const idx = mermaidBlocks.length;
+                mermaidBlocks.push(code.trim());
+                return `\n\n@@MKPROMERMAIDBLOCK${idx}@@\n\n`;
+            });
+
+            // 2. Protect other fenced code blocks and inline code spans
+            text = text.replace(/```[\s\S]*?```/g, (match) => {
+                const idx = codeBlocks.length;
+                codeBlocks.push(match);
+                return `@@MKPROCODEBLOCK${idx}@@`;
+            });
+            text = text.replace(/`[^`\n]+`/g, (match) => {
+                const idx = codeBlocks.length;
+                codeBlocks.push(match);
+                return `@@MKPROCODEBLOCK${idx}@@`;
+            });
+
+            // 3. Extract and protect LaTeX math expressions BEFORE marked.parse strips `\\` or `_`
+            text = text.replace(/\$\$([\s\S]+?)\$\$/g, (match, tex) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: tex, display: true });
+                return `\n\n@@MKPROMATHBLOCK${idx}@@\n\n`;
+            });
+            text = text.replace(/\\\[([\s\S]+?)\\\]/g, (match, tex) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: tex, display: true });
+                return `\n\n@@MKPROMATHBLOCK${idx}@@\n\n`;
+            });
+            text = text.replace(/\\\(([\s\S]+?)\\\)/g, (match, tex) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: tex, display: false });
+                return `@@MKPROMATHBLOCK${idx}@@`;
+            });
+            text = text.replace(/\\begin\{(pmatrix|bmatrix|vmatrix|Bmatrix|matrix|cases|aligned|align\*?|equation\*?|gather\*?)\}[\s\S]+?\\end\{\1\}/g, (match) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: match, display: true });
+                return `\n\n@@MKPROMATHBLOCK${idx}@@\n\n`;
+            });
+            text = text.replace(/(^|[^\\$])\$(?!\s)((?:\\.|[^$\n])+?)(?<!\s)\$(?![0-9])/g, (match, prefix, tex) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: tex, display: false });
+                return `${prefix}@@MKPROMATHBLOCK${idx}@@`;
+            });
+
+            // 4. Restore normal code blocks for marked.parse
+            text = text.replace(/@@MKPROCODEBLOCK(\d+)@@/g, (match, i) => codeBlocks[Number(i)]);
+
+            // 5. Parse Markdown
+            let rawHtml = marked.parse(text);
+
+            // 6. Restore rendered KaTeX math blocks
+            rawHtml = rawHtml.replace(/@@MKPROMATHBLOCK(\d+)@@/g, (match, i) => {
+                const item = mathBlocks[Number(i)];
+                return item ? renderLatexToHtml(item.tex, item.display) : match;
+            });
+
+            // 7. Restore Mermaid diagram blocks
+            rawHtml = rawHtml.replace(/@@MKPROMERMAIDBLOCK(\d+)@@/g, (match, i) => {
+                const code = mermaidBlocks[Number(i)] || '';
+                return `<div class="mermaid-wrapper"><div class="mermaid" data-mermaid-source="${encodeURIComponent(code)}">${escapeHtml(code)}</div></div>`;
+            });
+
+            return rawHtml;
+        }
+
+        async function renderMathAndMermaid(container, isStreaming = false) {
+            if (!container) return;
+
+            container.querySelectorAll('pre code.language-mermaid').forEach(codeEl => {
+                const rawMermaid = (codeEl.textContent || '').trim();
+                const target = codeEl.closest('pre');
+                if (target) {
+                    const mermaidWrap = document.createElement('div');
+                    mermaidWrap.className = 'mermaid-wrapper';
+                    mermaidWrap.innerHTML = `<div class="mermaid" data-mermaid-source="${encodeURIComponent(rawMermaid)}">${escapeHtml(rawMermaid)}</div>`;
+                    target.replaceWith(mermaidWrap);
+                }
+            });
+
+            if (typeof renderMathInElement === 'function') {
+                try {
+                    renderMathInElement(container, {
+                        delimiters: [
+                            { left: '$$', right: '$$', display: true },
+                            { left: '\\[', right: '\\]', display: true },
+                            { left: '\\(', right: '\\)', display: false },
+                            { left: '$', right: '$', display: false }
+                        ],
+                        throwOnError: false,
+                        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+                    });
+                } catch (e) {}
+            }
+
+            if (typeof mermaid !== 'undefined') {
+                const nodes = container.querySelectorAll('.mermaid:not([data-processed="true"])');
+                for (const node of nodes) {
+                    const encoded = node.getAttribute('data-mermaid-source');
+                    const rawCode = encoded ? decodeURIComponent(encoded) : (node.textContent || '').trim();
+                    if (!rawCode) continue;
+                    try {
+                        const svgId = 'mermaid-std-' + (++mermaidDiagramCounter) + '-' + Date.now();
+                        const { svg } = await mermaid.render(svgId, rawCode);
+                        node.innerHTML = svg;
+                        node.setAttribute('data-processed', 'true');
+                    } catch (err) {
+                        const errEl = document.getElementById('dmermaid-std-' + mermaidDiagramCounter);
+                        if (errEl) errEl.remove();
+                        if (!isStreaming) {
+                            node.innerHTML = `<pre style="font-size:12px;text-align:left;white-space:pre-wrap;">${escapeHtml(rawCode)}</pre>`;
+                        }
+                    }
+                }
+            }
+        }
 
         window.cachedEditDiffs = window.cachedEditDiffs || {};
         const chat = document.getElementById('chat');
@@ -2087,7 +2334,8 @@
             streamBuffer += text;
             const contentDiv = currentMessage.querySelector('.content');
             if (contentDiv) {
-                contentDiv.innerHTML = marked.parse(streamBuffer);
+                contentDiv.innerHTML = renderMarkdown(streamBuffer);
+                renderMathAndMermaid(contentDiv, true);
             }
             scrollToBottom();
         }
@@ -2097,8 +2345,9 @@
                 currentMessage.classList.remove('streaming');
                 const contentDiv = currentMessage.querySelector('.content');
                 if (contentDiv) {
-                    contentDiv.innerHTML = marked.parse(streamBuffer);
+                    contentDiv.innerHTML = renderMarkdown(streamBuffer);
                     contentDiv.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+                    renderMathAndMermaid(contentDiv, false);
                     postProcessImages(contentDiv);
                 }
             }
@@ -2531,8 +2780,13 @@
                         div.innerHTML = `<div>${escapeHtml(msg.text)}</div><div class="timestamp">${formatHistoryTimestamp(msg.timestamp)}</div>`;
                     } else {
                         div.className = 'message assistant';
-                        div.innerHTML = `<span class="agent-badge">${escapeHtml(msg.role)}</span><div class="content">${marked.parse(msg.text)}</div><div class="timestamp">${formatHistoryTimestamp(msg.timestamp)}</div>`;
-                        postProcessImages(div.querySelector('.content'));
+                        div.innerHTML = `<span class="agent-badge">${escapeHtml(msg.role)}</span><div class="content">${renderMarkdown(msg.text)}</div><div class="timestamp">${formatHistoryTimestamp(msg.timestamp)}</div>`;
+                        const contentEl = div.querySelector('.content');
+                        if (contentEl) {
+                            contentEl.querySelectorAll('pre code').forEach(el => { try { hljs.highlightElement(el); } catch(e) {} });
+                            renderMathAndMermaid(contentEl, false);
+                            postProcessImages(contentEl);
+                        }
                     }
                     fragment.appendChild(div);
                 }

@@ -11,6 +11,12 @@
     <!-- Syntax Highlighting Themes -->
     <link rel="stylesheet" id="hljs-theme" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <!-- PDF.js Library -->
+    <!-- KaTeX Math Rendering -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+    <!-- Mermaid Diagram Rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
     <style>
@@ -538,6 +544,39 @@
             background: transparent !important;
             padding: 0 !important;
             font-family: inherit;
+        }
+
+        /* KaTeX Math & Mermaid Diagram Containers */
+        .math-display, .katex-display {
+            margin: 14px 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 4px 0;
+        }
+        .math-inline {
+            display: inline;
+        }
+        .mermaid-wrapper {
+            margin: 14px 0;
+            padding: 16px;
+            border-radius: 10px;
+            background: var(--surface-elevated);
+            box-shadow: var(--shadow-sm);
+            overflow-x: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .mermaid-wrapper .mermaid {
+            max-width: 100%;
+            overflow-x: auto;
+            display: flex;
+            justify-content: center;
+        }
+        .mermaid-wrapper .mermaid svg {
+            max-width: 100%;
+            height: auto;
         }
 
         /* Visual Diff Proposal Card */
@@ -3079,9 +3118,198 @@
             mangle: false
         });
 
+        let mermaidDiagramCounter = 0;
+
+        function initMermaidTheme(theme) {
+            if (typeof mermaid !== 'undefined') {
+                try {
+                    mermaid.initialize({
+                        startOnLoad: false,
+                        theme: theme === 'dark' ? 'dark' : 'default',
+                        securityLevel: 'loose',
+                        fontFamily: 'Inter, JetBrains Mono, sans-serif'
+                    });
+                } catch (e) {}
+            }
+        }
+
+        function normalizeLatexMath(tex) {
+            if (!tex) return '';
+            let s = String(tex).trim();
+            s = s.replace(/(\\begin\{(?:[pbvBV]?matrix|smallmatrix|cases|aligned|align\*?|array)\})([\s\S]*?)(\\end\{(?:[pbvBV]?matrix|smallmatrix|cases|aligned|align\*?|array)\})/g, (match, beginTag, body, endTag) => {
+                const fixedBody = body.replace(/(^|[^\\])\\(\s+)/g, '$1\\\\$2');
+                return beginTag + fixedBody + endTag;
+            });
+            return s;
+        }
+
+        function fallbackLatexToHtml(tex, displayMode) {
+            let s = escapeHtml(normalizeLatexMath(tex));
+            s = s.replace(/\\begin\{([pbvBV]?matrix|smallmatrix)\}([\s\S]*?)\\end\{\1\}/g, (m, env, body) => {
+                const rows = body.trim().split(/\\\\/).map(r => r.trim()).filter(Boolean);
+                const trs = rows.map(r => {
+                    const cols = r.split('&').map(c => `<td style="padding:1px 5px;text-align:center;">${c.trim()}</td>`).join('');
+                    return `<tr>${cols}</tr>`;
+                }).join('');
+                const leftBr = env.startsWith('b') ? '[' : (env.startsWith('B') ? '{' : (env.startsWith('v') ? '|' : '('));
+                const rightBr = env.startsWith('b') ? ']' : (env.startsWith('B') ? '}' : (env.startsWith('v') ? '|' : ')'));
+                return `<span style="display:inline-flex;align-items:center;vertical-align:middle;font-family:'EB Garamond',serif;"><span style="font-size:1.35em;line-height:1;">${leftBr}</span><table style="border-collapse:collapse;display:inline-table;margin:0 2px;">${trs}</table><span style="font-size:1.35em;line-height:1;">${rightBr}</span></span>`;
+            });
+            const symMap = {
+                '\\rightarrow': '→', '\\to': '→', '\\leftarrow': '←', '\\leftrightarrow': '↔',
+                '\\Rightarrow': '⇒', '\\Leftarrow': '⇐', '\\Leftrightarrow': '⇔', '\\mapsto': '↦',
+                '\\times': '×', '\\cdot': '⋅', '\\div': '÷', '\\pm': '±', '\\mp': '∓',
+                '\\neq': '≠', '\\ne': '≠', '\\leq': '≤', '\\le': '≤', '\\geq': '≥', '\\ge': '≥',
+                '\\approx': '≈', '\\equiv': '≡', '\\sim': '∼', '\\propto': '∝',
+                '\\infty': '∞', '\\partial': '∂', '\\nabla': '∇', '\\forall': '∀', '\\exists': '∃',
+                '\\in': '∈', '\\notin': '∉', '\\subset': '⊂', '\\subseteq': '⊆', '\\cup': '∪', '\\cap': '∩',
+                '\\sum': '∑', '\\prod': '∏', '\\int': '∫', '\\sqrt': '√',
+                '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\delta': 'δ', '\\epsilon': 'ϵ', '\\varepsilon': 'ε',
+                '\\zeta': 'ζ', '\\eta': 'η', '\\theta': 'θ', '\\iota': 'ι', '\\kappa': 'κ', '\\lambda': 'λ',
+                '\\mu': 'μ', '\\nu': 'ν', '\\xi': 'ξ', '\\pi': 'π', '\\rho': 'ρ', '\\sigma': 'σ',
+                '\\tau': 'τ', '\\upsilon': 'υ', '\\phi': 'ϕ', '\\varphi': 'φ', '\\chi': 'χ', '\\psi': 'ψ', '\\omega': 'ω',
+                '\\Gamma': 'Γ', '\\Delta': 'Δ', '\\Theta': 'Θ', '\\Lambda': 'Λ', '\\Xi': 'Ξ', '\\Pi': 'Π',
+                '\\Sigma': 'Σ', '\\Phi': 'Φ', '\\Psi': 'Ψ', '\\Omega': 'Ω'
+            };
+            for (const [k, v] of Object.entries(symMap)) {
+                s = s.split(k).join(v);
+            }
+            s = s.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
+            s = s.replace(/\\(?:mathbf|mathbb|mathrm|mathcal|text|textbf|textit)\{([^{}]+)\}/g, '<strong>$1</strong>');
+            s = s.replace(/\^\{([^{}]+)\}/g, '<sup>$1</sup>').replace(/\^([a-zA-Z0-9+\-])/g, '<sup>$1</sup>');
+            s = s.replace(/_\{([^{}]+)\}/g, '<sub>$1</sub>').replace(/_([a-zA-Z0-9+\-])/g, '<sub>$1</sub>');
+            return displayMode
+                ? `<div class="math-display" style="text-align:center;font-family:'EB Garamond',Georgia,serif;font-size:1.15em;margin:12px 0;">${s}</div>`
+                : `<span class="math-inline" style="font-family:'EB Garamond',Georgia,serif;font-style:italic;">${s}</span>`;
+        }
+
+        function renderLatexToHtml(tex, displayMode) {
+            const normalized = normalizeLatexMath(tex);
+            if (typeof katex !== 'undefined' && typeof katex.renderToString === 'function') {
+                try {
+                    const rendered = katex.renderToString(normalized, {
+                        displayMode: !!displayMode,
+                        throwOnError: false,
+                        strict: false,
+                        trust: true
+                    });
+                    return displayMode
+                        ? `<div class="math-display">${rendered}</div>`
+                        : `<span class="math-inline">${rendered}</span>`;
+                } catch (e) {
+                    return fallbackLatexToHtml(normalized, displayMode);
+                }
+            }
+            return fallbackLatexToHtml(normalized, displayMode);
+        }
+
+        async function renderMathAndMermaid(container, isStreaming = false) {
+            if (!container) return;
+
+            container.querySelectorAll('pre code.language-mermaid').forEach(codeEl => {
+                const rawMermaid = (codeEl.textContent || '').trim();
+                const target = codeEl.closest('.code-container') || codeEl.closest('pre');
+                if (target) {
+                    const mermaidWrap = document.createElement('div');
+                    mermaidWrap.className = 'mermaid-wrapper';
+                    mermaidWrap.innerHTML = `<div class="mermaid" data-mermaid-source="${encodeURIComponent(rawMermaid)}">${escapeHtml(rawMermaid)}</div>`;
+                    target.replaceWith(mermaidWrap);
+                }
+            });
+
+            if (typeof renderMathInElement === 'function') {
+                try {
+                    renderMathInElement(container, {
+                        delimiters: [
+                            { left: '$$', right: '$$', display: true },
+                            { left: '\\[', right: '\\]', display: true },
+                            { left: '\\(', right: '\\)', display: false },
+                            { left: '$', right: '$', display: false }
+                        ],
+                        throwOnError: false,
+                        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+                    });
+                } catch (e) {}
+            }
+
+            if (typeof mermaid !== 'undefined') {
+                const nodes = container.querySelectorAll('.mermaid:not([data-processed="true"])');
+                for (const node of nodes) {
+                    const encoded = node.getAttribute('data-mermaid-source');
+                    const rawCode = encoded ? decodeURIComponent(encoded) : (node.textContent || '').trim();
+                    if (!rawCode) continue;
+                    try {
+                        const svgId = 'mermaid-academic-' + (++mermaidDiagramCounter) + '-' + Date.now();
+                        const { svg } = await mermaid.render(svgId, rawCode);
+                        node.innerHTML = svg;
+                        node.setAttribute('data-processed', 'true');
+                    } catch (err) {
+                        const errEl = document.getElementById('dmermaid-academic-' + mermaidDiagramCounter);
+                        if (errEl) errEl.remove();
+                        if (!isStreaming) {
+                            node.innerHTML = `<pre style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:left;white-space:pre-wrap;">${escapeHtml(rawCode)}</pre>`;
+                        }
+                    }
+                }
+            }
+        }
+
         function formatMarkdown(md) {
             if (!md) return '';
-            const rawHtml = marked.parse(md);
+            const mermaidBlocks = [];
+            const codeBlocks = [];
+            const mathBlocks = [];
+            let text = String(md);
+            text = text.replace(/```mermaid[ \t]*\r?\n([\s\S]*?)```/gi, (match, code) => {
+                const idx = mermaidBlocks.length;
+                mermaidBlocks.push(code.trim());
+                return `\n\n@@MKPROMERMAIDBLOCK${idx}@@\n\n`;
+            });
+            text = text.replace(/```[\s\S]*?```/g, (match) => {
+                const idx = codeBlocks.length;
+                codeBlocks.push(match);
+                return `@@MKPROCODEBLOCK${idx}@@`;
+            });
+            text = text.replace(/`[^`\n]+`/g, (match) => {
+                const idx = codeBlocks.length;
+                codeBlocks.push(match);
+                return `@@MKPROCODEBLOCK${idx}@@`;
+            });
+            text = text.replace(/\$\$([\s\S]+?)\$\$/g, (match, tex) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: tex, display: true });
+                return `\n\n@@MKPROMATHBLOCK${idx}@@\n\n`;
+            });
+            text = text.replace(/\\\[([\s\S]+?)\\\]/g, (match, tex) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: tex, display: true });
+                return `\n\n@@MKPROMATHBLOCK${idx}@@\n\n`;
+            });
+            text = text.replace(/\\\(([\s\S]+?)\\\)/g, (match, tex) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: tex, display: false });
+                return `@@MKPROMATHBLOCK${idx}@@`;
+            });
+            text = text.replace(/\\begin\{(pmatrix|bmatrix|vmatrix|Bmatrix|matrix|cases|aligned|align\*?|equation\*?|gather\*?)\}[\s\S]+?\\end\{\1\}/g, (match) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: match, display: true });
+                return `\n\n@@MKPROMATHBLOCK${idx}@@\n\n`;
+            });
+            text = text.replace(/(^|[^\\$])\$(?!\s)((?:\\.|[^$\n])+?)(?<!\s)\$(?![0-9])/g, (match, prefix, tex) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ tex: tex, display: false });
+                return `${prefix}@@MKPROMATHBLOCK${idx}@@`;
+            });
+            text = text.replace(/@@MKPROCODEBLOCK(\d+)@@/g, (match, i) => codeBlocks[Number(i)]);
+            let rawHtml = marked.parse(text);
+            rawHtml = rawHtml.replace(/@@MKPROMATHBLOCK(\d+)@@/g, (match, i) => {
+                const item = mathBlocks[Number(i)];
+                return item ? renderLatexToHtml(item.tex, item.display) : match;
+            });
+            rawHtml = rawHtml.replace(/@@MKPROMERMAIDBLOCK(\d+)@@/g, (match, i) => {
+                const code = mermaidBlocks[Number(i)] || '';
+                return `<div class="mermaid-wrapper"><div class="mermaid" data-mermaid-source="${encodeURIComponent(code)}">${escapeHtml(code)}</div></div>`;
+            });
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = rawHtml;
 
@@ -3091,6 +3319,14 @@
                 const langMatch = code ? code.className.match(/language-([a-zA-Z0-9_-]+)/) : null;
                 const lang = langMatch ? langMatch[1] : 'code';
 
+                if (lang.toLowerCase() === 'mermaid' && code) {
+                    const rawMermaid = (code.textContent || '').trim();
+                    const mermaidWrap = document.createElement('div');
+                    mermaidWrap.className = 'mermaid-wrapper';
+                    mermaidWrap.innerHTML = `<div class="mermaid" data-mermaid-source="${encodeURIComponent(rawMermaid)}">${escapeHtml(rawMermaid)}</div>`;
+                    pre.replaceWith(mermaidWrap);
+                    return;
+                }
                 const wrap = document.createElement('div');
                 wrap.className = 'code-container';
 
@@ -3118,6 +3354,8 @@
         }
 
         function highlightAllCode(container) {
+            if (!container) return;
+            renderMathAndMermaid(container, false);
             container.querySelectorAll('pre code').forEach(el => {
                 try {
                     hljs.highlightElement(el);
@@ -3166,6 +3404,7 @@
             const next = current === 'dark' ? 'light' : 'dark';
             document.documentElement.setAttribute('data-theme', next);
             localStorage.setItem('mkpro-academic-theme', next);
+            initMermaidTheme(next);
             updateHljsTheme(next);
         }
 
@@ -3180,6 +3419,7 @@
 
         (function initSavedTheme() {
             const saved = localStorage.getItem('mkpro-academic-theme') || 'light';
+            initMermaidTheme(saved);
             document.documentElement.setAttribute('data-theme', saved);
             updateHljsTheme(saved);
         })();
@@ -3784,6 +4024,7 @@
             streamBuffer += chunk;
             if (currentStreamBody) {
                 currentStreamBody.innerHTML = formatMarkdown(streamBuffer) + '<span class="streaming-cursor"></span>';
+                renderMathAndMermaid(currentStreamBody, true);
                 scrollToBottom();
             }
         }

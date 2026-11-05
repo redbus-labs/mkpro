@@ -204,6 +204,7 @@ public class MkProContext {
                 (MapDBVectorStore) this.vectorStore,
                 this.embeddingService
             );
+            this.agentManager.setContext(this);
 
             // 4. Instantiate a new active runner
             Runner newRunner = this.agentManager.createRunner(this.agentConfigs, "", this.filterConfig);
@@ -538,6 +539,9 @@ public class MkProContext {
 
     public void setAgentManager(AgentManager agentManager) {
         this.agentManager = agentManager;
+        if (this.agentManager != null && this.agentManager.getContext() == null) {
+            this.agentManager.setContext(this);
+        }
     }
 
     // Knowledge scheduler accessors

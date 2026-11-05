@@ -64,11 +64,8 @@ public class ToolOutputPruner {
                     Map<String, Object> resp = fn.response().get();
                     Map<String, Object> prunedResp = (Map<String, Object>) prunePayloadObject(resp, maxChars);
                     if (!Objects.equals(resp, prunedResp)) {
-                        FunctionResponse.Builder fnBuilder = FunctionResponse.builder().response(prunedResp);
-                        fn.name().ifPresent(fnBuilder::name);
-                        fn.id().ifPresent(fnBuilder::id);
-                        FunctionResponse newFn = fnBuilder.build();
-                        newParts.add(Part.builder().functionResponse(newFn).build());
+                        FunctionResponse newFn = fn.toBuilder().response(prunedResp).build();
+                        newParts.add(p.toBuilder().functionResponse(newFn).build());
                         changed = true;
                         continue;
                     }
@@ -76,7 +73,7 @@ public class ToolOutputPruner {
             } else if (p.text().isPresent()) {
                 String txt = p.text().get();
                 if (txt.length() > maxChars) {
-                    newParts.add(Part.fromText(pruneText(txt, maxChars)));
+                    newParts.add(p.toBuilder().text(pruneText(txt, maxChars)).build());
                     changed = true;
                     continue;
                 }
@@ -84,8 +81,6 @@ public class ToolOutputPruner {
             newParts.add(p);
         }
         if (!changed) return content;
-        Content.Builder contentBuilder = Content.builder().parts(newParts);
-        content.role().ifPresent(contentBuilder::role);
-        return contentBuilder.build();
+        return content.toBuilder().parts(newParts).build();
     }
 }

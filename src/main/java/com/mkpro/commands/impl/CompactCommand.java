@@ -1,10 +1,13 @@
 package com.mkpro.commands.impl;
 
+import com.google.adk.runner.Runner;
+import com.google.adk.sessions.Session;
 import com.mkpro.CentralMemory;
 import com.mkpro.commands.Command;
 import com.mkpro.core.MkProContext;
 import com.mkpro.core.StoreKeys;
 import com.mkpro.plugins.FilterConfig;
+import com.mkpro.plugins.SmartEventFilterPlugin;
 
 import static com.mkpro.MkPro.*;
 
@@ -64,6 +67,7 @@ public class CompactCommand implements Command {
                         int chars = Integer.parseInt(val);
                         fc.setPruneToolOutputs(true);
                         fc.setMaxToolPayloadChars(chars);
+                        fc.requestManualCompaction();
                         System.out.println(ANSI_GREEN + "✔ Tool output pruning enabled: max " + chars + " chars per payload." + ANSI_RESET);
                     } catch (NumberFormatException e) {
                         System.out.println(ANSI_RED + "Invalid number: " + args[1] + ANSI_RESET);
@@ -71,6 +75,9 @@ public class CompactCommand implements Command {
                     }
                 }
                 saveFilterConfig(fc);
+                if (fc.isPruneToolOutputs()) {
+                    compactSession(context, fc);
+                }
                 rebuildRunnerWithConfig(context, fc);
                 return;
             } else if (sub.equals("churn")) {
@@ -81,6 +88,7 @@ public class CompactCommand implements Command {
                 String val = args[1].toLowerCase();
                 if (val.equals("on") || val.equals("true") || val.equals("1")) {
                     fc.setEvictStaleToolChurn(true);
+                    fc.requestManualCompaction();
                     System.out.println(ANSI_GREEN + "✔ Stale tool churn eviction enabled." + ANSI_RESET);
                 } else if (val.equals("off") || val.equals("false") || val.equals("0")) {
                     fc.setEvictStaleToolChurn(false);
@@ -90,12 +98,16 @@ public class CompactCommand implements Command {
                     return;
                 }
                 saveFilterConfig(fc);
+                if (fc.isEvictStaleToolChurn()) {
+                    compactSession(context, fc);
+                }
                 rebuildRunnerWithConfig(context, fc);
                 return;
             } else {
                 // Number turns or "off"
                 if (sub.equals("off") || sub.equals("none") || sub.equals("0") || sub.equals("-1")) {
                     fc.setMaxTurns(-1);
+                    fc.setManualCompactionRequested(false);
                     if (context != null) {
                         context.setMaxTurns(-1);
                     }
@@ -108,10 +120,12 @@ public class CompactCommand implements Command {
                         int limit = Integer.parseInt(sub);
                         if (limit > 0) {
                             fc.setMaxTurns(limit);
+                            fc.requestManualCompaction();
                             if (context != null) {
                                 context.setMaxTurns(limit);
                             }
                             saveFilterConfig(fc);
+                            compactSession(context, fc);
                             rebuildRunnerWithConfig(context, fc);
                             System.out.println(ANSI_GREEN + "✔ Context compaction set: keeping last " + limit + " invocation turns in active context." + ANSI_RESET);
                             return;
@@ -125,7 +139,9 @@ public class CompactCommand implements Command {
         // Default compaction run
         int currentTurns = fc.getMaxTurns();
         System.out.println(ANSI_CYAN + "Compacting session context and memory caches..." + ANSI_RESET);
+        fc.requestManualCompaction();
         saveFilterConfig(fc);
+        compactSession(context, fc);
         rebuildRunnerWithConfig(context, fc);
         if (currentTurns > 0) {
             System.out.println("• Active context turn window: " + currentTurns + " invocations");
@@ -143,9 +159,43 @@ public class CompactCommand implements Command {
         } catch (Exception ignored) {}
     }
 
+    private void compactSession(MkProContext context, FilterConfig fc) {
+        if (context == null || fc == null || context.getCurrentSession() == null) {
+            return;
+        }
+        Session compacted = SmartEventFilterPlugin.compactSession(
+                context.getCurrentSession(),
+                context.getSessionService(),
+                fc);
+        if (compacted != null) {
+            context.setCurrentSession(compacted);
+        }
+    }
+
     private void rebuildRunnerWithConfig(MkProContext context, FilterConfig fc) {
-        if (context != null && context.getAgentManager() != null && context.getAgentConfigs() != null) {
-            context.setRunner(context.getAgentManager().createRunner(context.getAgentConfigs(), "", fc));
+        if (context == null) {
+            return;
+        }
+        if (context.getAgentManager() != null && context.getAgentConfigs() != null) {
+            String existingContext = context.getAgentManager().getProjectContext();
+            Runner newRunner = context.getAgentManager().createRunner(
+                    context.getAgentConfigs(),
+                    existingContext != null ? existingContext : "",
+                    fc);
+            if (newRunner != null) {
+                context.setRunner(newRunner);
+            }
+        }
+        SmartEventFilterPlugin plugin = context.getSmartEventFilterPlugin();
+        if (plugin != null) {
+            if (context.getCurrentSession() != null) {
+                plugin.resetSessionState(context.getCurrentSession().id());
+            } else {
+                plugin.resetSessionState();
+            }
+            if (fc != null && fc.isManualCompactionRequested()) {
+                plugin.requestManualCompaction();
+            }
         }
     }
 

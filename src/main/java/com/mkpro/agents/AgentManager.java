@@ -401,13 +401,20 @@ public class AgentManager {
         try {
             switch (config.getProvider()) {
                 case GEMINI:
+                    String resolvedGeminiKey = resolveGeminiKey();
+                    String geminiModel = (config.getModelName() != null && !config.getModelName().isBlank())
+                            ? config.getModelName()
+                            : "gemini-2.5-flash";
                     return Gemini.builder()
-                            .apiKey(apiKey)
-                            .modelName(config.getModelName())
+                            .apiKey(resolvedGeminiKey)
+                            .modelName(geminiModel)
                             .build();
                 case OLLAMA:
                     String resolvedUrl = resolveOllamaUrl(config);
-                    return new OllamaBaseLM(config.getModelName(), resolvedUrl);
+                    String ollamaModel = (config.getModelName() != null && !config.getModelName().isBlank())
+                            ? config.getModelName()
+                            : "llama3";
+                    return new OllamaBaseLM(ollamaModel, resolvedUrl);
                 case BEDROCK:
                     return new BedrockBaseLM(config.getModelName());
                 case AZURE:
@@ -435,6 +442,36 @@ public class AgentManager {
                     + " model=" + config.getModelName() + ": " + e.getMessage(),
                 e);
         }
+    }
+
+    /**
+     * Resolves the Gemini API key from constructor, context, system/environment variables,
+     * or config.properties, falling back to a non-empty placeholder so runner initialization
+     * and compaction succeed even when credentials are provided lazily.
+     */
+    private String resolveGeminiKey() {
+        if (this.apiKey != null && !this.apiKey.isBlank()) {
+            return this.apiKey.trim();
+        }
+        if (this.context != null && this.context.getApiKey() != null && !this.context.getApiKey().isBlank()) {
+            return this.context.getApiKey().trim();
+        }
+        String sysOrEnv = System.getProperty("GOOGLE_API_KEY", System.getenv("GOOGLE_API_KEY"));
+        if (sysOrEnv != null && !sysOrEnv.isBlank()) {
+            return sysOrEnv.trim();
+        }
+        sysOrEnv = System.getProperty("GEMINI_API_KEY", System.getenv("GEMINI_API_KEY"));
+        if (sysOrEnv != null && !sysOrEnv.isBlank()) {
+            return sysOrEnv.trim();
+        }
+        try {
+            String cfgKey = new com.mkpro.config.ConfigService().getSetting(com.mkpro.config.ConfigService.PROP_GEMINI_KEY, null);
+            if (cfgKey != null && !cfgKey.isBlank()) {
+                return cfgKey.trim();
+            }
+        } catch (Exception ignored) {
+        }
+        return "gemini-api-key-placeholder";
     }
 
     /**
@@ -751,7 +788,11 @@ public class AgentManager {
             List<BaseAgent> agents = new ArrayList<>();
 
             // Coordinator LLM initialization
-            AgentConfig coordConfig = agentConfigs.getOrDefault("Coordinator", new AgentConfig(Provider.OLLAMA, "devstral-small-2"));
+            AgentConfig coordConfig = (agentConfigs != null && agentConfigs.containsKey("Coordinator"))
+                    ? agentConfigs.get("Coordinator")
+                    : (agentConfigs != null && agentConfigs.containsKey("default"))
+                        ? agentConfigs.get("default")
+                        : new AgentConfig(Provider.OLLAMA, "devstral-small-2");
             BaseLlm coordLlm = createLlm(coordConfig);
             if (coordLlm == null) {
                 throw new IllegalStateException(
@@ -857,9 +898,15 @@ public class AgentManager {
                         provider = Provider.valueOf(def.getProvider().toUpperCase());
                     } catch (Exception e) {}
                 }
+                String defModel = (def.getModel() != null && !def.getModel().isBlank())
+                        ? def.getModel()
+                        : (provider == Provider.GEMINI ? "gemini-2.5-flash" : "llama3");
 
-                AgentConfig config = agentConfigs.getOrDefault(def.getName(),
-                        new AgentConfig(provider, def.getModel()));
+                AgentConfig config = (agentConfigs != null && agentConfigs.containsKey(def.getName()))
+                        ? agentConfigs.get(def.getName())
+                        : (agentConfigs != null && agentConfigs.containsKey("default"))
+                            ? agentConfigs.get("default")
+                            : new AgentConfig(provider, defModel);
                 BaseLlm llm = createLlm(config);
 
                 LlmAgent.Builder agentBuilder = LlmAgent.builder()
@@ -888,14 +935,23 @@ public class AgentManager {
 
             agentBuilder
                     .agent(coordinator)
-                    .appName("mkpro")
-                    .sessionService(sessionService)
-                    .artifactService(artifactService)
-                    .memoryService(memoryService);
+                    .appName("mkpro");
+            if (sessionService != null) {
+                agentBuilder.sessionService(sessionService);
+            }
+            if (artifactService != null) {
+                agentBuilder.artifactService(artifactService);
+            }
+            if (memoryService != null) {
+                agentBuilder.memoryService(memoryService);
+            }
 
             if (filterConfig != null) {
                 this.smartEventFilterPlugin = new SmartEventFilterPlugin(filterConfig);
-            agentBuilder.plugins(java.util.Collections.singletonList(this.smartEventFilterPlugin));
+                if (filterConfig.isManualCompactionRequested()) {
+                    this.smartEventFilterPlugin.requestManualCompaction();
+                }
+                agentBuilder.plugins(java.util.Collections.singletonList(this.smartEventFilterPlugin));
             }
 
             if (logger != null) {

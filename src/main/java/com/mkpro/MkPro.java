@@ -23,6 +23,8 @@ public class MkPro {
     public static final String ANSI_BRIGHT_MAGENTA = com.mkpro.ui.AnsiColors.BRIGHT_MAGENTA;
     public static final String ANSI_BOLD = com.mkpro.ui.AnsiColors.BOLD;
 
+    public static final Object STDOUT_CAPTURE_LOCK = new Object();
+
     public static void main(String[] args) {
         try {
             // Suppress noisy JUL loggers FIRST — before any library class loading

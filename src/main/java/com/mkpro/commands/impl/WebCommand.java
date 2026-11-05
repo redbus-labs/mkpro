@@ -120,6 +120,12 @@ public class WebCommand implements Command {
             return;
         }
 
+        if (context.getEventBus() != null) {
+            context.getEventBus().unregisterWebSinks();
+        } else if (com.mkpro.events.MkProEventBus.INSTANCE != null) {
+            com.mkpro.events.MkProEventBus.INSTANCE.unregisterWebSinks();
+        }
+
         server.stop();
         context.setWebChatServer(null);
         System.out.println("\u001b[32m[Web] Stopped. All clients disconnected.\u001b[0m");

@@ -586,25 +586,38 @@ public class AgentManager {
             List<BaseTool> sshTools = new ArrayList<>(SshTools.createSuite());
 
             // 2. Aggregate specialized arrays tailored to agent roles
+            List<BaseTool> symbolIndexTools = new ArrayList<>(SymbolIndexTool.createSuite());
+            List<BaseTool> backgroundJobTools = List.of(
+                BackgroundJobTools.createListBackgroundJobsTool(),
+                BackgroundJobTools.createKillBackgroundJobTool()
+            );
+
             List<BaseTool> coderTools = new ArrayList<>();
             coderTools.add(FileSystemTools.create());
+            coderTools.add(MkProTools.createListDirTool());
             coderTools.add(MkProTools.createWriteFileTool());
             coderTools.add(MkProTools.createSafeWriteFileTool());
             coderTools.add(MkProTools.createReplaceInFileTool());
             coderTools.addAll(clipboardTools);
             coderTools.addAll(codebaseSearchTools);
+            coderTools.addAll(symbolIndexTools);
             coderTools.addAll(mcpScanTools);
             coderTools.addAll(graphMemoryTools);
             coderTools.addAll(fetchUrlTools);
+            coderTools.add( com.mkpro.facts.VerifyFactTool.create());
 
             List<BaseTool> codeEditorTools = new ArrayList<>();
             codeEditorTools.add(FileSystemTools.create());
+            codeEditorTools.add(MkProTools.createListDirTool());
             codeEditorTools.add(MkProTools.createWriteFileTool());
             codeEditorTools.add(MkProTools.createSafeWriteFileTool());
+            codeEditorTools.add(MkProTools.createReplaceInFileTool());
             codeEditorTools.addAll(clipboardTools);
+            codeEditorTools.addAll(symbolIndexTools);
 
             List<BaseTool> sysAdminTools = new ArrayList<>();
             sysAdminTools.addAll(shellTools);
+            sysAdminTools.addAll(backgroundJobTools);
             sysAdminTools.addAll(fileSystemTools);
             sysAdminTools.addAll(clipboardTools);
             sysAdminTools.addAll(sshTools);
@@ -619,20 +632,24 @@ public class AgentManager {
             testerTools.addAll(clipboardTools);
             testerTools.addAll(shellTools);
             testerTools.addAll(seleniumTools);
+            testerTools.addAll(symbolIndexTools);
 
             List<BaseTool> architectTools = new ArrayList<>();
             architectTools.addAll(fileSystemTools);
             architectTools.addAll(imageTools);
             architectTools.addAll(multiProjectSearchTools);
+            architectTools.addAll(symbolIndexTools);
             architectTools.addAll(clipboardTools);
             architectTools.addAll(graphMemoryTools);
             architectTools.addAll(fetchUrlTools);
+            architectTools.add(com.mkpro.facts.VerifyFactTool.create());
 
             List<BaseTool> securityAuditorTools = new ArrayList<>();
             securityAuditorTools.addAll(fileSystemTools);
             securityAuditorTools.addAll(shellTools);
             securityAuditorTools.addAll(clipboardTools);
             securityAuditorTools.addAll(codebaseSearchTools);
+            securityAuditorTools.addAll(symbolIndexTools);
 
             List<BaseTool> databaseAdminTools = new ArrayList<>();
             databaseAdminTools.addAll(fileSystemTools);
@@ -643,6 +660,7 @@ public class AgentManager {
             dataAnalystTools.addAll(fileSystemTools);
             dataAnalystTools.addAll(shellTools);
             dataAnalystTools.addAll(clipboardTools);
+            dataAnalystTools.add(com.mkpro.facts.VerifyFactTool.create());
 
             List<BaseTool> docWriterTools = new ArrayList<>();
             docWriterTools.addAll(fileSystemTools);
@@ -651,6 +669,7 @@ public class AgentManager {
 
             List<BaseTool> devOpsTools = new ArrayList<>();
             devOpsTools.addAll(shellTools);
+            devOpsTools.addAll(backgroundJobTools);
             devOpsTools.addAll(fileSystemTools);
             devOpsTools.addAll(clipboardTools);
             devOpsTools.addAll(codebaseSearchTools);

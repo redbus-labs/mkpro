@@ -281,12 +281,23 @@ class RestApiHandler {
                 message = contextBuilder + message;
             }
 
+            if (com.mkpro.events.EditApprovalService.INSTANCE != null) {
+                com.mkpro.events.EditApprovalService.INSTANCE.startNewTurn();
+            }
+
             long startTime = System.currentTimeMillis();
+            final String finalMessage = message;
+            com.mkpro.models.AgentConfig coordConfig = mkproContext.getAgentConfigs() != null
+                ? mkproContext.getAgentConfigs().get("Coordinator") : null;
+            String providerStr = coordConfig != null && coordConfig.getProvider() != null ? coordConfig.getProvider().name() : "OLLAMA";
+            String modelStr = coordConfig != null && coordConfig.getModelName() != null ? coordConfig.getModelName() : "llama3";
+            String sessId = mkproContext.getCurrentSession().id() != null ? mkproContext.getCurrentSession().id() : "default-session";
 
             com.google.genai.types.Content content = com.google.genai.types.Content.fromParts(
                 new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(message)});
 
             StringBuilder responseText = new StringBuilder();
+            long[] tokens = {0, 0, 0};
             CountDownLatch latch = new CountDownLatch(1);
             AtomicReference<String> errorRef = new AtomicReference<>();
 
@@ -300,6 +311,11 @@ class RestApiHandler {
                                 }
                             });
                         });
+                        event.usageMetadata().ifPresent(u -> {
+                            tokens[0] = u.promptTokenCount().orElse(0);
+                            tokens[1] = u.candidatesTokenCount().orElse(0);
+                            tokens[2] = u.totalTokenCount().orElse(0);
+                        });
                     },
                     error -> { errorRef.set(error.getMessage()); latch.countDown(); },
                     latch::countDown
@@ -307,13 +323,81 @@ class RestApiHandler {
 
             latch.await(120, TimeUnit.SECONDS);
             long duration = System.currentTimeMillis() - startTime;
+            com.mkpro.CentralMemory cm = resolveCm();
 
             if (errorRef.get() != null) {
+                if (cm != null) {
+                    cm.saveAgentStat(new com.mkpro.models.AgentStat(
+                        "Coordinator", providerStr, modelStr, duration, false,
+                        finalMessage.length(), responseText.length(), tokens[0], tokens[1], tokens[2], sessId
+                    ));
+                }
                 sendJsonError(exchange, 500, errorRef.get());
                 return;
             }
 
+            boolean turnOk = !responseText.toString().contains("Error executing") && !responseText.toString().contains("FAILED");
+            if (cm != null) {
+                cm.saveAgentStat(new com.mkpro.models.AgentStat(
+                    "Coordinator", providerStr, modelStr, duration, turnOk,
+                    finalMessage.length(), responseText.length(), tokens[0], tokens[1], tokens[2], sessId
+                ));
+            }
+
+            // Self-Healing Auto-Verify Gate
+            if (mkproContext.isAutoVerify() && com.mkpro.events.EditApprovalService.INSTANCE != null) {
+                Set<String> modifiedFiles = com.mkpro.events.EditApprovalService.INSTANCE.getCurrentTurnModifiedFiles();
+                if (!modifiedFiles.isEmpty()) {
+                    com.mkpro.events.EditApprovalService.INSTANCE.clearTurnModifiedFiles();
+                    com.mkpro.events.AutoVerifyGate.VerifyResult verifyRes =
+                        com.mkpro.events.AutoVerifyGate.verifyFiles(mkproContext, modifiedFiles, false);
+                    if (verifyRes.ran() && !verifyRes.passed()) {
+                        String healPrompt = com.mkpro.events.AutoVerifyGate.buildSelfHealPrompt(verifyRes);
+                        com.google.genai.types.Content healContent = com.google.genai.types.Content.fromParts(
+                            new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(healPrompt)});
+                        StringBuilder healText = new StringBuilder();
+                        long healStart = System.currentTimeMillis();
+                        long[] healTokens = {0, 0, 0};
+                        CountDownLatch healLatch = new CountDownLatch(1);
+                        mkproContext.getRunner().runAsync(mkproContext.getCurrentSession().sessionKey(), healContent)
+                            .blockingSubscribe(
+                                ev -> {
+                                    ev.content().ifPresent(c -> c.parts().ifPresent(parts -> {
+                                        for (com.google.genai.types.Part part : parts) {
+                                            part.text().ifPresent(healText::append);
+                                        }
+                                    }));
+                                    ev.usageMetadata().ifPresent(u -> {
+                                        healTokens[0] = u.promptTokenCount().orElse(0);
+                                        healTokens[1] = u.candidatesTokenCount().orElse(0);
+                                        healTokens[2] = u.totalTokenCount().orElse(0);
+                                    });
+                                },
+                                err -> healLatch.countDown(),
+                                healLatch::countDown
+                            );
+                        healLatch.await(120, TimeUnit.SECONDS);
+                        if (healText.length() > 0) {
+                            responseText.append("\n\n").append(healText);
+                        }
+                        if (cm != null) {
+                            cm.saveAgentStat(new com.mkpro.models.AgentStat(
+                                "Coordinator", providerStr, modelStr, System.currentTimeMillis() - healStart, true,
+                                healPrompt.length(), healText.length(), healTokens[0], healTokens[1], healTokens[2], sessId
+                            ));
+                        }
+                        Set<String> postHealFiles = com.mkpro.events.EditApprovalService.INSTANCE.getCurrentTurnModifiedFiles();
+                        if (!postHealFiles.isEmpty()) {
+                            com.mkpro.events.EditApprovalService.INSTANCE.clearTurnModifiedFiles();
+                            com.mkpro.events.AutoVerifyGate.verifyFiles(mkproContext, postHealFiles, false);
+                        }
+                        duration = System.currentTimeMillis() - startTime;
+                    }
+                }
+            }
+
             String agent = com.mkpro.agents.AgentManager.lastDelegatedAgent;
+            com.mkpro.agents.AgentManager.lastDelegatedAgent = null;
 
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("agent", agent != null ? agent : "Coordinator");
@@ -352,6 +436,10 @@ class RestApiHandler {
                 return;
             }
 
+            if (com.mkpro.events.EditApprovalService.INSTANCE != null) {
+                com.mkpro.events.EditApprovalService.INSTANCE.startNewTurn();
+            }
+
             // Set SSE headers
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
             exchange.getResponseHeaders().set("Cache-Control", "no-cache");
@@ -361,10 +449,20 @@ class RestApiHandler {
 
             OutputStream os = exchange.getResponseBody();
 
+            long startTime = System.currentTimeMillis();
+            final String finalMessage = message;
+            com.mkpro.models.AgentConfig coordConfig = mkproContext.getAgentConfigs() != null
+                ? mkproContext.getAgentConfigs().get("Coordinator") : null;
+            String providerStr = coordConfig != null && coordConfig.getProvider() != null ? coordConfig.getProvider().name() : "OLLAMA";
+            String modelStr = coordConfig != null && coordConfig.getModelName() != null ? coordConfig.getModelName() : "llama3";
+            String sessId = mkproContext.getCurrentSession().id() != null ? mkproContext.getCurrentSession().id() : "default-session";
+
             com.google.genai.types.Content content = com.google.genai.types.Content.fromParts(
                 new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(message)});
 
             AtomicBoolean first = new AtomicBoolean(true);
+            StringBuilder responseBuilder = new StringBuilder();
+            long[] tokens = {0, 0, 0};
 
             mkproContext.getRunner().runAsync(mkproContext.getCurrentSession().sessionKey(), content)
                 .blockingSubscribe(
@@ -373,6 +471,7 @@ class RestApiHandler {
                             c.parts().ifPresent(parts -> {
                                 for (com.google.genai.types.Part part : parts) {
                                     part.text().ifPresent(text -> {
+                                        responseBuilder.append(text);
                                         try {
                                             if (first.compareAndSet(true, false)) {
                                                 String agent = com.mkpro.agents.AgentManager.lastDelegatedAgent;
@@ -390,8 +489,21 @@ class RestApiHandler {
                                 }
                             });
                         });
+                        event.usageMetadata().ifPresent(u -> {
+                            tokens[0] = u.promptTokenCount().orElse(0);
+                            tokens[1] = u.candidatesTokenCount().orElse(0);
+                            tokens[2] = u.totalTokenCount().orElse(0);
+                        });
                     },
                     error -> {
+                        long duration = System.currentTimeMillis() - startTime;
+                        com.mkpro.CentralMemory cm = resolveCm();
+                        if (cm != null) {
+                            cm.saveAgentStat(new com.mkpro.models.AgentStat(
+                                "Coordinator", providerStr, modelStr, duration, false,
+                                finalMessage.length(), responseBuilder.length(), tokens[0], tokens[1], tokens[2], sessId
+                            ));
+                        }
                         try {
                             String errEvent = "data: " + mapper.writeValueAsString(
                                 Map.of("type", "error", "message", error.getMessage())) + "\n\n";
@@ -401,6 +513,71 @@ class RestApiHandler {
                         } catch (IOException ignored) {}
                     },
                     () -> {
+                        long duration = System.currentTimeMillis() - startTime;
+                        boolean turnOk = !responseBuilder.toString().contains("Error executing") && !responseBuilder.toString().contains("FAILED");
+                        com.mkpro.CentralMemory cm = resolveCm();
+                        if (cm != null) {
+                            cm.saveAgentStat(new com.mkpro.models.AgentStat(
+                                "Coordinator", providerStr, modelStr, duration, turnOk,
+                                finalMessage.length(), responseBuilder.length(), tokens[0], tokens[1], tokens[2], sessId
+                            ));
+                        }
+
+                        // Self-Healing Auto-Verify Gate
+                        if (mkproContext.isAutoVerify() && com.mkpro.events.EditApprovalService.INSTANCE != null) {
+                            Set<String> modifiedFiles = com.mkpro.events.EditApprovalService.INSTANCE.getCurrentTurnModifiedFiles();
+                            if (!modifiedFiles.isEmpty()) {
+                                com.mkpro.events.EditApprovalService.INSTANCE.clearTurnModifiedFiles();
+                                com.mkpro.events.AutoVerifyGate.VerifyResult verifyRes =
+                                    com.mkpro.events.AutoVerifyGate.verifyFiles(mkproContext, modifiedFiles, false);
+                                if (verifyRes.ran() && !verifyRes.passed()) {
+                                    String healPrompt = com.mkpro.events.AutoVerifyGate.buildSelfHealPrompt(verifyRes);
+                                    com.google.genai.types.Content healContent = com.google.genai.types.Content.fromParts(
+                                        new com.google.genai.types.Part[]{com.google.genai.types.Part.fromText(healPrompt)});
+                                    StringBuilder healBuilder = new StringBuilder();
+                                    long healStart = System.currentTimeMillis();
+                                    long[] healTokens = {0, 0, 0};
+                                    mkproContext.getRunner().runAsync(mkproContext.getCurrentSession().sessionKey(), healContent)
+                                        .blockingSubscribe(
+                                            ev -> {
+                                                ev.content().ifPresent(c -> c.parts().ifPresent(parts -> {
+                                                    for (com.google.genai.types.Part part : parts) {
+                                                        part.text().ifPresent(text -> {
+                                                            healBuilder.append(text);
+                                                            try {
+                                                                String chunkEvent = "data: " + mapper.writeValueAsString(
+                                                                    Map.of("type", "chunk", "text", text)) + "\n\n";
+                                                                os.write(chunkEvent.getBytes(StandardCharsets.UTF_8));
+                                                                os.flush();
+                                                            } catch (IOException ignored) {}
+                                                        });
+                                                    }
+                                                }));
+                                                ev.usageMetadata().ifPresent(u -> {
+                                                    healTokens[0] = u.promptTokenCount().orElse(0);
+                                                    healTokens[1] = u.candidatesTokenCount().orElse(0);
+                                                    healTokens[2] = u.totalTokenCount().orElse(0);
+                                                });
+                                            },
+                                            err -> {},
+                                            () -> {}
+                                        );
+                                    if (cm != null) {
+                                        cm.saveAgentStat(new com.mkpro.models.AgentStat(
+                                            "Coordinator", providerStr, modelStr, System.currentTimeMillis() - healStart, true,
+                                            healPrompt.length(), healBuilder.length(), healTokens[0], healTokens[1], healTokens[2], sessId
+                                        ));
+                                    }
+                                    Set<String> postHealFiles = com.mkpro.events.EditApprovalService.INSTANCE.getCurrentTurnModifiedFiles();
+                                    if (!postHealFiles.isEmpty()) {
+                                        com.mkpro.events.EditApprovalService.INSTANCE.clearTurnModifiedFiles();
+                                        com.mkpro.events.AutoVerifyGate.verifyFiles(mkproContext, postHealFiles, false);
+                                    }
+                                }
+                            }
+                        }
+
+                        com.mkpro.agents.AgentManager.lastDelegatedAgent = null;
                         try {
                             String endEvent = "data: " + mapper.writeValueAsString(
                                 Map.of("type", "stream_end")) + "\n\n";
@@ -441,18 +618,19 @@ class RestApiHandler {
                 return;
             }
 
-            // Capture stdout
+            // Capture stdout safely with lock to prevent race conditions on System.out
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
             java.io.PrintStream capture = new java.io.PrintStream(baos, true, StandardCharsets.UTF_8);
-            java.io.PrintStream originalOut = System.out;
-            System.setOut(capture);
-
-            try {
-                if (commandRegistry != null) {
-                    commandRegistry.executeCommand(command, mkproContext);
+            synchronized (com.mkpro.MkPro.STDOUT_CAPTURE_LOCK) {
+                java.io.PrintStream originalOut = System.out;
+                System.setOut(capture);
+                try {
+                    if (commandRegistry != null) {
+                        commandRegistry.executeCommand(command, mkproContext);
+                    }
+                } finally {
+                    System.setOut(originalOut);
                 }
-            } finally {
-                System.setOut(originalOut);
             }
 
             String output = baos.toString(StandardCharsets.UTF_8);

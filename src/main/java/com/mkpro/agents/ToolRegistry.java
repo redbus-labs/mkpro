@@ -35,8 +35,14 @@ public class ToolRegistry {
     private void initializeTools() {
         // File operations
         toolCache.put("file_read", List.of(FileSystemTools.create(), MkProTools.createListDirTool()));
+        toolCache.put("read_file", List.of(FileSystemTools.create()));
+        toolCache.put("list_dir", List.of(MkProTools.createListDirTool()));
         toolCache.put("file_write", List.of(MkProTools.createWriteFileTool(), MkProTools.createReplaceInFileTool()));
+        toolCache.put("write_file", List.of(MkProTools.createWriteFileTool()));
+        toolCache.put("edit_file", List.of(MkProTools.createReplaceInFileTool()));
+        toolCache.put("submit_patch", List.of(MkProTools.createReplaceInFileTool(), MkProTools.createSafeWriteFileTool()));
         toolCache.put("safe_write", List.of(MkProTools.createSafeWriteFileTool()));
+        toolCache.put("safe_write_file", List.of(MkProTools.createSafeWriteFileTool()));
         toolCache.put("replace_in_file", List.of(MkProTools.createReplaceInFileTool()));
 
         // Clipboard
@@ -44,18 +50,35 @@ public class ToolRegistry {
 
         // Shell execution
         toolCache.put("shell", List.of(ShellTools.create()));
+        toolCache.put("run_command", List.of(ShellTools.create()));
+        toolCache.put("run_shell", List.of(ShellTools.create()));
+        toolCache.put("git_tools", List.of(ShellTools.create()));
+
+        // Background job management
+        List<BaseTool> bgJobTools = List.of(
+            BackgroundJobTools.createListBackgroundJobsTool(),
+            BackgroundJobTools.createKillBackgroundJobTool()
+        );
+        toolCache.put("background_jobs", bgJobTools);
+        toolCache.put("list_background_jobs", List.of(BackgroundJobTools.createListBackgroundJobsTool()));
+        toolCache.put("kill_background_job", List.of(BackgroundJobTools.createKillBackgroundJobTool()));
 
         // Image analysis
-        toolCache.put("image", List.of(ImageTools.create()));
+        toolCache.put("image", List.of(ImageTools.create(), MkProTools.createImageCropTool()));
+        toolCache.put("image_crop", List.of(MkProTools.createImageCropTool()));
 
         // Vision (multimodal LLM image analysis)
         toolCache.put("vision", List.of(VisionTool.create()));
+        toolCache.put("analyze_image", List.of(VisionTool.create()));
 
         // Audio transcription (multimodal LLM audio understanding)
         toolCache.put("audio", List.of(AudioTranscriptionTool.create()));
+        toolCache.put("transcribe_audio", List.of(AudioTranscriptionTool.create()));
 
         // Codebase search (vector embeddings)
         toolCache.put("codebase_search", List.of(CodebaseSearchTools.create(vectorStore, embeddingService)));
+        toolCache.put("search_codebase", List.of(CodebaseSearchTools.create(vectorStore, embeddingService)));
+        toolCache.put("search_similar_code", List.of(CodebaseSearchTools.create(vectorStore, embeddingService)));
 
         // Codebase indexing (populate vector store)
         toolCache.put("index_codebase", List.of(IndexCodebaseTool.create(vectorStore, embeddingService)));
@@ -81,6 +104,7 @@ public class ToolRegistry {
 
         // Session stats
         toolCache.put("stats", List.of(StatsTools.createGetSessionStatsTool()));
+        toolCache.put("get_status", List.of(StatsTools.createGetSessionStatsTool()));
 
         // Central memory (commit/recall project-scoped memory)
         toolCache.put("central_memory", List.of(
@@ -109,6 +133,12 @@ public class ToolRegistry {
         toolCache.put("symbol_index", SymbolIndexTool.createSuite());
         toolCache.put("find_symbol", List.of(SymbolIndexTool.createFindSymbolTool()));
         toolCache.put("find_usages", List.of(SymbolIndexTool.createFindUsagesTool()));
+        toolCache.put("get_code_neighbors", SymbolIndexTool.createSuite());
+        toolCache.put("get_code_subgraph", SymbolIndexTool.createSuite());
+
+        // Peer agent tools (default instances so early YAML resolution never fails; updated when P2P starts)
+        toolCache.put("list_peers", List.of(AskPeerAgentTool.createListPeersTool()));
+        toolCache.put("ask_peer_agent", List.of(AskPeerAgentTool.create(null, "local")));
 
         // Persistent SSH tool suite & individual tools
         toolCache.put("ssh", SshTools.createSuite());

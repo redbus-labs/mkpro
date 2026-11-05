@@ -2739,7 +2739,7 @@
                 <span class="badge-pill" id="headerProjectSessionBadge">📁 mkpro · 💬 default</span>
             </div>
             <nav class="nav-links">
-                <a href="/index.html">⚙️ Standard Terminal</a>
+                <a href="/classic">⚙️ Standard Terminal</a>
                 <a href="/knowledge">🧠 Knowledge</a>
                 <a href="/db">📦 DB</a>
             </nav>
@@ -2773,6 +2773,7 @@
                     <span>📦 Sandbox</span>
                 </button>
                 <button class="icon-btn" onclick="openModelConfigModal()" title="Configure Agent Models &amp; Servers">🧠 Models</button>
+                <button class="icon-btn" onclick="openTelemetryModal()" title="Live Agent Telemetry &amp; Cost/Latency Breakdown">📊 Telemetry</button>
                 <button class="icon-btn" onclick="toggleStickyPanel()" title="Toggle Left Sticky Notes &amp; Tasks Panel">📌 Notes</button>
                 <button class="icon-btn" onclick="toggleDrawer()" title="Toggle Files &amp; Goals Drawer (Ctrl + B)">📁 Drawer</button>
                 <button class="icon-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle Theme">🌓</button>
@@ -6674,6 +6675,21 @@ loadSessionsList();
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
+                const telModal = document.getElementById('telemetryModalOverlay');
+                if (telModal && telModal.classList.contains('active')) {
+                    closeTelemetryModal();
+                    return;
+                }
+                const mcModal = document.getElementById('modelConfigModalOverlay');
+                if (mcModal && mcModal.classList.contains('active')) {
+                    closeModelConfigModal();
+                    return;
+                }
+                const sshModal = document.getElementById('sshModalOverlay');
+                if (sshModal && sshModal.classList.contains('active')) {
+                    closeSshModal();
+                    return;
+                }
                 const readOnlyDiff = document.getElementById('readOnlyDiffModal');
                 if (readOnlyDiff && readOnlyDiff.classList.contains('active')) {
                     closeReadOnlyDiffModal();
@@ -7694,6 +7710,88 @@ loadSessionsList();
             }
         }
 
+        // ========== Live Agent Telemetry Modal ==========
+        function openTelemetryModal() {
+            const overlay = document.getElementById('telemetryModalOverlay');
+            if (overlay) {
+                overlay.classList.add('active');
+                loadTelemetryData();
+            }
+        }
+
+        function closeTelemetryModal() {
+            const overlay = document.getElementById('telemetryModalOverlay');
+            if (overlay) overlay.classList.remove('active');
+        }
+
+        async function loadTelemetryData() {
+            const statusEl = document.getElementById('telemetryStatusBanner');
+            if (statusEl) { statusEl.className = 'ssh-status-banner'; statusEl.style.display = 'none'; }
+            try {
+                const resp = await fetch('/api/telemetry');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+
+                const fmtNum = n => Number(n || 0).toLocaleString();
+                const fmtCost = c => '$' + Number(c || 0).toFixed(4);
+
+                const reqEl = document.getElementById('telCardRequests');
+                const tokEl = document.getElementById('telCardTokens');
+                const latEl = document.getElementById('telCardLatency');
+                const costEl = document.getElementById('telCardCost');
+
+                if (reqEl) reqEl.textContent = `${fmtNum(data.totalRequests)} (${fmtNum(data.totalSuccesses)} OK / ${fmtNum(data.totalFailures)} Fail)`;
+                if (tokEl) tokEl.textContent = `${fmtNum(data.totalTokens)} (${fmtNum(data.totalInputTokens)} in / ${fmtNum(data.totalOutputTokens)} out)`;
+                if (latEl) latEl.textContent = `${fmtNum(data.avgLatencyMs)} ms`;
+                if (costEl) costEl.textContent = fmtCost(data.totalEstimatedCostUsd);
+
+                const agentBody = document.getElementById('telemetryByAgentBody');
+                if (agentBody) {
+                    const agents = data.byAgent || [];
+                    if (agents.length === 0) {
+                        agentBody.innerHTML = `<tr><td colspan="7" style="padding:10px; text-align:center; opacity:0.65;">No agent telemetry recorded yet.</td></tr>`;
+                    } else {
+                        agentBody.innerHTML = agents.map(a => `
+                            <tr style="border-bottom:1px solid rgba(128,128,128,0.12);">
+                                <td style="padding:7px 8px; font-weight:600;">${escapeHtml(a.agentName || '')}</td>
+                                <td style="padding:7px 8px;">${fmtNum(a.requests)}</td>
+                                <td style="padding:7px 8px;">${Number(a.successRate || 0).toFixed(1)}%</td>
+                                <td style="padding:7px 8px;">${fmtNum(a.avgLatencyMs)} ms (max ${fmtNum(a.maxLatencyMs)} ms)</td>
+                                <td style="padding:7px 8px;">${fmtNum(a.inputTokens)} / ${fmtNum(a.outputTokens)}</td>
+                                <td style="padding:7px 8px; font-weight:600;">${fmtNum(a.totalTokens)}</td>
+                                <td style="padding:7px 8px; color:var(--accent); font-weight:600;">${fmtCost(a.estimatedCostUsd)}</td>
+                            </tr>
+                        `).join('');
+                    }
+                }
+
+                const modelBody = document.getElementById('telemetryByModelBody');
+                if (modelBody) {
+                    const models = data.byModel || [];
+                    if (models.length === 0) {
+                        modelBody.innerHTML = `<tr><td colspan="6" style="padding:10px; text-align:center; opacity:0.65;">No model telemetry recorded yet.</td></tr>`;
+                    } else {
+                        modelBody.innerHTML = models.map(m => `
+                            <tr style="border-bottom:1px solid rgba(128,128,128,0.12);">
+                                <td style="padding:7px 8px;"><span class="mc-scope-badge global">${escapeHtml(m.provider || '')}</span></td>
+                                <td style="padding:7px 8px; font-weight:600;">${escapeHtml(m.modelName || '')}</td>
+                                <td style="padding:7px 8px;">${fmtNum(m.requests)}</td>
+                                <td style="padding:7px 8px;">${fmtNum(m.avgLatencyMs)} ms</td>
+                                <td style="padding:7px 8px; font-weight:600;">${fmtNum(m.totalTokens)} (${fmtNum(m.inputTokens)} in / ${fmtNum(m.outputTokens)} out)</td>
+                                <td style="padding:7px 8px; color:var(--accent); font-weight:600;">${fmtCost(m.estimatedCostUsd)}</td>
+                            </tr>
+                        `).join('');
+                    }
+                }
+            } catch (err) {
+                if (statusEl) {
+                    statusEl.textContent = 'Failed to load telemetry: ' + err.message;
+                    statusEl.className = 'ssh-status-banner error';
+                    statusEl.style.display = 'block';
+                }
+            }
+        }
+
     </script>
 
         <!-- Sandbox Connection Modal (Academic Dialog) -->
@@ -7904,6 +8002,98 @@ loadSessionsList();
                 <span style="font-size:11px; opacity:0.7; font-family:'JetBrains Mono',monospace;">Changes take effect immediately across active runners.</span>
                 <div class="ssh-footer-actions" style="margin-left:auto;">
                     <button class="ssh-btn ssh-btn-cancel" onclick="closeModelConfigModal()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Agent Telemetry & Cost/Latency Breakdown Modal -->
+    <div class="ssh-modal-overlay" id="telemetryModalOverlay" onclick="if(event.target===this) closeTelemetryModal()">
+        <div class="ssh-modal-card" style="max-width:860px; width:94vw; max-height:86vh;">
+            <div class="ssh-modal-header">
+                <div>
+                    <h3 style="margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; gap:6px; font-family:'Newsreader',Georgia,serif;">
+                        <span>📊 Live Agent Telemetry &amp; Cost/Latency Breakdown</span>
+                    </h3>
+                    <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.75; font-family:'JetBrains Mono',monospace;">
+                        Real-time token consumption, execution latency, success rates, and estimated USD cost.
+                    </p>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button class="ssh-btn ssh-btn-cancel" onclick="loadTelemetryData()" style="padding:4px 10px; font-size:11px;">🔄 Refresh</button>
+                    <button class="ssh-modal-close-btn" onclick="closeTelemetryModal()" title="Close (Esc)">✕</button>
+                </div>
+            </div>
+
+            <div class="ssh-modal-body" style="flex:1; overflow-y:auto; gap:16px;">
+                <div class="ssh-status-banner" id="telemetryStatusBanner"></div>
+
+                <!-- Summary Cards -->
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(175px, 1fr)); gap:10px;">
+                    <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:10px 12px;">
+                        <div style="font-size:10px; text-transform:uppercase; opacity:0.7; font-family:'JetBrains Mono',monospace;">Total Requests</div>
+                        <div id="telCardRequests" style="font-size:14px; font-weight:700; margin-top:4px; font-family:'JetBrains Mono',monospace;">0</div>
+                    </div>
+                    <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:10px 12px;">
+                        <div style="font-size:10px; text-transform:uppercase; opacity:0.7; font-family:'JetBrains Mono',monospace;">Total Tokens</div>
+                        <div id="telCardTokens" style="font-size:14px; font-weight:700; margin-top:4px; font-family:'JetBrains Mono',monospace;">0</div>
+                    </div>
+                    <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:10px 12px;">
+                        <div style="font-size:10px; text-transform:uppercase; opacity:0.7; font-family:'JetBrains Mono',monospace;">Avg Latency</div>
+                        <div id="telCardLatency" style="font-size:14px; font-weight:700; margin-top:4px; font-family:'JetBrains Mono',monospace;">0 ms</div>
+                    </div>
+                    <div style="background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px; padding:10px 12px;">
+                        <div style="font-size:10px; text-transform:uppercase; opacity:0.7; font-family:'JetBrains Mono',monospace;">Est. Cost</div>
+                        <div id="telCardCost" style="font-size:14px; font-weight:700; margin-top:4px; color:var(--accent); font-family:'JetBrains Mono',monospace;">$0.0000</div>
+                    </div>
+                </div>
+
+                <!-- Per-Agent Breakdown -->
+                <div>
+                    <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:var(--accent); font-family:'JetBrains Mono',monospace;">Per-Agent Breakdown</div>
+                    <div style="overflow-x:auto; background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px;">
+                        <table style="width:100%; border-collapse:collapse; font-size:11px; font-family:'JetBrains Mono',monospace; text-align:left;">
+                            <thead>
+                                <tr style="border-bottom:1px solid rgba(128,128,128,0.25); opacity:0.8;">
+                                    <th style="padding:8px;">Agent</th>
+                                    <th style="padding:8px;">Requests</th>
+                                    <th style="padding:8px;">Success Rate</th>
+                                    <th style="padding:8px;">Latency (Avg / Max)</th>
+                                    <th style="padding:8px;">In / Out Tokens</th>
+                                    <th style="padding:8px;">Total Tokens</th>
+                                    <th style="padding:8px;">Est. Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody id="telemetryByAgentBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Per-Model Breakdown -->
+                <div>
+                    <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:var(--accent); font-family:'JetBrains Mono',monospace;">Per-Model Breakdown</div>
+                    <div style="overflow-x:auto; background:var(--bg); border:1px solid rgba(128,128,128,0.18); border-radius:8px;">
+                        <table style="width:100%; border-collapse:collapse; font-size:11px; font-family:'JetBrains Mono',monospace; text-align:left;">
+                            <thead>
+                                <tr style="border-bottom:1px solid rgba(128,128,128,0.25); opacity:0.8;">
+                                    <th style="padding:8px;">Provider</th>
+                                    <th style="padding:8px;">Model</th>
+                                    <th style="padding:8px;">Requests</th>
+                                    <th style="padding:8px;">Avg Latency</th>
+                                    <th style="padding:8px;">Tokens (Total / In / Out)</th>
+                                    <th style="padding:8px;">Est. Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody id="telemetryByModelBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ssh-modal-footer">
+                <span style="font-size:11px; opacity:0.7; font-family:'JetBrains Mono',monospace;">Aggregated from CentralMemory AgentStat store.</span>
+                <div class="ssh-footer-actions" style="margin-left:auto;">
+                    <button class="ssh-btn ssh-btn-cancel" onclick="closeTelemetryModal()">Close</button>
                 </div>
             </div>
         </div>

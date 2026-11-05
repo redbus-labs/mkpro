@@ -1,5 +1,10 @@
 package com.mkpro.infra.mq;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mkpro.CentralMemory;
+import com.mkpro.core.MkProContext;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -13,10 +18,12 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Manages scheduled and event-driven background jobs dispatched to RabbitMqWorkerService.
+ * Persists job schedules per-project in CentralMemory.
  */
 public class JobScheduleManager {
 
     private static final long EDIT_DEBOUNCE_MS = 15_000L;
+    private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final JobScheduleManager INSTANCE = new JobScheduleManager();
 
     public static JobScheduleManager getInstance() {
@@ -87,6 +94,8 @@ public class JobScheduleManager {
     private final Map<String, ScheduledJob> schedules = Collections.synchronizedMap(new LinkedHashMap<>());
     private final Map<String, Long> lastEditTriggerTimes = new ConcurrentHashMap<>();
     private final ScheduledExecutorService ticker;
+    private volatile CentralMemory centralMemory;
+    private volatile MkProContext mkProContext;
 
     private JobScheduleManager() {
         this.ticker = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -95,6 +104,49 @@ public class JobScheduleManager {
             return t;
         });
         this.ticker.scheduleAtFixedRate(this::checkIntervalSchedules, 5, 5, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Binds CentralMemory and MkProContext so schedules are loaded/persisted and workers can be auto-started.
+     */
+    public synchronized void init(CentralMemory memory, MkProContext context) {
+        this.centralMemory = memory;
+        this.mkProContext = context;
+        loadFromMemory();
+    }
+
+    private static String getStorageKey() {
+        return CentralMemory.getCurrentProjectKeyPrefix() + "mq:schedules";
+    }
+
+    public synchronized void loadFromMemory() {
+        CentralMemory cm = this.centralMemory;
+        if (cm == null) return;
+        try {
+            String raw = cm.getMemory(getStorageKey());
+            if (raw != null && !raw.isBlank()) {
+                List<ScheduledJob> loaded = MAPPER.readValue(raw, new TypeReference<List<ScheduledJob>>() {});
+                if (loaded != null) {
+                    schedules.clear();
+                    for (ScheduledJob job : loaded) {
+                        if (job != null && job.id != null) {
+                            schedules.put(job.id, job);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private synchronized void persistToMemory() {
+        CentralMemory cm = this.centralMemory;
+        if (cm == null) return;
+        try {
+            String json = MAPPER.writeValueAsString(new ArrayList<>(schedules.values()));
+            cm.saveMemory(getStorageKey(), json);
+        } catch (Exception ignored) {
+        }
     }
 
     private void checkIntervalSchedules() {
@@ -135,6 +187,7 @@ public class JobScheduleManager {
             0
         );
         schedules.put(id, job);
+        persistToMemory();
         return job;
     }
 
@@ -161,6 +214,7 @@ public class JobScheduleManager {
         ScheduledJob job = schedules.get(id);
         if (job == null) return false;
         job.enabled = enabled;
+        persistToMemory();
         return true;
     }
 
@@ -172,6 +226,7 @@ public class JobScheduleManager {
         ScheduledJob job = schedules.get(id);
         if (job == null) return false;
         job.enabled = !job.enabled;
+        persistToMemory();
         return true;
     }
 
@@ -181,7 +236,11 @@ public class JobScheduleManager {
     public synchronized boolean removeSchedule(String id) {
         if (id == null) return false;
         lastEditTriggerTimes.remove(id);
-        return schedules.remove(id) != null;
+        boolean removed = schedules.remove(id) != null;
+        if (removed) {
+            persistToMemory();
+        }
+        return removed;
     }
 
     /**
@@ -190,6 +249,7 @@ public class JobScheduleManager {
     public synchronized void clearSchedules() {
         schedules.clear();
         lastEditTriggerTimes.clear();
+        persistToMemory();
     }
 
     /**
@@ -206,29 +266,55 @@ public class JobScheduleManager {
 
         job.runCount++;
         job.lastRunAt = System.currentTimeMillis();
+        persistToMemory();
 
         String dispatchPrompt = job.prompt != null ? job.prompt : "";
         if (editFilePath != null && !editFilePath.isBlank()) {
             dispatchPrompt = dispatchPrompt + " [Triggered by file edit: " + editFilePath + "]";
         }
 
-        RabbitMqWorkerService worker = RabbitMqWorkerService.getInstance();
-        if (worker != null && !dispatchPrompt.isBlank()) {
-            String agent = (job.targetAgent != null && !job.targetAgent.isBlank()) ? job.targetAgent : "Coordinator";
-            try {
-                if (worker.isRunning()) {
-                    worker.publishTask(dispatchPrompt, agent, null);
-                } else {
-                    worker.sendLocalTask(dispatchPrompt, agent);
-                }
-            } catch (Exception ignored) {
+        if (!dispatchPrompt.isBlank()) {
+            RabbitMqWorkerService worker = resolveOrStartWorker();
+            if (worker != null) {
+                String agent = (job.targetAgent != null && !job.targetAgent.isBlank()) ? job.targetAgent : "Coordinator";
                 try {
-                    worker.sendLocalTask(dispatchPrompt, agent);
-                } catch (Exception ignored2) {
+                    if (worker.isRunning()) {
+                        worker.publishTask(dispatchPrompt, agent, null);
+                    } else {
+                        worker.sendLocalTask(dispatchPrompt, agent);
+                    }
+                } catch (Exception ignored) {
+                    try {
+                        worker.sendLocalTask(dispatchPrompt, agent);
+                    } catch (Exception ignored2) {
+                    }
                 }
             }
         }
         return true;
+    }
+
+    private RabbitMqWorkerService resolveOrStartWorker() {
+        RabbitMqWorkerService worker = RabbitMqWorkerService.getInstance();
+        if (worker == null && mkProContext != null) {
+            worker = mkProContext.getRabbitMqWorkerService();
+        }
+        if (worker == null && mkProContext != null) {
+            try {
+                CentralMemory cm = centralMemory != null ? centralMemory : mkProContext.getCentralMemory();
+                MqConfig cfg = MqConfig.fromEnvAndMemory(cm);
+                worker = new RabbitMqWorkerService(cfg, mkProContext);
+                worker.start();
+                mkProContext.setRabbitMqWorkerService(worker);
+            } catch (Exception ignored) {
+            }
+        } else if (worker != null && !worker.isRunning() && mkProContext != null) {
+            try {
+                worker.start();
+            } catch (Exception ignored) {
+            }
+        }
+        return worker;
     }
 
     /**

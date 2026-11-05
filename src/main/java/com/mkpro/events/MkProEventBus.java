@@ -64,4 +64,8 @@ public class MkProEventBus {
         }
         return false;
     }
+
+    public void unregisterWebSinks() {
+        listeners.removeIf(s -> s.getClass().getSimpleName().contains("WebSocketSink"));
+    }
 }

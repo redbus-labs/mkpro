@@ -58,7 +58,7 @@ agents:
 
   - name: Coder
     description: "For writing new software, adding features, applying file modifications, refactoring, and debugging logic."
-    tools: [file_read, file_write, safe_write, clipboard, codebase_search, mcp_scan, graph_memory, fetch_url, vision, ask_peer_agent, scripting, request_knowledge, audio]
+    tools: [file_read, file_write, safe_write, clipboard, codebase_search, symbol_index, mcp_scan, graph_memory, fetch_url, vision, ask_peer_agent, list_peers, scripting, request_knowledge, verify_fact, audio]
     routing_keywords: [edit, modify, refactor, rename, replace, rewrite]
     fallback_model: gemini-3.1-flash-lite@GEMINI
     instruction: |
@@ -86,7 +86,7 @@ agents:
 
   - name: SysAdmin
     description: "Delegates system-level command execution to the SysAdmin agent. (DO NOT use for Git operations)."
-    tools: [shell, file_read, file_write, safe_write, clipboard, scripting, ssh, vision, audio]
+    tools: [shell, background_jobs, file_read, file_write, safe_write, clipboard, scripting, ssh, vision, audio]
     fallback_model: gemini-3.1-flash-lite@GEMINI
     instruction: |
       Authority:
@@ -187,7 +187,7 @@ agents:
 
   - name: Architect
     description: "Delegates architectural analysis and design review to the Architect agent."
-    tools: [file_read, file_write, safe_write, image, vision, multi_project_search, clipboard, graph_memory, fetch_url, central_memory, index_codebase, codebase_search, symbol_index, ask_peer_agent, request_knowledge, audio]
+    tools: [file_read, file_write, safe_write, image, vision, multi_project_search, clipboard, graph_memory, fetch_url, central_memory, index_codebase, codebase_search, symbol_index, ask_peer_agent, list_peers, request_knowledge, verify_fact, audio]
     fallback_model: gemini-3.1-flash-lite@GEMINI
     instruction: |
       Authority:

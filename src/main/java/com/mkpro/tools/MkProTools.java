@@ -283,7 +283,14 @@ public class MkProTools {
                         Path validated = com.mkpro.security.PathValidator.getInstance().validate(pathStr);
                         boolean existedBefore = Files.exists(validated);
                         String oldContent = existedBefore ? Files.readString(validated) : "";
-                        String updatedContent = oldContent.replace(targetText, replacementText);
+                        String updatedContent;
+                        if (oldContent.contains(targetText)) {
+                            updatedContent = oldContent.replace(targetText, replacementText);
+                        } else if (oldContent.replace("\r\n", "\n").contains(targetText.replace("\r\n", "\n"))) {
+                            updatedContent = oldContent.replace("\r\n", "\n").replace(targetText.replace("\r\n", "\n"), replacementText.replace("\r\n", "\n"));
+                        } else {
+                            return Map.of("error", "target_text not found in " + pathStr);
+                        }
                         
                         com.mkpro.events.EditApprovalService approvalService = com.mkpro.events.EditApprovalService.INSTANCE;
                         com.mkpro.events.MkProEventBus eventBus = com.mkpro.events.MkProEventBus.INSTANCE;

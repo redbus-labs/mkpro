@@ -3121,7 +3121,7 @@
         let mermaidDiagramCounter = 0;
 
         function initMermaidTheme(theme) {
-            if (typeof mermaid !== 'undefined') {
+            if (true) {
                 try {
                     mermaid.initialize({
                         startOnLoad: false,
@@ -3203,11 +3203,225 @@
             return fallbackLatexToHtml(normalized, displayMode);
         }
 
+        const MERMAID_HEADER_RE = /^(?:graph\s+(?:TD|TB|BT|RL|LR)|flowchart\s+(?:TD|TB|BT|RL|LR)|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|mindmap|timeline|gitGraph)\b/i;
+
+        function isMermaidSource(code) {
+            if (!code) return false;
+            const lines = String(code).trim().split(/\r?\n/);
+            for (const line of lines) {
+                const t = line.trim();
+                if (!t || t.startsWith('%%')) continue;
+                return MERMAID_HEADER_RE.test(t);
+            }
+            return false;
+        }
+
+        function sanitizeMermaidCode(raw) {
+            if (!raw) return '';
+            let s = String(raw).replace(/\r\n/g, '\n').trim();
+            // 1. Normalize Unicode and box-drawing/dash arrows (⟶, →, ➔, ⟹, ⇒, ──>, —>, –>) to Mermaid arrows
+            s = s.replace(/--\s*"([^"\n]+)"\s*(?:[\u2500\u2501\u2010-\u2015\u2212\-]*[>⟶→➔⟹⇒►▸]+|[\u2500\u2501\u2010-\u2015\u2212]{2,})/g, '-- "$1" -->');
+            s = s.replace(/--\s*([^"\-\n\u2500\u2501\u2010-\u2015]+?)\s*(?:[\u2500\u2501\u2010-\u2015\u2212\-]*[⟶→➔⟹⇒►▸]+|[\u2500\u2501\u2010-\u2015\u2212]+>)/g, (m, lbl) => `-- "${lbl.trim()}" -->`);
+            s = s.replace(/(?:[\u2500\u2501\u2010-\u2015\u2212\-]*[⟶→➔⟹⇒►▸]+|[\u2500\u2501\u2010-\u2015\u2212]+>)/g, '-->');
+
+            // 2. Process line by line to quote unquoted [...] and {...} node labels containing special chars
+            let sgIdx = 0;
+            const lines = s.split('\n');
+            const out = lines.map(line => {
+                const t = line.trim();
+                if (!t || t.startsWith('%%') || /^(?:style|classDef|class|linkStyle|click|end|direction)\b/i.test(t)) {
+                    return line;
+                }
+                const sgMatch = t.match(/^subgraph\s+"([^"]+)"\s*$/i);
+                if (sgMatch) {
+                    return `    subgraph sg_${++sgIdx}["${sgMatch[1].replace(/"/g, "'")}"]`;
+                }
+                if (/^subgraph\b/i.test(t)) return line;
+                let updated = line;
+                // Quote unquoted Id[Label] (excluding [[...]], [(...)], [/.../], [\...\])
+                updated = updated.replace(/([A-Za-z0-9_]+)\[(?![\[("\/\\])([^\]]+)\]/g, (full, id, label) => {
+                    const inner = label.trim();
+                    if (inner.startsWith('"') && inner.endsWith('"')) return full;
+                    if (/[()<>?!:;•'"]/.test(inner)) {
+                        return `${id}["${inner.replace(/"/g, "'")}"]`;
+                    }
+                    return full;
+                });
+                // Quote unquoted Id{Label} (excluding {{...}})
+                updated = updated.replace(/([A-Za-z0-9_]+)\{(?![\{"])([^\}]+)\}/g, (full, id, label) => {
+                    const inner = label.trim();
+                    if (inner.startsWith('"') && inner.endsWith('"')) return full;
+                    if (/[()<>?!:;•'"]/.test(inner)) {
+                        return `${id}{"${inner.replace(/"/g, "'")}"}`;
+                    }
+                    return full;
+                });
+                return updated;
+            });
+            return out.join('\n');
+        }
+
+        function renderFallbackFlowchartHtml(rawCode) {
+            const sanitized = sanitizeMermaidCode(rawCode);
+            const lines = sanitized.split('\n');
+            const nodes = new Map();
+            const styles = new Map();
+            const edges = [];
+
+            const ensureNode = (id, label, shape) => {
+                if (!id) return;
+                const cleanId = id.trim();
+                if (!nodes.has(cleanId)) {
+                    nodes.set(cleanId, { id: cleanId, label: label || cleanId, shape: shape || 'rect' });
+                } else if (label && nodes.get(cleanId).label === cleanId) {
+                    nodes.get(cleanId).label = label;
+                    if (shape) nodes.get(cleanId).shape = shape;
+                }
+            };
+
+            const parseNodeToken = (token) => {
+                if (!token) return null;
+                const s = token.trim();
+                let m = s.match(/^([A-Za-z0-9_]+)\s*\[\s*"?([\s\S]*?)"?\s*\]$/);
+                if (m) {
+                    ensureNode(m[1], m[2], 'rect');
+                    return m[1];
+                }
+                m = s.match(/^([A-Za-z0-9_]+)\s*\{\s*"?([\s\S]*?)"?\s*\}$/);
+                if (m) {
+                    ensureNode(m[1], m[2], 'diamond');
+                    return m[1];
+                }
+                m = s.match(/^([A-Za-z0-9_]+)\s*\(\s*"?([\s\S]*?)"?\s*\)$/);
+                if (m) {
+                    ensureNode(m[1], m[2], 'round');
+                    return m[1];
+                }
+                m = s.match(/^([A-Za-z0-9_]+)$/);
+                if (m) {
+                    ensureNode(m[1], m[1], 'rect');
+                    return m[1];
+                }
+                return null;
+            };
+
+            for (const line of lines) {
+                const t = line.trim();
+                if (!t || t.startsWith('%%') || MERMAID_HEADER_RE.test(t) || /^subgraph\b/i.test(t) || /^end$/i.test(t)) continue;
+                const styleMatch = t.match(/^style\s+([A-Za-z0-9_]+)\s+(.+)$/i);
+                if (styleMatch) {
+                    const id = styleMatch[1];
+                    const props = {};
+                    styleMatch[2].split(',').forEach(kv => {
+                        const [k, v] = kv.split(':').map(x => x && x.trim());
+                        if (k && v) props[k] = v;
+                    });
+                    styles.set(id, props);
+                    continue;
+                }
+                let edgeMatch = t.match(/^(.+?)\s*--\s*"([^"]+)"\s*-->\s*(.+)$/) ||
+                                t.match(/^(.+?)\s*-->\|([^|]+)\|\s*(.+)$/);
+                if (edgeMatch) {
+                    const fromId = parseNodeToken(edgeMatch[1]);
+                    const edgeLabel = edgeMatch[2].trim();
+                    const toId = parseNodeToken(edgeMatch[3]);
+                    if (fromId && toId) edges.push({ from: fromId, to: toId, label: edgeLabel });
+                    continue;
+                }
+                edgeMatch = t.match(/^(.+?)\s*-->\s*(.+)$/);
+                if (edgeMatch) {
+                    const fromId = parseNodeToken(edgeMatch[1]);
+                    const toId = parseNodeToken(edgeMatch[2]);
+                    if (fromId && toId) edges.push({ from: fromId, to: toId, label: '' });
+                }
+            }
+
+            if (nodes.size === 0) {
+                return `<pre style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:left;white-space:pre-wrap;">${escapeHtml(rawCode)}</pre>`;
+            }
+
+            const sanitizeNodeHtml = (rawLabel) => {
+                let safe = escapeHtml(rawLabel || '');
+                safe = safe.replace(/&lt;b&gt;/gi, '<strong>').replace(/&lt;\/b&gt;/gi, '</strong>');
+                safe = safe.replace(/&lt;br\s*\/?&gt;/gi, '<br/>');
+                return safe;
+            };
+
+            const inDegree = new Map();
+            const adj = new Map();
+            nodes.forEach((_, id) => { inDegree.set(id, 0); adj.set(id, []); });
+            edges.forEach(e => {
+                if (adj.has(e.from) && inDegree.has(e.to)) {
+                    adj.get(e.from).push(e);
+                    inDegree.set(e.to, inDegree.get(e.to) + 1);
+                }
+            });
+
+            const visited = new Set();
+            const layers = [];
+            let queue = [];
+            inDegree.forEach((deg, id) => { if (deg === 0) queue.push(id); });
+            if (queue.length === 0) queue = [Array.from(nodes.keys())[0]];
+
+            while (queue.length > 0) {
+                const nextQueue = [];
+                const currentLayer = [];
+                for (const u of queue) {
+                    if (visited.has(u)) continue;
+                    visited.add(u);
+                    currentLayer.push(u);
+                    for (const edge of (adj.get(u) || [])) {
+                        inDegree.set(edge.to, inDegree.get(edge.to) - 1);
+                        if (inDegree.get(edge.to) <= 0 && !visited.has(edge.to)) {
+                            nextQueue.push(edge.to);
+                        }
+                    }
+                }
+                if (currentLayer.length > 0) layers.push(currentLayer);
+                queue = nextQueue;
+            }
+            nodes.forEach((_, id) => {
+                if (!visited.has(id)) layers.push([id]);
+            });
+
+            let html = `<div class="mermaid-svg-fallback" style="display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;padding:8px 4px;font-family:'Inter',sans-serif;">`;
+            layers.forEach((layer, lIdx) => {
+                html += `<div style="display:flex;flex-wrap:wrap;justify-content:center;align-items:stretch;gap:16px;width:100%;">`;
+                layer.forEach(id => {
+                    const n = nodes.get(id);
+                    const st = styles.get(id) || {};
+                    const bg = st.fill || 'var(--code-bg)';
+                    const border = st.stroke || 'var(--accent)';
+                    const radius = n.shape === 'diamond' ? '14px' : (n.shape === 'round' ? '20px' : '8px');
+                    const incomingWithLabels = edges.filter(e => e.to === id && e.label);
+                    const edgeBadge = incomingWithLabels.map(e => `<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">↳ ${escapeHtml(e.label)}</div>`).join('');
+                    html += `<div style="display:flex;flex-direction:column;align-items:center;max-width:280px;">
+                        ${edgeBadge}
+                        <div style="padding:10px 16px;border-radius:${radius};background:${escapeHtml(bg)};border:2px solid ${escapeHtml(border)};color:#1a1b26;font-size:12.5px;line-height:1.45;text-align:center;">
+                            ${sanitizeNodeHtml(n.label)}
+                        </div>
+                    </div>`;
+                });
+                html += `</div>`;
+                if (lIdx < layers.length - 1) {
+                    html += `<div style="color:var(--muted);font-size:16px;line-height:1;user-select:none;">↓</div>`;
+                }
+            });
+            html += `</div>`;
+            return html;
+        }
+
+        function renderMarkdown(md) {
+            return formatMarkdown(md);
+        }
+
         async function renderMathAndMermaid(container, isStreaming = false) {
             if (!container) return;
 
-            container.querySelectorAll('pre code.language-mermaid').forEach(codeEl => {
+            container.querySelectorAll('pre code').forEach(codeEl => {
                 const rawMermaid = (codeEl.textContent || '').trim();
+                const isTagged = codeEl.classList.contains('language-mermaid') || codeEl.classList.contains('language-flowchart');
+                if (!isTagged && !isMermaidSource(rawMermaid)) return;
                 const target = codeEl.closest('.code-container') || codeEl.closest('pre');
                 if (target) {
                     const mermaidWrap = document.createElement('div');
@@ -3232,7 +3446,7 @@
                 } catch (e) {}
             }
 
-            if (typeof mermaid !== 'undefined') {
+            if (true) {
                 const nodes = container.querySelectorAll('.mermaid:not([data-processed="true"])');
                 for (const node of nodes) {
                     const encoded = node.getAttribute('data-mermaid-source');
@@ -3240,14 +3454,17 @@
                     if (!rawCode) continue;
                     try {
                         const svgId = 'mermaid-academic-' + (++mermaidDiagramCounter) + '-' + Date.now();
-                        const { svg } = await mermaid.render(svgId, rawCode);
+                        const sanitized = sanitizeMermaidCode(rawCode);
+                        if (typeof mermaid === 'undefined' || typeof mermaid.render !== 'function') throw new Error('Mermaid unavailable');
+                        const { svg } = await mermaid.render(svgId, sanitized);
                         node.innerHTML = svg;
                         node.setAttribute('data-processed', 'true');
                     } catch (err) {
                         const errEl = document.getElementById('dmermaid-academic-' + mermaidDiagramCounter);
                         if (errEl) errEl.remove();
                         if (!isStreaming) {
-                            node.innerHTML = `<pre style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:left;white-space:pre-wrap;">${escapeHtml(rawCode)}</pre>`;
+                            node.innerHTML = renderFallbackFlowchartHtml(rawCode);
+                            node.setAttribute('data-processed', 'true');
                         }
                     }
                 }
@@ -3260,9 +3477,15 @@
             const codeBlocks = [];
             const mathBlocks = [];
             let text = String(md);
-            text = text.replace(/```mermaid[ \t]*\r?\n([\s\S]*?)```/gi, (match, code) => {
+            text = text.replace(/```(?:mermaid|flowchart)?[ \t]*\r?\n([\s\S]*?)```/gi, (match, code) => {
                 const idx = mermaidBlocks.length;
-                mermaidBlocks.push(code.trim());
+                const trimmed = (code || '').trim();
+                if (!(/^```(?:mermaid|flowchart)/i.test(match) || isMermaidSource(trimmed))) {
+                    const cIdx = codeBlocks.length;
+                    codeBlocks.push(match);
+                    return `@@MKPROCODEBLOCK${cIdx}@@`;
+                }
+                mermaidBlocks.push(trimmed);
                 return `\n\n@@MKPROMERMAIDBLOCK${idx}@@\n\n`;
             });
             text = text.replace(/```[\s\S]*?```/g, (match) => {
@@ -3319,7 +3542,8 @@
                 const langMatch = code ? code.className.match(/language-([a-zA-Z0-9_-]+)/) : null;
                 const lang = langMatch ? langMatch[1] : 'code';
 
-                if (lang.toLowerCase() === 'mermaid' && code) {
+                const rawText = code ? (code.textContent || '').trim() : '';
+                if ((lang.toLowerCase() === 'mermaid' || lang.toLowerCase() === 'flowchart' || isMermaidSource(rawText)) && code) {
                     const rawMermaid = (code.textContent || '').trim();
                     const mermaidWrap = document.createElement('div');
                     mermaidWrap.className = 'mermaid-wrapper';
@@ -5331,8 +5555,8 @@ loadSessionsList();
                     `;
                 }).join('');
 
-                if (container) container.innerHTML = renderedHtml;
-                if (stickyContainer) stickyContainer.innerHTML = renderedHtml;
+                if (container) { container.innerHTML = renderedHtml; highlightAllCode(container); }
+                if (stickyContainer) { stickyContainer.innerHTML = renderedHtml; highlightAllCode(stickyContainer); }
             } catch (err) {
                 console.error('Error fetching tasks:', err);
                 const errHtml = '<div style="color:var(--muted); font-size:12px;">Failed to load tasks.</div>';
@@ -5498,8 +5722,8 @@ loadSessionsList();
                     `;
                 }).join('');
 
-                if (container) container.innerHTML = renderedHtml;
-                if (stickyContainer) stickyContainer.innerHTML = renderedHtml;
+                if (container) { container.innerHTML = renderedHtml; highlightAllCode(container); }
+                if (stickyContainer) { stickyContainer.innerHTML = renderedHtml; highlightAllCode(stickyContainer); }
             } catch (err) {
                 console.error('Error fetching notes:', err);
                 const errHtml = '<div style="color:var(--muted); font-size:12px;">Failed to load notes.</div>';

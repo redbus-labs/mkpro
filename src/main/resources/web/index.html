@@ -323,7 +323,8 @@
         .chat {
             flex: 1;
             overflow-y: auto;
-            padding: 20px;
+            padding: 20px 20px 36px;
+            scroll-padding-bottom: 36px;
             display: flex;
             flex-direction: column;
             gap: 16px;
@@ -3534,12 +3535,16 @@
 
                     detailsEl.appendChild(card);
                 });
+                if (chat && (chat.scrollHeight - chat.scrollTop - chat.clientHeight < 220)) {
+                    scrollToBottom();
+                }
             } catch (e) {
                 console.warn('Failed to fetch turn edit summary:', e);
             }
         }
 
         function toggleTurnSummaryDiffs() {
+            const wasNearBottom = chat ? (chat.scrollHeight - chat.scrollTop - chat.clientHeight < 220) : false;
             turnSummaryDiffsExpanded = !turnSummaryDiffsExpanded;
             const detailsEl = document.getElementById('turnEditSummaryDetails');
             const toggleBtn = document.getElementById('btnToggleTurnDiffs');
@@ -3548,6 +3553,9 @@
             }
             if (toggleBtn) {
                 toggleBtn.textContent = turnSummaryDiffsExpanded ? 'Hide Diffs' : 'View Diffs';
+            }
+            if (wasNearBottom) {
+                scrollToBottom();
             }
         }
 

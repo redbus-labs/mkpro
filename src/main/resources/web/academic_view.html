@@ -50,6 +50,7 @@
             --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.05);
             --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.08);
             --shadow-dock: 0 12px 36px rgba(0, 0, 0, 0.10);
+            --dock-safe-offset: 190px;
         }
 
         [data-theme="dark"] {
@@ -263,11 +264,12 @@
             flex: 1;
             overflow-y: auto;
             scroll-behavior: smooth;
-            padding: 24px 24px 70px !important;
-            scroll-padding-bottom: 70px !important;
+            padding: 24px 24px var(--dock-safe-offset, 190px) !important;
+            scroll-padding-bottom: var(--dock-safe-offset, 190px) !important;
             box-sizing: border-box !important;
             display: flex;
             justify-content: center;
+            align-items: flex-start;
         }
         .stream-container {
             width: 100%;
@@ -275,6 +277,8 @@
             display: flex;
             flex-direction: column;
             gap: 20px;
+            height: max-content;
+            padding-bottom: var(--dock-safe-offset, 190px) !important;
         }
         .stream-container > *:last-child,
         .chat-scroll > *:last-child {
@@ -284,8 +288,8 @@
         /* Dedicated trailing spacer element */
         .chat-bottom-spacer,
         #chatBottomSpacer {
-            height: 70px !important;
-            min-height: 70px !important;
+            height: 24px !important;
+            min-height: 24px !important;
             width: 100%;
             flex-shrink: 0;
             pointer-events: none;
@@ -924,14 +928,19 @@
         /* Floating Input Dock */
         .dock-wrapper {
             position: fixed;
-            bottom: 24px;
+            bottom: 0;
             left: 0;
             right: 0;
             display: flex;
             justify-content: center;
             pointer-events: none;
             z-index: 100;
-            padding: 0 16px;
+            padding: 18px 16px 20px;
+            background: linear-gradient(to top, var(--bg) 78%, rgba(245, 244, 239, 0));
+        }
+
+        [data-theme="dark"] .dock-wrapper {
+            background: linear-gradient(to top, var(--bg) 78%, rgba(20, 21, 23, 0));
         }
 
         .dock-content {
@@ -3616,11 +3625,15 @@
 
         // Ensure trailing spacer element stays at the very bottom
         function ensureSpacerAtBottom() {
-            const spacer = document.getElementById('chatBottomSpacer');
             const chat = document.getElementById('chatStream') || document.getElementById('chat') || chatStream;
-            if (spacer && chat) {
-                chat.appendChild(spacer);
+            if (!chat) return;
+            let spacer = document.getElementById('chatBottomSpacer');
+            if (!spacer) {
+                spacer = document.createElement('div');
+                spacer.className = 'chat-bottom-spacer';
+                spacer.id = 'chatBottomSpacer';
             }
+            chat.appendChild(spacer);
         }
 
         // ========== Theme Handling ==========
@@ -4923,6 +4936,7 @@ loadSessionsList();
                 }
 
                 chatStream.prepend(fragment);
+                ensureSpacerAtBottom();
                 streamViewport.scrollTop = streamViewport.scrollHeight - prevHeight;
                 historyOffset += data.messages.length;
                 noMoreHistory = !data.hasMore;
@@ -6716,6 +6730,30 @@ loadSessionsList();
         // ========== Turn Change Summary, Rollback & Auto-Verify Gate ==========
         let turnSummaryDiffsExpanded = false;
 
+        function updateDockSafeOffset() {
+            const dockContent = document.querySelector('.dock-content');
+            if (!dockContent) return;
+            const offset = Math.max(190, (dockContent.offsetHeight || 0) + 56);
+            document.documentElement.style.setProperty('--dock-safe-offset', offset + 'px');
+        }
+
+        (function initDockResizeObserver() {
+            const dockContent = document.querySelector('.dock-content');
+            if (!dockContent) return;
+            updateDockSafeOffset();
+            if (typeof ResizeObserver !== 'undefined') {
+                const ro = new ResizeObserver(() => {
+                    const chat = document.getElementById('chat') || document.getElementById('streamViewport') || streamViewport;
+                    const wasNearBottom = chat ? (chat.scrollHeight - chat.scrollTop - chat.clientHeight < 280) : false;
+                    updateDockSafeOffset();
+                    if (wasNearBottom) {
+                        scrollToBottom();
+                    }
+                });
+                ro.observe(dockContent);
+            }
+        })();
+
         async function refreshTurnEditSummary() {
             const bar = document.getElementById('turnEditSummaryBar');
             const titleEl = document.getElementById('turnEditSummaryTitle');
@@ -6731,6 +6769,7 @@ loadSessionsList();
                 if (fileCount === 0) {
                     bar.style.display = 'none';
                     detailsEl.innerHTML = '';
+                    updateDockSafeOffset();
                     return;
                 }
 
@@ -6786,6 +6825,7 @@ loadSessionsList();
 
                     detailsEl.appendChild(card);
                 });
+                updateDockSafeOffset();
             } catch (e) {
                 console.warn('Failed to fetch turn edit summary:', e);
             }
@@ -6801,6 +6841,7 @@ loadSessionsList();
             if (toggleBtn) {
                 toggleBtn.textContent = turnSummaryDiffsExpanded ? 'Hide Diffs' : 'View Diffs';
             }
+            updateDockSafeOffset();
         }
 
         async function revertSingleTurnFile(filePath) {

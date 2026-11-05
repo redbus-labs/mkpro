@@ -1,4 +1,4 @@
-# AGENT.md: MkPro Autonomous Multi-Agent System (v4.9.0)
+# AGENT.md: MkPro Autonomous Multi-Agent System (v5.0.0)
 
 ## 1. Overview & Architecture
 MkPro is a Java-based, autonomous multi-agent developer system. It is designed to orchestrate complex software engineering workflows by leveraging large language models (LLMs) through the **Google GenAI ADK** (`adk.version 1.12.1-SNAPSHOT`).
@@ -19,7 +19,7 @@ MkPro is a Java-based, autonomous multi-agent developer system. It is designed t
 **Standard Commands:**
 - **Build/Compile:** `mvn clean compile`
 - **Run Tests:** `mvn test`
-- **Package (Fat JAR):** `mvn clean package` (generates `target/mkpro-4.9.0.jar`)
+- **Package (Fat JAR):** `mvn clean package` (generates `target/mkpro-5.0.0.jar`)
 - **Execution & Worker Scripts:** Uses `maven-shade-plugin` to generate an executable JAR with `com.mkpro.MkPro` as the main class. Use provided scripts (`mkpro.sh` / `mkpro.bat`, `mkpro-web.sh` / `mkpro-web.bat`, `mkpro-worker.sh` / `mkpro-worker.bat`, and `mkpro-mq-test.sh` / `mkpro-mq-test.bat`) for standardized entry points.
 
 ## 3. Project Structure & Key Packages
@@ -48,7 +48,7 @@ The system operates via a collaborative team of specialized agents led by the Co
 - **SysAdmin & UbuntuOps:** Manage local environment, persistent Remote Sandbox SSH/SFTP operations, and deployments.
 - **SecurityAuditor, DatabaseAdmin, DevOps, DataAnalyst, AndroidDev, IosDev:** Domain specialists for security audits, SQL/DB schemas, CI/CD & containers, data analysis, and mobile engineering.
 
-## 5. v4.9.0 Feature & Configuration Reference
+## 5. v5.0.0 Feature & Configuration Reference
 
 ### 5.1 Multi-Server OpenAI / vLLM Support (`/vllm` & `/openai`)
 - **CLI Commands:**

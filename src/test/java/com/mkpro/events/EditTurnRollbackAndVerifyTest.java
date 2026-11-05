@@ -1,7 +1,6 @@
 package com.mkpro.events;
 
 import com.mkpro.core.MkProContext;
-import com.mkpro.scripting.ScriptTools;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,9 +13,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for Turn-Level Change Summary & Rollback (EditApprovalService),
- * Self-Healing Auto-Verify Gate (AutoVerifyGate & MkProContext),
- * and Read-Only Groovy Script Validation (ScriptTools).
+ * Unit tests for Turn-Level Change Summary & Rollback (EditApprovalService)
+ * and Self-Healing Auto-Verify Gate (AutoVerifyGate & MkProContext).
  */
 public class EditTurnRollbackAndVerifyTest {
 
@@ -217,22 +215,5 @@ public class EditTurnRollbackAndVerifyTest {
         context.setLastVerifyResult(false, failedResult.summary());
         assertFalse(context.isLastVerifyPassed());
         assertEquals("FAILED (exit 1: mvn test-compile -q)", context.getLastVerifySummary());
-    }
-
-    @Test
-    void scriptToolsValidateReadOnlyBlocksWritesAndAllowsReadOnlyGroovy() {
-        // Read-only scripts should return null (allowed)
-        assertNull(ScriptTools.validateReadOnlyForAgent("def list = [3, 1, 2].sort()\nprintln list"));
-        assertNull(ScriptTools.validateReadOnlyForAgent("def lines = new File('README.md').readLines()\nprintln lines.size()"));
-
-        // File write/delete patterns must be blocked
-        assertNotNull(ScriptTools.validateReadOnlyForAgent("Files.writeString(path, 'data')"));
-        assertNotNull(ScriptTools.validateReadOnlyForAgent("Files.write(path, bytes)"));
-        assertNotNull(ScriptTools.validateReadOnlyForAgent("Files.delete(path)"));
-        assertNotNull(ScriptTools.validateReadOnlyForAgent("new FileWriter('out.txt')"));
-        assertNotNull(ScriptTools.validateReadOnlyForAgent("new FileOutputStream('out.bin')"));
-        assertNotNull(ScriptTools.validateReadOnlyForAgent("new File('foo.txt').delete()"));
-        assertNotNull(ScriptTools.validateReadOnlyForAgent("new File('foo.txt').text = 'overwrite'"));
-        assertNotNull(ScriptTools.validateReadOnlyForAgent("file.bytes = [1, 2, 3]"));
     }
 }

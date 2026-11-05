@@ -967,14 +967,8 @@ public class AgentManager {
         if (agentName == null) return coderTools;
         String nameLower = agentName.toLowerCase();
 
-        if (nameLower.equals("codeeditor") || nameLower.equals("code_editor") || nameLower.equals("code_editor_agent")) {
-            return codeEditorTools;
-        } else if (nameLower.equals("coder") || nameLower.equals("coder_agent") || nameLower.equals("developer")
-                || nameLower.equals("javacoder") || nameLower.equals("java_coder")
-                || nameLower.equals("pythoncoder") || nameLower.equals("python_coder")
-                || nameLower.equals("reactcoder") || nameLower.equals("react_coder")
-                || nameLower.equals("gocoder") || nameLower.equals("go_coder")
-                || nameLower.equals("code_analyzer_agent") || nameLower.equals("codeanalyzer")) {
+        if (nameLower.equals("codeeditor") || nameLower.equals("code_editor")
+                || nameLower.equals("coder") || nameLower.equals("developer")) {
             return coderTools;
         } else if (nameLower.equals("securityauditor") || nameLower.equals("security_auditor") || nameLower.contains("security")) {
             return securityAuditorTools;
@@ -982,11 +976,11 @@ public class AgentManager {
             return databaseAdminTools;
         } else if (nameLower.equals("dataanalyst") || nameLower.equals("data_analyst")) {
             return dataAnalystTools;
-        } else if (nameLower.equals("sysadmin") || nameLower.equals("sys_admin") || nameLower.equals("sys_admin_agent")) {
+        } else if (nameLower.equals("sysadmin") || nameLower.equals("sys_admin")) {
             return sysAdminTools;
-        } else if (nameLower.equals("ubuntuops") || nameLower.equals("ubuntu_ops") || nameLower.equals("ubuntu_ops_agent")
-                || nameLower.equals("ubuntu") || nameLower.equals("remoteops") || nameLower.equals("remote_ops")
-                || nameLower.equals("ops") || nameLower.equals("sysadmin_ssh") || nameLower.equals("ubuntusysadmin")) {
+        } else if (nameLower.equals("ubuntuops") || nameLower.equals("ubuntu_ops") || nameLower.equals("ubuntu")
+                || nameLower.equals("remoteops") || nameLower.equals("remote_ops") || nameLower.equals("ops")
+                || nameLower.equals("sysadmin_ssh") || nameLower.equals("ubuntusysadmin")) {
             return ubuntuOpsTools;
         } else if (nameLower.equals("devops") || nameContains(nameLower, "sre")) {
             return devOpsTools;
@@ -1018,56 +1012,12 @@ public class AgentManager {
             return agentName;
         }
 
-        // If the exact agent exists in current team definitions (e.g. modular polyglot agents or legacy polyglot specialists), keep it
-        if (agentDefinitions.containsKey(agentName)) {
-            if ("AndroidDev".equalsIgnoreCase(agentName) || "android_dev_agent".equalsIgnoreCase(agentName)
-                    || "IosDev".equalsIgnoreCase(agentName) || "ios_dev_agent".equalsIgnoreCase(agentName)) {
-                String ctx = contextInfo != null ? contextInfo.toLowerCase() : (projectContext != null ? projectContext.toLowerCase() : "");
-                if (("AndroidDev".equalsIgnoreCase(agentName) || "android_dev_agent".equalsIgnoreCase(agentName)) && ctx.contains("project: android")) {
-                    return agentName;
-                }
-                if (("IosDev".equalsIgnoreCase(agentName) || "ios_dev_agent".equalsIgnoreCase(agentName)) && ctx.contains("project: ios")) {
-                    return agentName;
-                }
-                if (instruction != null && instruction.matches("(?is).*\\b(android|apk|adb|logcat|jetpack|androidmanifest|ios|xcode|swift|swiftui|cocoapods|uikit)\\b.*")) {
-                    return agentName;
-                }
-                if (agentDefinitions.containsKey("Coder")) return "Coder";
-                if (agentDefinitions.containsKey("coder_agent")) return "coder_agent";
-            }
-            if (("CodeEditor".equalsIgnoreCase(agentName) || "code_editor".equalsIgnoreCase(agentName))
-                    && agentDefinitions.containsKey("Coder")) {
-                return "Coder";
-            }
-            return agentName;
-        }
-
-        // Case-insensitive / modular alias resolution when agentName is not directly a key in agentDefinitions
-        for (String key : agentDefinitions.keySet()) {
-            if (key.equalsIgnoreCase(agentName) || key.equalsIgnoreCase(agentName + "_agent")) {
-                return key;
-            }
-        }
-
-        if ("Coder".equalsIgnoreCase(agentName) || "coder_agent".equalsIgnoreCase(agentName)
+        if ("CodeEditor".equalsIgnoreCase(agentName) || "code_editor".equalsIgnoreCase(agentName)
+                || "code_editor_agent".equalsIgnoreCase(agentName)
+                || "Coder".equalsIgnoreCase(agentName) || "coder_agent".equalsIgnoreCase(agentName)
+                || "developer".equalsIgnoreCase(agentName)
                 || "JavaCoder".equalsIgnoreCase(agentName) || "PythonCoder".equalsIgnoreCase(agentName)
                 || "ReactCoder".equalsIgnoreCase(agentName) || "GoCoder".equalsIgnoreCase(agentName)) {
-            if (agentDefinitions.containsKey("Coder")) return "Coder";
-            if (agentDefinitions.containsKey("coder_agent")) return "coder_agent";
-            if (agentDefinitions.containsKey("JavaCoder")) return "JavaCoder";
-        }
-
-        if ("CodeEditor".equalsIgnoreCase(agentName) || "code_editor".equalsIgnoreCase(agentName)
-                || "code_editor_agent".equalsIgnoreCase(agentName)) {
-            if (agentDefinitions.containsKey("code_editor_agent")) return "code_editor_agent";
-            if (agentDefinitions.containsKey("CodeEditor")) return "CodeEditor";
-            if (agentDefinitions.containsKey("Coder")) return "Coder";
-            if (agentDefinitions.containsKey("coder_agent")) return "coder_agent";
-        }
-
-        if ("code_analyzer_agent".equalsIgnoreCase(agentName) || "CodeAnalyzer".equalsIgnoreCase(agentName)) {
-            if (agentDefinitions.containsKey("code_analyzer_agent")) return "code_analyzer_agent";
-            if (agentDefinitions.containsKey("Architect")) return "Architect";
             if (agentDefinitions.containsKey("Coder")) return "Coder";
         }
 

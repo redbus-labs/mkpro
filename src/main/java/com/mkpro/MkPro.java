@@ -212,6 +212,7 @@ public class MkPro {
         registry.register(new CaptureCommand());
         registry.register(new CompactCommand());
         registry.register(new SshCommand());
+        registry.register(new ComputerCommand());
         registry.register(new ExecCommand());
         registry.register(new HelpCommand(registry));
         registry.register(new ExitCommand());

@@ -58,7 +58,7 @@ agents:
 
   - name: Coder
     description: "For writing new software, adding features, applying file modifications, refactoring, and debugging logic."
-    tools: [file_read, file_write, safe_write, clipboard, codebase_search, symbol_index, mcp_scan, graph_memory, fetch_url, vision, ask_peer_agent, list_peers, scripting, request_knowledge, verify_fact, audio]
+    tools: [file_read, file_write, safe_write, clipboard, codebase_search, symbol_index, mcp_scan, graph_memory, fetch_url, vision, ask_peer_agent, list_peers, scripting, request_knowledge, verify_fact, audio, computer_use, browser_use]
     routing_keywords: [edit, modify, refactor, rename, replace, rewrite]
     fallback_model: gemini-3.1-flash-lite@GEMINI
     instruction: |
@@ -86,7 +86,7 @@ agents:
 
   - name: SysAdmin
     description: "Delegates system-level command execution to the SysAdmin agent. (DO NOT use for Git operations)."
-    tools: [shell, background_jobs, file_read, file_write, safe_write, clipboard, scripting, ssh, vision, audio]
+    tools: [shell, background_jobs, file_read, file_write, safe_write, clipboard, scripting, ssh, vision, audio, computer_use, browser_use]
     fallback_model: gemini-3.1-flash-lite@GEMINI
     instruction: |
       Authority:
@@ -140,7 +140,7 @@ agents:
 
   - name: Tester
     description: "Delegates testing and quality assurance tasks to the Tester agent."
-    tools: [file_read, file_write, safe_write, clipboard, shell, selenium, vision, audio]
+    tools: [file_read, file_write, safe_write, clipboard, shell, selenium, vision, audio, computer_use, browser_use]
     fallback_model: gemini-3.1-flash-lite@GEMINI
     instruction: |
       Authority:
@@ -373,7 +373,7 @@ agents:
 
   - name: UbuntuOps
     description: "Delegates remote Ubuntu/Linux administration, diagnostics, sandbox operations, SSH command execution, and SFTP transfers to the UbuntuOps agent."
-    tools: [ssh, file_read, file_write, safe_write, shell, clipboard, codebase_search, central_memory, fetch_url, vision, audio]
+    tools: [ssh, file_read, file_write, safe_write, shell, clipboard, codebase_search, central_memory, fetch_url, vision, audio, computer_use, browser_use]
     routing_keywords: [ssh, remote, remote server, sandbox, remote machine, ubuntu, vps, ec2, sftp, bash remote]
     fallback_model: gemini-3.1-flash-lite@GEMINI
     instruction: |

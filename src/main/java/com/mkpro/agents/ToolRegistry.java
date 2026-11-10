@@ -149,6 +149,29 @@ public class ToolRegistry {
         toolCache.put("ssh_disconnect", List.of(SshTools.createDisconnectTool()));
         toolCache.put("ssh_status", List.of(SshTools.createStatusTool()));
 
+        // VM-First & Local Fallback Computer Use tool suite
+        List<BaseTool> computerSuite = ComputerUseTools.createSuite();
+        toolCache.put("computer", computerSuite);
+        toolCache.put("computer_use", computerSuite);
+        toolCache.put("computer_init_vm", List.of(ComputerUseTools.createInitVmTool()));
+        toolCache.put("computer_screenshot", List.of(ComputerUseTools.createScreenshotTool()));
+        toolCache.put("computer_click", List.of(ComputerUseTools.createClickTool()));
+        toolCache.put("computer_move_or_drag", List.of(ComputerUseTools.createMoveOrDragTool()));
+        toolCache.put("computer_type", List.of(ComputerUseTools.createTypeTool()));
+        toolCache.put("computer_key", List.of(ComputerUseTools.createKeyTool()));
+        toolCache.put("computer_scroll", List.of(ComputerUseTools.createScrollTool()));
+        toolCache.put("computer_launch_app", List.of(ComputerUseTools.createLaunchAppTool()));
+
+        // Set-of-Mark (SoM) Browser Use tool suite
+        List<BaseTool> browserSuite = BrowserUseTools.createSuite();
+        toolCache.put("browser", browserSuite);
+        toolCache.put("browser_use", browserSuite);
+        toolCache.put("browser_open", List.of(BrowserUseTools.createOpenTool()));
+        toolCache.put("browser_snapshot", List.of(BrowserUseTools.createSnapshotTool()));
+        toolCache.put("browser_act", List.of(BrowserUseTools.createActTool()));
+        toolCache.put("browser_extract_markdown", List.of(BrowserUseTools.createExtractMarkdownTool()));
+        toolCache.put("browser_close", List.of(BrowserUseTools.createCloseTool()));
+
         // Selenium browser tools
         try {
             toolCache.put("selenium", List.of(

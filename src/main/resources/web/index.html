@@ -1281,6 +1281,7 @@
             <span class="ssh-status-dot disconnected" id="sshStatusDot"></span>
             <span>📦 Sandbox</span>
         </button>
+        <button class="ssh-header-btn" id="vmScreenHeaderBtn" onclick="openVmScreenModal()" title="Live VM / Desktop Screen &amp; Interactive Click-Through">🖥️ VM Screen</button>
         <button class="ssh-header-btn" onclick="openJobsModal()" title="Background Jobs &amp; Schedules">🐇 Jobs</button>
         <button class="ssh-header-btn" onclick="openTelemetryModal()" title="Live Agent Telemetry &amp; Cost/Latency Breakdown">📊 Telemetry</button>
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
@@ -4748,6 +4749,200 @@
             } catch (e) { console.error('Delete schedule error:', e); }
         }
 
+        // ========== Live VM / Desktop Screen Viewport Modal ==========
+        let vmScreenPollTimer = null;
+
+        function getVmScreenAlias() {
+            const el = document.getElementById('vmScreenAliasInput');
+            return (el && el.value.trim()) ? el.value.trim() : 'default';
+        }
+
+        function showVmScreenBanner(msg, type = 'info') {
+            const b = document.getElementById('vmScreenStatusBanner');
+            if (!b) return;
+            if (!msg) {
+                b.style.display = 'none';
+                return;
+            }
+            b.textContent = msg;
+            b.className = 'ssh-status-banner ' + type;
+            b.style.display = 'block';
+        }
+
+        function updateVmScreenUiFromResponse(data) {
+            if (!data) return;
+            const badge = document.getElementById('vmScreenStatusBadge');
+            const modeSel = document.getElementById('vmScreenModeSelect');
+            const metaEl = document.getElementById('vmScreenActionMeta');
+            const img = document.getElementById('vmScreenImage');
+            const emptyEl = document.getElementById('vmScreenEmptyState');
+
+            if (data.mode && modeSel) {
+                modeSel.value = data.mode;
+            }
+            if (badge) {
+                const modeLabel = (data.mode || 'vm').toUpperCase();
+                const disp = data.display || ':99';
+                const res = (data.width && data.height) ? `${data.width}x${data.height}` : '1280x800';
+                const conn = data.sshConnected ? 'SSH OK' : (data.mode === 'local' ? 'LOCAL' : 'SSH OFF');
+                const xvfb = data.xvfbRunning ? ' • Xvfb UP' : '';
+                badge.textContent = `${modeLabel} ${disp} (${res}) • ${conn}${xvfb}`;
+            }
+            if (metaEl && data.lastAction) {
+                metaEl.textContent = `Last action: ${data.lastAction}`;
+            }
+            if (data.lastFrameBase64 && img) {
+                img.src = 'data:image/png;base64,' + data.lastFrameBase64;
+                img.style.display = 'block';
+                if (emptyEl) emptyEl.style.display = 'none';
+            }
+        }
+
+        async function refreshVmScreenStatus(silent = false) {
+            try {
+                const alias = getVmScreenAlias();
+                const resp = await fetch('/api/computer/status?alias=' + encodeURIComponent(alias));
+                if (!resp.ok) return;
+                const data = await resp.json();
+                updateVmScreenUiFromResponse(data);
+            } catch (e) {
+                if (!silent) showVmScreenBanner('Status check failed: ' + e.message, 'error');
+            }
+        }
+
+        function openVmScreenModal() {
+            const overlay = document.getElementById('vmScreenModalOverlay');
+            if (!overlay) return;
+            overlay.classList.add('active');
+            showVmScreenBanner('', 'info');
+            refreshVmScreenStatus(true);
+            if (vmScreenPollTimer) clearInterval(vmScreenPollTimer);
+            vmScreenPollTimer = setInterval(() => {
+                if (overlay.classList.contains('active')) {
+                    refreshVmScreenStatus(true);
+                }
+            }, 3000);
+        }
+
+        function closeVmScreenModal() {
+            const overlay = document.getElementById('vmScreenModalOverlay');
+            if (overlay) overlay.classList.remove('active');
+            if (vmScreenPollTimer) {
+                clearInterval(vmScreenPollTimer);
+                vmScreenPollTimer = null;
+            }
+        }
+
+        async function initVmDesktopFromUi() {
+            const alias = getVmScreenAlias();
+            showVmScreenBanner(`Initializing Xvfb (:99) + Openbox on SSH alias '${alias}'...`, 'info');
+            try {
+                const resp = await fetch('/api/computer/init', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ alias })
+                });
+                const data = await resp.json();
+                updateVmScreenUiFromResponse(data);
+                if (data.status === 'error' || data.error) {
+                    showVmScreenBanner(data.error || 'Failed to initialize VM desktop.', 'error');
+                } else {
+                    showVmScreenBanner('VM Desktop (:99) initialized and ready.', 'success');
+                }
+            } catch (e) {
+                showVmScreenBanner('Init failed: ' + e.message, 'error');
+            }
+        }
+
+        async function captureVmScreenFromUi() {
+            const alias = getVmScreenAlias();
+            showVmScreenBanner('Capturing annotated screenshot...', 'info');
+            try {
+                const resp = await fetch('/api/computer/screenshot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ alias })
+                });
+                const data = await resp.json();
+                updateVmScreenUiFromResponse(data);
+                if (data.status === 'error' || data.error) {
+                    showVmScreenBanner(data.error || 'Screenshot failed.', 'error');
+                } else {
+                    showVmScreenBanner('', 'info');
+                }
+            } catch (e) {
+                showVmScreenBanner('Screenshot failed: ' + e.message, 'error');
+            }
+        }
+
+        async function executeVmScreenAction(payload) {
+            const alias = getVmScreenAlias();
+            const body = Object.assign({ alias }, payload);
+            try {
+                const resp = await fetch('/api/computer/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await resp.json();
+                updateVmScreenUiFromResponse(data);
+                if (data.status === 'error' || data.error) {
+                    showVmScreenBanner(data.error || 'Action failed.', 'error');
+                } else {
+                    showVmScreenBanner('', 'info');
+                }
+                return data;
+            } catch (e) {
+                showVmScreenBanner('Action error: ' + e.message, 'error');
+            }
+        }
+
+        function switchVmScreenMode(mode) {
+            executeVmScreenAction({ action: 'mode', mode });
+        }
+
+        function handleVmScreenClick(e) {
+            const img = document.getElementById('vmScreenImage');
+            if (!img || !img.clientWidth || !img.clientHeight) return;
+            const normX = Math.round((e.offsetX / img.clientWidth) * 1000);
+            const normY = Math.round((e.offsetY / img.clientHeight) * 1000);
+            const clickModeEl = document.getElementById('vmScreenClickTypeSelect');
+            const clickAction = clickModeEl ? clickModeEl.value : 'click';
+            showVmScreenBanner(`Dispatching ${clickAction} at norm (${normX}, ${normY})...`, 'info');
+            executeVmScreenAction({ action: clickAction, x: normX, y: normY });
+        }
+
+        function handleVmScreenMouseMove(e) {
+            const img = document.getElementById('vmScreenImage');
+            const coordEl = document.getElementById('vmScreenHoverCoords');
+            if (!img || !coordEl || !img.clientWidth || !img.clientHeight) return;
+            const normX = Math.max(0, Math.min(1000, Math.round((e.offsetX / img.clientWidth) * 1000)));
+            const normY = Math.max(0, Math.min(1000, Math.round((e.offsetY / img.clientHeight) * 1000)));
+            coordEl.textContent = `norm: (${normX}, ${normY})`;
+        }
+
+        function openVmUrlFromUi() {
+            const el = document.getElementById('vmScreenUrlInput');
+            const url = el ? el.value.trim() : '';
+            if (!url) return;
+            showVmScreenBanner(`Opening URL: ${url}...`, 'info');
+            executeVmScreenAction({ action: 'open_url', url });
+        }
+
+        function typeVmTextFromUi() {
+            const el = document.getElementById('vmScreenTextInput');
+            const text = el ? el.value : '';
+            if (!text) return;
+            showVmScreenBanner(`Typing text...`, 'info');
+            executeVmScreenAction({ action: 'type', text, pressEnter: true });
+            el.value = '';
+        }
+
+        function sendVmKeyFromUi(key) {
+            showVmScreenBanner(`Sending key: ${key}...`, 'info');
+            executeVmScreenAction({ action: 'key', key });
+        }
+
     </script>
 
     <!-- Read-Only Diff Inspection Modal -->
@@ -5158,6 +5353,81 @@
                 <span style="font-size:11px; opacity:0.7; font-family:'JetBrains Mono',monospace;">Schedules run via RabbitMqWorkerService.</span>
                 <div class="ssh-footer-actions" style="margin-left:auto;">
                     <button class="ssh-btn ssh-btn-cancel" onclick="closeJobsModal()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live VM / Desktop Screen Viewport Modal with Interactive Click-Through -->
+    <div class="ssh-modal-overlay" id="vmScreenModalOverlay" onclick="if(event.target===this) closeVmScreenModal()">
+        <div class="ssh-modal-card" style="max-width:1040px; width:96vw; max-height:92vh;">
+            <div class="ssh-modal-header" style="flex-wrap:wrap; gap:10px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <h3 style="margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; gap:6px;">
+                        <span>🖥️ Live VM / Desktop Viewport</span>
+                    </h3>
+                    <span id="vmScreenStatusBadge" class="mc-scope-badge project" style="font-size:11px; padding:3px 8px;">VM :99 (1280x800)</span>
+                    <span id="vmScreenHoverCoords" style="font-family:'JetBrains Mono',monospace; font-size:11px; opacity:0.75;">norm: (500, 500)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                    <input type="text" id="vmScreenAliasInput" class="mc-input" value="default" placeholder="SSH alias" title="SSH Session Alias" style="width:90px; padding:4px 8px; font-size:11px;" />
+                    <select id="vmScreenModeSelect" class="mc-select" onchange="switchVmScreenMode(this.value)" style="padding:4px 8px; font-size:11px;" title="Execution Target Mode">
+                        <option value="vm">Mode: VM (:99)</option>
+                        <option value="local">Mode: Local Desktop</option>
+                    </select>
+                    <select id="vmScreenClickTypeSelect" class="mc-select" style="padding:4px 8px; font-size:11px;" title="Click Action Mode">
+                        <option value="click">🖱️ Left Click</option>
+                        <option value="double_click">🖱️ Double Click</option>
+                        <option value="right_click">🖱️ Right Click</option>
+                        <option value="move">🎯 Move Only</option>
+                    </select>
+                    <button class="ssh-btn ssh-btn-connect" onclick="initVmDesktopFromUi()" style="padding:5px 10px; font-size:11px;">⚡ Init VM (:99)</button>
+                    <button class="ssh-btn ssh-btn-cancel" onclick="captureVmScreenFromUi()" style="padding:5px 10px; font-size:11px;">🔄 Capture Screen</button>
+                    <button class="ssh-modal-close-btn" onclick="closeVmScreenModal()" title="Close (Esc)">✕</button>
+                </div>
+            </div>
+
+            <div class="ssh-modal-body" style="flex:1; overflow-y:auto; gap:10px; padding:12px 16px;">
+                <div class="ssh-status-banner" id="vmScreenStatusBanner" style="display:none;"></div>
+
+                <!-- Quick URL & Keyboard / Scroll Bar -->
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; background:var(--bg); padding:8px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.18);">
+                    <div style="display:flex; gap:6px; flex:1; min-width:240px;">
+                        <input type="text" id="vmScreenUrlInput" class="mc-input" placeholder="https://example.com (Open URL in browser)" style="flex:1; font-size:12px;" onkeydown="if(event.key==='Enter') openVmUrlFromUi()" />
+                        <button class="ssh-btn ssh-btn-connect" onclick="openVmUrlFromUi()" style="padding:5px 10px; font-size:11px; white-space:nowrap;">🌐 Open URL</button>
+                    </div>
+                    <div style="display:flex; gap:6px; flex:1; min-width:240px;">
+                        <input type="text" id="vmScreenTextInput" class="mc-input" placeholder="Type text into active window..." style="flex:1; font-size:12px;" onkeydown="if(event.key==='Enter') typeVmTextFromUi()" />
+                        <button class="ssh-btn ssh-btn-cancel" onclick="typeVmTextFromUi()" style="padding:5px 10px; font-size:11px; white-space:nowrap;">⌨️ Type</button>
+                    </div>
+                    <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                        <button class="ssh-btn ssh-btn-cancel" onclick="sendVmKeyFromUi('Return')" style="padding:4px 8px; font-size:11px;" title="Send Enter/Return">⏎ Enter</button>
+                        <button class="ssh-btn ssh-btn-cancel" onclick="sendVmKeyFromUi('Tab')" style="padding:4px 8px; font-size:11px;" title="Send Tab">⇥ Tab</button>
+                        <button class="ssh-btn ssh-btn-cancel" onclick="sendVmKeyFromUi('Escape')" style="padding:4px 8px; font-size:11px;" title="Send Escape">Esc</button>
+                        <button class="ssh-btn ssh-btn-cancel" onclick="sendVmKeyFromUi('BackSpace')" style="padding:4px 8px; font-size:11px;" title="Send BackSpace">⌫</button>
+                        <button class="ssh-btn ssh-btn-cancel" onclick="executeVmScreenAction({action:'scroll', x:500, y:500, direction:'up', clicks:5})" style="padding:4px 8px; font-size:11px;" title="Scroll Up">▲ Scroll</button>
+                        <button class="ssh-btn ssh-btn-cancel" onclick="executeVmScreenAction({action:'scroll', x:500, y:500, direction:'down', clicks:5})" style="padding:4px 8px; font-size:11px;" title="Scroll Down">▼ Scroll</button>
+                    </div>
+                </div>
+
+                <!-- Interactive Screen Canvas -->
+                <div style="position:relative; background:#0d1117; border-radius:8px; border:1px solid rgba(128,128,128,0.25); min-height:380px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                    <div id="vmScreenEmptyState" style="color:#94a3b8; font-family:'JetBrains Mono',monospace; font-size:12px; text-align:center; padding:40px 20px;">
+                        <div style="font-size:28px; margin-bottom:10px;">🖥️</div>
+                        <div>No desktop frame captured yet.</div>
+                        <div style="margin-top:6px; opacity:0.75;">Click <strong>⚡ Init VM (:99)</strong> (when SSH is connected) or <strong>🔄 Capture Screen</strong>, or click anywhere on the image once loaded to interact directly.</div>
+                    </div>
+                    <img id="vmScreenImage" src="" alt="VM Desktop Screen"
+                         onclick="handleVmScreenClick(event)"
+                         onmousemove="handleVmScreenMouseMove(event)"
+                         style="display:none; width:100%; height:auto; max-height:66vh; object-fit:fill; cursor:crosshair; user-select:none;" />
+                </div>
+            </div>
+
+            <div class="ssh-modal-footer">
+                <span id="vmScreenActionMeta" style="font-size:11px; opacity:0.8; font-family:'JetBrains Mono',monospace;">Click anywhere on the viewport image to dispatch normalized [0..1000] click coordinates.</span>
+                <div class="ssh-footer-actions" style="margin-left:auto;">
+                    <button class="ssh-btn ssh-btn-cancel" onclick="closeVmScreenModal()">Close</button>
                 </div>
             </div>
         </div>

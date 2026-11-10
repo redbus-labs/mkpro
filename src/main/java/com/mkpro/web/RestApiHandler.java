@@ -121,6 +121,11 @@ class RestApiHandler {
                 handleSshDisconnectApi(exchange); return true;
             case "/api/ssh/status":
                 handleSshStatusApi(exchange); return true;
+            case "/api/computer/status":
+            case "/api/computer/init":
+            case "/api/computer/screenshot":
+            case "/api/computer/action":
+                handleComputerApi(exchange, path, exchange.getRequestMethod()); return true;
             case "/api/tasks":
                 handleTasksApi(exchange); return true;
             case "/api/notes":
@@ -163,6 +168,8 @@ class RestApiHandler {
                     serveFileRawApi(exchange); return true;
                 } else if (path.startsWith("/api/history")) {
                     handleHistoryApi(exchange); return true;
+                } else if (path.startsWith("/api/computer")) {
+                    handleComputerApi(exchange, path, exchange.getRequestMethod()); return true;
                 }
                 return false;
         }
@@ -1528,6 +1535,187 @@ class RestApiHandler {
         } catch (Exception e) {
             logger.debug("[RestApiHandler] <<< Response 500 (Exception): " + e.getMessage());
             sendJsonResponse(exchange, 500, Map.of("error", e.getMessage() != null ? e.getMessage() : e.toString()));
+        }
+    }
+
+    // ========================================================================
+    // Computer Use / VM Desktop Sandbox API Handlers
+    // ========================================================================
+
+    private void handleComputerApi(HttpExchange exchange, String path, String method) throws IOException {
+        com.mkpro.infra.computer.VmDesktopSandbox sandbox = com.mkpro.infra.computer.VmDesktopSandbox.getInstance();
+        try {
+            String alias = "default";
+            String rawQuery = exchange.getRequestURI().getQuery();
+            if (rawQuery != null) {
+                for (String param : rawQuery.split("&")) {
+                    if (param.startsWith("alias=")) {
+                        alias = URLDecoder.decode(param.substring(6), StandardCharsets.UTF_8).trim();
+                    }
+                }
+            }
+
+            if ("/api/computer/status".equals(path)) {
+                Map<String, Object> resp = new LinkedHashMap<>(sandbox.getStatus(alias));
+                String frame = sandbox.getLastFrameBase64();
+                if (frame != null && !frame.isEmpty()) {
+                    resp.put("lastFrameBase64", frame);
+                }
+                sendJsonResponse(exchange, 200, resp);
+                return;
+            }
+
+            if ("/api/computer/init".equals(path)) {
+                if (!"POST".equalsIgnoreCase(method)) {
+                    exchange.sendResponseHeaders(405, -1);
+                    exchange.close();
+                    return;
+                }
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                if (!body.isBlank()) {
+                    JsonNode req = mapper.readTree(body);
+                    if (req.has("alias") && !req.get("alias").asText().isBlank()) {
+                        alias = req.get("alias").asText().trim();
+                    }
+                }
+                Map<String, Object> initRes = new LinkedHashMap<>(sandbox.initVmDesktop(alias));
+                if ("ok".equals(initRes.get("status"))) {
+                    Map<String, Object> snap = sandbox.captureScreenshot(alias, null, null, "Init VM (:99)", true);
+                    initRes.putAll(snap);
+                    initRes.put("status", "ok");
+                }
+                String frame = sandbox.getLastFrameBase64();
+                if (frame != null && !frame.isEmpty()) {
+                    initRes.put("lastFrameBase64", frame);
+                }
+                sendJsonResponse(exchange, 200, initRes);
+                return;
+            }
+
+            if ("/api/computer/screenshot".equals(path)) {
+                if ("POST".equalsIgnoreCase(method)) {
+                    String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                    if (!body.isBlank()) {
+                        JsonNode req = mapper.readTree(body);
+                        if (req.has("alias") && !req.get("alias").asText().isBlank()) {
+                            alias = req.get("alias").asText().trim();
+                        }
+                    }
+                }
+                Map<String, Object> snap = new LinkedHashMap<>(sandbox.captureScreenshot(alias, null, null, "Manual Refresh", true));
+                Map<String, Object> st = sandbox.getStatus(alias);
+                for (Map.Entry<String, Object> e : st.entrySet()) {
+                    snap.putIfAbsent(e.getKey(), e.getValue());
+                }
+                String frame = sandbox.getLastFrameBase64();
+                if (frame != null && !frame.isEmpty()) {
+                    snap.put("lastFrameBase64", frame);
+                }
+                sendJsonResponse(exchange, 200, snap);
+                return;
+            }
+
+            if ("/api/computer/action".equals(path)) {
+                if (!"POST".equalsIgnoreCase(method)) {
+                    exchange.sendResponseHeaders(405, -1);
+                    exchange.close();
+                    return;
+                }
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                JsonNode req = body.isBlank() ? mapper.createObjectNode() : mapper.readTree(body);
+                if (req.has("alias") && !req.get("alias").asText().isBlank()) {
+                    alias = req.get("alias").asText().trim();
+                }
+                String action = req.has("action") ? req.get("action").asText("click").trim().toLowerCase(Locale.ROOT) : "click";
+                int x = req.has("x") ? req.get("x").asInt(500) : 500;
+                int y = req.has("y") ? req.get("y").asInt(500) : 500;
+                int fromX = req.has("from_x") ? req.get("from_x").asInt(x) : (req.has("fromX") ? req.get("fromX").asInt(x) : x);
+                int fromY = req.has("from_y") ? req.get("from_y").asInt(y) : (req.has("fromY") ? req.get("fromY").asInt(y) : y);
+                String text = req.has("text") ? req.get("text").asText("") : "";
+                String key = req.has("key") ? req.get("key").asText("Return") : "Return";
+                String command = req.has("command") ? req.get("command").asText("") : "";
+                String url = req.has("url") ? req.get("url").asText("") : text;
+                String direction = req.has("direction") ? req.get("direction").asText("down") : "down";
+                int clicks = req.has("clicks") ? req.get("clicks").asInt(4) : 4;
+                boolean pressEnter = !req.has("pressEnter") || req.get("pressEnter").asBoolean(true);
+
+                Map<String, Object> actionRes;
+                switch (action) {
+                    case "mode": {
+                        String newMode = req.has("mode") ? req.get("mode").asText("vm") : "vm";
+                        sandbox.setMode(newMode);
+                        actionRes = new LinkedHashMap<>(sandbox.getStatus(alias));
+                        actionRes.put("status", "ok");
+                        break;
+                    }
+                    case "click":
+                        actionRes = new LinkedHashMap<>(sandbox.click(alias, x, y, 1, false));
+                        break;
+                    case "double_click":
+                        actionRes = new LinkedHashMap<>(sandbox.click(alias, x, y, 1, true));
+                        break;
+                    case "right_click":
+                        actionRes = new LinkedHashMap<>(sandbox.click(alias, x, y, 3, false));
+                        break;
+                    case "move":
+                        actionRes = new LinkedHashMap<>(sandbox.moveOrDrag(alias, fromX, fromY, x, y, false));
+                        break;
+                    case "drag":
+                        actionRes = new LinkedHashMap<>(sandbox.moveOrDrag(alias, fromX, fromY, x, y, true));
+                        break;
+                    case "type":
+                        actionRes = new LinkedHashMap<>(sandbox.type(alias, text, pressEnter));
+                        break;
+                    case "key":
+                        actionRes = new LinkedHashMap<>(sandbox.key(alias, key));
+                        break;
+                    case "scroll":
+                        actionRes = new LinkedHashMap<>(sandbox.scroll(alias, x, y, direction, clicks));
+                        break;
+                    case "launch":
+                        actionRes = new LinkedHashMap<>(sandbox.launchApp(alias, command));
+                        break;
+                    case "open_url": {
+                        String targetUrl = url != null ? url.trim() : "";
+                        if (!targetUrl.isEmpty() && !targetUrl.startsWith("http://") && !targetUrl.startsWith("https://") && !targetUrl.startsWith("file://")) {
+                            targetUrl = "https://" + targetUrl;
+                        }
+                        if ("vm".equalsIgnoreCase(sandbox.getMode()) && com.mkpro.infra.ssh.SshSessionManager.getInstance().hasActiveSession(alias)) {
+                            String safeUrl = targetUrl.replace("'", "");
+                            String browserCmd = String.format(
+                                    "(chromium-browser --no-sandbox --window-size=1280,800 '%s' || google-chrome --no-sandbox --window-size=1280,800 '%s' || firefox '%s')",
+                                    safeUrl, safeUrl, safeUrl
+                            );
+                            actionRes = new LinkedHashMap<>(sandbox.launchApp(alias, browserCmd));
+                        } else {
+                            Map<String, Object> openArgs = new LinkedHashMap<>();
+                            openArgs.put("url", targetUrl);
+                            openArgs.put("target", sandbox.getMode());
+                            actionRes = new LinkedHashMap<>(com.mkpro.tools.BrowserUseTools.createOpenTool().runAsync(openArgs, null).blockingGet());
+                        }
+                        break;
+                    }
+                    default:
+                        sendJsonError(exchange, 400, "Unknown computer action: " + action);
+                        return;
+                }
+
+                Map<String, Object> st = sandbox.getStatus(alias);
+                for (Map.Entry<String, Object> e : st.entrySet()) {
+                    actionRes.putIfAbsent(e.getKey(), e.getValue());
+                }
+                String frame = sandbox.getLastFrameBase64();
+                if (frame != null && !frame.isEmpty()) {
+                    actionRes.put("lastFrameBase64", frame);
+                }
+                sendJsonResponse(exchange, 200, actionRes);
+                return;
+            }
+
+            sendJsonError(exchange, 404, "Unknown computer endpoint: " + path);
+        } catch (Exception e) {
+            logger.debug("[RestApiHandler] <<< Computer API Exception: " + e.getMessage());
+            sendJsonError(exchange, 500, e.getMessage() != null ? e.getMessage() : e.toString());
         }
     }
 

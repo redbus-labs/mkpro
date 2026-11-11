@@ -6,7 +6,7 @@ set "JDK_JAVA_OPTIONS=--add-modules jdk.incubator.vector --enable-preview -Dfile
 :: Downloads a HuggingFace model for use with mkpro's Jlama provider
 
 set "SCRIPT_DIR=%~dp0"
-set "JAR_PATH=%SCRIPT_DIR%target\mkpro-4.9.0.jar"
+set "JAR_PATH=%SCRIPT_DIR%target\mkpro-5.0.0.jar"
 set "MODELS_DIR=%USERPROFILE%\Documents\mkpro\jlama-models"
 
 if "%~1"=="" (

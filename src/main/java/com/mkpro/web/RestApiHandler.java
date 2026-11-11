@@ -625,18 +625,35 @@ class RestApiHandler {
                 return;
             }
 
-            // Capture stdout safely with lock to prevent race conditions on System.out
+            // Capture stdout and terminal writer safely with lock to prevent race conditions
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
             java.io.PrintStream capture = new java.io.PrintStream(baos, true, StandardCharsets.UTF_8);
             synchronized (com.mkpro.MkPro.STDOUT_CAPTURE_LOCK) {
                 java.io.PrintStream originalOut = System.out;
                 System.setOut(capture);
+                org.jline.terminal.Terminal origTerminal = mkproContext.getTerminal();
+                org.jline.terminal.Terminal captureTerminal = null;
                 try {
-                    if (commandRegistry != null) {
-                        commandRegistry.executeCommand(command, mkproContext);
+                    captureTerminal = org.jline.terminal.TerminalBuilder.builder()
+                        .streams(new java.io.ByteArrayInputStream(new byte[0]), baos)
+                        .dumb(true)
+                        .build();
+                    mkproContext.setTerminal(captureTerminal);
+                } catch (Exception ignored) {}
+                try {
+                    com.mkpro.commands.CommandRegistry reg = commandRegistry != null ? commandRegistry : com.mkpro.MkPro.getWebRegistry();
+                    if (reg != null) {
+                        reg.executeCommand(command, mkproContext);
+                    }
+                    if (captureTerminal != null) {
+                        captureTerminal.writer().flush();
                     }
                 } finally {
                     System.setOut(originalOut);
+                    mkproContext.setTerminal(origTerminal);
+                    if (captureTerminal != null) {
+                        try { captureTerminal.close(); } catch (Exception ignored) {}
+                    }
                 }
             }
 

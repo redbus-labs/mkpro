@@ -32,7 +32,7 @@ public class VerifyCommand implements Command {
             return;
         }
 
-        String sub = (args != null && args.length > 1) ? args[1].trim().toLowerCase() : "status";
+        String sub = (args != null && args.length > 0) ? args[0].trim().toLowerCase() : "status";
 
         switch (sub) {
             case "on":

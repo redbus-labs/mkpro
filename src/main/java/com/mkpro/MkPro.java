@@ -51,12 +51,18 @@ public class MkPro {
             BootstrapService bootstrapService = new BootstrapService();
             MkProContext context = bootstrapService.bootstrap(args);
 
-            // 2. Start web server if --web flag is present
+            // 2. Initialize Command Registry early so WebChatServer & RestApiHandler have full command access
+            CommandRegistry registry = new CommandRegistry();
+            registerCommands(registry);
+            webRegistry = registry;
+
+            // 3. Start web server if --web flag is present
             int webPort = getWebPort(args);
             if (webPort > 0) {
                 com.mkpro.web.WebChatServer webServer = new com.mkpro.web.WebChatServer(webPort);
                 webServer.setCentralMemory(context.getCentralMemory());
                 webServer.setContext(context);
+                webServer.setCommandRegistry(registry);
                 if (context.getKnowledgeStore() != null && context.getTopicIndex() != null) {
                     webServer.setKnowledgeComponents(context.getKnowledgeStore(), context.getTopicIndex());
                 }
@@ -123,10 +129,6 @@ public class MkPro {
                     });
                 }
             }
-
-            // 3. Initialize Command Registry
-            CommandRegistry registry = new CommandRegistry();
-            registerCommands(registry);
 
             // Wire command registry to web server for /api/command endpoint
             if (context.getWebChatServer() != null) {
@@ -213,6 +215,7 @@ public class MkPro {
         registry.register(new CompactCommand());
         registry.register(new SshCommand());
         registry.register(new ComputerCommand());
+        registry.register(new VerifyCommand());
         registry.register(new ExecCommand());
         registry.register(new HelpCommand(registry));
         registry.register(new ExitCommand());

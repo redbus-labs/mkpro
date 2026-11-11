@@ -73,6 +73,9 @@ public class WebCommand implements Command {
             com.mkpro.web.WebChatServer webServer = new com.mkpro.web.WebChatServer(port);
             webServer.setCentralMemory(context.getCentralMemory());
             webServer.setContext(context);
+            if (com.mkpro.MkPro.getWebRegistry() != null) {
+                webServer.setCommandRegistry(com.mkpro.MkPro.getWebRegistry());
+            }
             if (context.getKnowledgeStore() != null && context.getTopicIndex() != null) {
                 webServer.setKnowledgeComponents(context.getKnowledgeStore(), context.getTopicIndex());
             }

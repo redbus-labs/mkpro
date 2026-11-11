@@ -1311,6 +1311,8 @@
             <button class="sidebar-toggle-external" onclick="toggleSidebar()" title="Show file browser">📁</button>
             <div class="command-bar">
                 <button class="cmd-btn" onclick="runCommand('/capture')">📸 Capture</button>
+                <button class="cmd-btn" onclick="runCommand('/computer status')">🖥️ Computer</button>
+                <button class="cmd-btn" onclick="runCommand('/verify status')">🛡️ Verify</button>
                 <button class="cmd-btn" onclick="runCommand('/status')">📊 Status</button>
                 <button class="cmd-btn" onclick="runCommand('/stats')">📈 Stats</button>
                 <button class="cmd-btn" onclick="runCommand('/know topics')">🧠 Topics</button>
@@ -2603,11 +2605,51 @@
             return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
-        // ========== @ Note & Task Mention Autocomplete ==========
+        // ========== Slash Commands & @ Note / Task Mention Autocomplete ==========
+        const SLASH_COMMANDS = [
+            { cmd: '/computer', desc: 'Manage VM/Local Computer Use & Set-of-Mark Browser Use (/computer status|init|mode|screenshot|click|open)' },
+            { cmd: '/computer status', desc: 'Show VM (:99) & local Computer Use desktop status' },
+            { cmd: '/computer init', desc: 'Initialize remote VM X11 desktop (:99, 1280x800)' },
+            { cmd: '/computer screenshot', desc: 'Capture annotated screenshot with coordinate grid' },
+            { cmd: '/verify', desc: 'Toggle or run Self-Healing Auto-Verify Gate (/verify on|off|status|run)' },
+            { cmd: '/verify run', desc: 'Manually run build/syntax verification on modified files' },
+            { cmd: '/ssh', desc: 'Manage persistent remote SSH sandbox sessions (/ssh status|connect|disconnect)' },
+            { cmd: '/exec', desc: 'Execute shell or remote SSH sandbox command' },
+            { cmd: '/session', desc: 'List, create, or switch named conversation sessions' },
+            { cmd: '/capture', desc: 'Capture multi-monitor screen to .mkpro/captures/' },
+            { cmd: '/compact', desc: 'Compact context window turns or database storage' },
+            { cmd: '/status', desc: 'Display agent and runtime status' },
+            { cmd: '/stats', desc: 'Display token, turn, and runtime statistics' },
+            { cmd: '/know topics', desc: 'Browse autonomous knowledge topics' },
+            { cmd: '/know status', desc: 'Check knowledge engine background scheduler' },
+            { cmd: '/scheduler', desc: 'Control background knowledge scheduler (/scheduler on|off|status)' },
+            { cmd: '/facts', desc: 'Inspect or verify project facts & relationship graph' },
+            { cmd: '/mq', desc: 'Control background job queue worker & schedules (/mq status|on|off)' },
+            { cmd: '/vllm', desc: 'Manage OpenAI / vLLM inference endpoints & context limits' },
+            { cmd: '/ollama', desc: 'Manage Ollama inference servers & models' },
+            { cmd: '/jlama', desc: 'Manage local pure-Java Jlama GGUF models' },
+            { cmd: '/web', desc: 'Inspect or toggle Web UI server status' },
+            { cmd: '/train status', desc: 'Show Markov routing engine state' },
+            { cmd: '/history', desc: 'Show turn history summary' },
+            { cmd: '/config list', desc: 'Inspect system configurations' },
+            { cmd: '/help', desc: 'Show available command list' },
+            { cmd: '/remember', desc: 'Commit insight to persistent knowledge base' },
+            { cmd: '/train', desc: 'Trigger Markov transition retraining' },
+            { cmd: '/mcp', desc: 'Inspect connected MCP servers & tools' },
+            { cmd: '/network', desc: 'View peer network nodes' },
+            { cmd: '/index', desc: 'Trigger code & workspace re-indexing' },
+            { cmd: '/model', desc: 'Inspect or switch active LLM models' },
+            { cmd: '/team', desc: 'Switch agent team configuration' },
+            { cmd: '/runner', desc: 'Inspect background process runner' },
+            { cmd: '/export', desc: 'Export active conversation transcripts' },
+            { cmd: '/visualize', desc: 'Generate graph visualization memo' }
+        ];
+
         const atNotePalette = document.getElementById('atNotePalette');
         window.cachedNotesList = window.cachedNotesList || [];
         window.cachedTasksList = window.cachedTasksList || [];
         let currentAtNoteMatches = [];
+        let currentSlashMatches = [];
 
         async function fetchNotesForPalette() {
             try {
@@ -2627,7 +2669,38 @@
         }
         fetchNotesForPalette();
 
+        function selectClassicSlashCmd(cmd) {
+            input.value = cmd + ' ';
+            closeAtNotePalette();
+            input.focus();
+        }
+
+        function renderClassicSlashPalette(list) {
+            if (!atNotePalette) return;
+            currentAtNoteMatches = [];
+            currentSlashMatches = list;
+            atNotePalette.innerHTML = list.map(item => `
+                <div class="at-note-item" onclick="selectClassicSlashCmd('${item.cmd}')">
+                    <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:8px;">
+                        <span style="font-weight:600; color:var(--accent);">${escapeHtml(item.cmd)}</span>
+                        <span style="font-size:11px; color:var(--text-dim);">${escapeHtml(item.desc)}</span>
+                    </div>
+                </div>
+            `).join('');
+            atNotePalette.classList.add('open');
+        }
+
         async function handleAtNoteInput(val) {
+            if (val.startsWith('/')) {
+                const query = val.slice(1).toLowerCase();
+                const matched = SLASH_COMMANDS.filter(item => item.cmd.toLowerCase().includes(query) || item.desc.toLowerCase().includes(query));
+                if (matched.length > 0) {
+                    renderClassicSlashPalette(matched);
+                } else {
+                    closeAtNotePalette();
+                }
+                return;
+            }
             const atMatch = val.match(/(?:^|\s)@([^@\n]*)$/);
             if (!atMatch) {
                 closeAtNotePalette();
@@ -2669,6 +2742,7 @@
 
         function renderAtNotePalette(list) {
             if (!atNotePalette) return;
+            currentSlashMatches = [];
             currentAtNoteMatches = list;
             atNotePalette.innerHTML = list.map(item => {
                 const isTask = item.itemType === 'task';
@@ -2706,6 +2780,7 @@
 
         function closeAtNotePalette() {
             currentAtNoteMatches = [];
+            currentSlashMatches = [];
             if (atNotePalette) atNotePalette.classList.remove('open');
         }
 

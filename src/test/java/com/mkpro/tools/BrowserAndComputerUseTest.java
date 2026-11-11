@@ -98,23 +98,25 @@ public class BrowserAndComputerUseTest {
     @Test
     void testBuildClickCommand() {
         String singleClick = VmDesktopSandbox.buildClickCommand(":99", 640, 400, 1, false);
-        assertEquals("DISPLAY=:99 xdotool mousemove --sync 640 400 click 1", singleClick);
+        assertTrue(singleClick.contains(".local/mkpro_gui/usr/bin"));
+        assertTrue(singleClick.endsWith("DISPLAY=:99 xdotool mousemove --sync 640 400 click 1"));
 
         String doubleClick = VmDesktopSandbox.buildClickCommand(":99", 320, 200, 1, true);
-        assertEquals("DISPLAY=:99 xdotool mousemove --sync 320 200 click --repeat 2 --delay 80 1", doubleClick);
+        assertTrue(doubleClick.endsWith("DISPLAY=:99 xdotool mousemove --sync 320 200 click --repeat 2 --delay 80 1"));
 
         String rightClick = VmDesktopSandbox.buildClickCommand(":99", 100, 150, 3, false);
-        assertEquals("DISPLAY=:99 xdotool mousemove --sync 100 150 click 3", rightClick);
+        assertTrue(rightClick.endsWith("DISPLAY=:99 xdotool mousemove --sync 100 150 click 3"));
 
         // Sanitize invalid display injection attempt
         String sanitized = VmDesktopSandbox.buildClickCommand(":99; rm -rf /", 10, 20, 1, false);
-        assertTrue(sanitized.startsWith("DISPLAY=:99 "));
+        assertTrue(sanitized.contains("DISPLAY=:99 "));
+        assertFalse(sanitized.contains("rm -rf"));
     }
 
     @Test
     void testBuildMoveOrDragCommand() {
         String moveCmd = VmDesktopSandbox.buildMoveOrDragCommand(":99", 100, 100, 500, 600, false);
-        assertEquals("DISPLAY=:99 xdotool mousemove --sync 500 600", moveCmd);
+        assertTrue(moveCmd.endsWith("DISPLAY=:99 xdotool mousemove --sync 500 600"));
 
         String dragCmd = VmDesktopSandbox.buildMoveOrDragCommand(":99", 100, 100, 500, 600, true);
         assertTrue(dragCmd.contains("mousemove --sync 100 100 mousedown 1"));
@@ -128,6 +130,7 @@ public class BrowserAndComputerUseTest {
         String expectedB64 = Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8));
 
         String cmdWithEnter = VmDesktopSandbox.buildTypeCommand(":99", text, true);
+        assertTrue(cmdWithEnter.contains(".local/mkpro_gui/usr/bin"));
         assertTrue(cmdWithEnter.contains(expectedB64));
         assertTrue(cmdWithEnter.contains("xclip -selection clipboard"));
         assertTrue(cmdWithEnter.contains("xdotool key Return"));
@@ -139,22 +142,22 @@ public class BrowserAndComputerUseTest {
     @Test
     void testBuildKeyCommand() {
         String enterCmd = VmDesktopSandbox.buildKeyCommand(":99", "enter");
-        assertEquals("DISPLAY=:99 xdotool key --clearmodifiers 'Return'", enterCmd);
+        assertTrue(enterCmd.endsWith("DISPLAY=:99 xdotool key --clearmodifiers 'Return'"));
 
         String shortcutCmd = VmDesktopSandbox.buildKeyCommand(":99", "ctrl+l");
-        assertEquals("DISPLAY=:99 xdotool key --clearmodifiers 'ctrl+l'", shortcutCmd);
+        assertTrue(shortcutCmd.endsWith("DISPLAY=:99 xdotool key --clearmodifiers 'ctrl+l'"));
 
         String altF4Cmd = VmDesktopSandbox.buildKeyCommand(":99", "alt+F4");
-        assertEquals("DISPLAY=:99 xdotool key --clearmodifiers 'alt+F4'", altF4Cmd);
+        assertTrue(altF4Cmd.endsWith("DISPLAY=:99 xdotool key --clearmodifiers 'alt+F4'"));
     }
 
     @Test
     void testBuildScrollCommand() {
         String scrollDown = VmDesktopSandbox.buildScrollCommand(":99", 640, 400, "down", 5);
-        assertEquals("DISPLAY=:99 xdotool mousemove --sync 640 400 click --repeat 5 --delay 40 5", scrollDown);
+        assertTrue(scrollDown.endsWith("DISPLAY=:99 xdotool mousemove --sync 640 400 click --repeat 5 --delay 40 5"));
 
         String scrollUp = VmDesktopSandbox.buildScrollCommand(":99", 640, 400, "up", 3);
-        assertEquals("DISPLAY=:99 xdotool mousemove --sync 640 400 click --repeat 3 --delay 40 4", scrollUp);
+        assertTrue(scrollUp.endsWith("DISPLAY=:99 xdotool mousemove --sync 640 400 click --repeat 3 --delay 40 4"));
     }
 
     @Test

@@ -333,7 +333,7 @@ public class VisionTool {
                                 .connectTimeout(java.time.Duration.ofSeconds(30)).build();
 
                             java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                                .uri(java.net.URI.create("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey))
+                                .uri(java.net.URI.create("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey))
                                 .header("Content-Type", "application/json")
                                 .timeout(java.time.Duration.ofSeconds(60))
                                 .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))

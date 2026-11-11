@@ -110,6 +110,21 @@ public class VmDesktopSandbox {
     // Shell Command Builders (Pure static helpers for deterministic unit testing)
     // =========================================================================
 
+    public static final String VM_GUI_ENV_EXPORTS =
+            "export PATH=\"$HOME/.local/mkpro_gui/usr/bin:$PATH\"; " +
+            "export LD_LIBRARY_PATH=\"$HOME/.local/mkpro_gui/usr/lib/aarch64-linux-gnu:$HOME/.local/mkpro_gui/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH\"; ";
+
+    public static String vmEnvPrefix(String display) {
+        String disp = sanitizeDisplay(display);
+        return VM_GUI_ENV_EXPORTS + "export DISPLAY=" + disp + "; ";
+    }
+
+    public static String displaySocketPath(String display) {
+        String disp = sanitizeDisplay(display);
+        String dispNum = disp.startsWith(":") ? disp.substring(1).replaceAll("\\..*$", "") : "99";
+        return "/tmp/.X11-unix/X" + dispNum;
+    }
+
     public static String sanitizeDisplay(String display) {
         if (display == null || display.isBlank()) return DEFAULT_DISPLAY;
         String clean = display.trim();
@@ -125,15 +140,15 @@ public class VmDesktopSandbox {
         String clickPart = doubleClick
                 ? ("click --repeat 2 --delay 80 " + btn)
                 : ("click " + btn);
-        return String.format("DISPLAY=%s xdotool mousemove --sync %d %d %s", disp, px, py, clickPart);
+        return vmEnvPrefix(disp) + String.format("DISPLAY=%s xdotool mousemove --sync %d %d %s", disp, px, py, clickPart);
     }
 
     public static String buildMoveOrDragCommand(String display, int fromPx, int fromPy, int toPx, int toPy, boolean drag) {
         String disp = sanitizeDisplay(display);
         if (!drag) {
-            return String.format("DISPLAY=%s xdotool mousemove --sync %d %d", disp, toPx, toPy);
+            return vmEnvPrefix(disp) + String.format("DISPLAY=%s xdotool mousemove --sync %d %d", disp, toPx, toPy);
         }
-        return String.format(
+        return vmEnvPrefix(disp) + String.format(
                 "DISPLAY=%s xdotool mousemove --sync %d %d mousedown 1 sleep 0.08 mousemove --sync %d %d sleep 0.08 mouseup 1",
                 disp, fromPx, fromPy, toPx, toPy
         );
@@ -144,7 +159,7 @@ public class VmDesktopSandbox {
         String safeText = text != null ? text : "";
         String b64 = Base64.getEncoder().encodeToString(safeText.getBytes(StandardCharsets.UTF_8));
         String enterSuffix = pressEnter ? " && DISPLAY=" + disp + " xdotool key Return" : "";
-        return String.format(
+        return vmEnvPrefix(disp) + String.format(
                 "(printf '%%s' '%s' | base64 -d | DISPLAY=%s xclip -selection clipboard && DISPLAY=%s xdotool key --clearmodifiers ctrl+v)" +
                 " || (DISPLAY=%s xdotool type --clearmodifiers --delay 12 -- \"$(printf '%%s' '%s' | base64 -d)\")%s",
                 b64, disp, disp, disp, b64, enterSuffix
@@ -154,7 +169,7 @@ public class VmDesktopSandbox {
     public static String buildKeyCommand(String display, String keyCombo) {
         String disp = sanitizeDisplay(display);
         String normalized = normalizeXdotoolKeyCombo(keyCombo);
-        return String.format("DISPLAY=%s xdotool key --clearmodifiers %s", disp, shellSingleQuote(normalized));
+        return vmEnvPrefix(disp) + String.format("DISPLAY=%s xdotool key --clearmodifiers %s", disp, shellSingleQuote(normalized));
     }
 
     public static String buildScrollCommand(String display, int px, int py, String direction, int clicks) {
@@ -168,7 +183,7 @@ public class VmDesktopSandbox {
             else if ("left".equals(d)) btn = 6;
             else if ("right".equals(d)) btn = 7;
         }
-        return String.format("DISPLAY=%s xdotool mousemove --sync %d %d click --repeat %d --delay 40 %d",
+        return vmEnvPrefix(disp) + String.format("DISPLAY=%s xdotool mousemove --sync %d %d click --repeat %d --delay 40 %d",
                 disp, px, py, count, btn);
     }
 
@@ -300,21 +315,53 @@ public class VmDesktopSandbox {
 
         try {
             String disp = sanitizeDisplay(this.display);
+            String xSocket = displaySocketPath(disp);
             String bootstrapScript =
+                    vmEnvPrefix(disp) +
                     "export DEBIAN_FRONTEND=noninteractive; " +
-                    "if ! command -v Xvfb >/dev/null 2>&1 || ! command -v xdotool >/dev/null 2>&1 || ! command -v scrot >/dev/null 2>&1 || ! command -v openbox >/dev/null 2>&1 || ! command -v xclip >/dev/null 2>&1; then " +
-                    "  (sudo -n apt-get update -qq && sudo -n apt-get install -y -qq xvfb openbox xdotool scrot xclip x11-apps fonts-liberation) " +
-                    "  || (apt-get update -qq && apt-get install -y -qq xvfb openbox xdotool scrot xclip x11-apps fonts-liberation) || true; " +
+                    "if ! command -v Xvfb >/dev/null 2>&1 || ! command -v xdotool >/dev/null 2>&1 || ! command -v maim >/dev/null 2>&1 || ! command -v openbox >/dev/null 2>&1 || ! command -v xclip >/dev/null 2>&1; then " +
+                    "  (sudo -n apt-get update -qq && sudo -n apt-get install -y -qq xvfb openbox xdotool maim scrot xclip x11-apps fonts-liberation) " +
+                    "  || (apt-get update -qq && apt-get install -y -qq xvfb openbox xdotool maim scrot xclip x11-apps fonts-liberation) || true; " +
                     "fi; " +
-                    "if ! pgrep -f 'Xvfb " + disp + "' >/dev/null 2>&1; then " +
-                    "  nohup Xvfb " + disp + " -screen 0 " + screenWidth + "x" + screenHeight + "x24 -ac >/tmp/mkpro_xvfb.log 2>&1 & " +
+                    "if ! command -v Xvfb >/dev/null 2>&1 || ! command -v xdotool >/dev/null 2>&1 || ! command -v maim >/dev/null 2>&1; then " +
+                    "  mkdir -p \"$HOME/.local/mkpro_gui\" /tmp/mkpro_debs && cd /tmp/mkpro_debs; " +
+                    "  apt-get download xdotool libxdo3 maim libslopy7.6 libglew2.2 xclip openbox libobt2v5 libobrender32v5 xvfb 2>/dev/null || true; " +
+                    "  ARCH=$(dpkg --print-architecture 2>/dev/null || echo arm64); " +
+                    "  if [ \"$ARCH\" = \"arm64\" ] || [ \"$ARCH\" = \"aarch64\" ]; then " +
+                    "    MIRROR=\"http://ports.ubuntu.com/ubuntu-ports\"; ARCH=\"arm64\"; " +
+                    "  else " +
+                    "    MIRROR=\"http://archive.ubuntu.com/ubuntu\"; ARCH=\"amd64\"; " +
+                    "  fi; " +
+                    "  for spec in " +
+                    "    \"xdotool:universe/x/xdotool\" " +
+                    "    \"libxdo3:universe/x/xdotool\" " +
+                    "    \"maim:universe/m/maim\" " +
+                    "    \"libslopy7.6:universe/s/slop\" " +
+                    "    \"libglew2.2:universe/g/glew\" " +
+                    "    \"xclip:universe/x/xclip\" " +
+                    "    \"openbox:universe/o/openbox\" " +
+                    "    \"libobt2v5:universe/o/openbox\" " +
+                    "    \"libobrender32v5:universe/o/openbox\" " +
+                    "    \"xvfb:universe/x/xorg-server\"; do " +
+                    "    PKG=\"${spec%%:*}\"; POOL=\"${spec#*:}\"; " +
+                    "    if ! ls \"${PKG}_\"*.deb >/dev/null 2>&1; then " +
+                    "      DEB=$(curl -fsSL \"$MIRROR/pool/$POOL/\" 2>/dev/null | grep -oE \"${PKG}_[^\\\"]+_${ARCH}\\.deb\" | tail -n 1); " +
+                    "      [ -n \"$DEB\" ] && curl -fsSLO \"$MIRROR/pool/$POOL/$DEB\" 2>/dev/null || true; " +
+                    "    fi; " +
+                    "  done; " +
+                    "  for deb in /tmp/mkpro_debs/*.deb; do " +
+                    "    [ -f \"$deb\" ] && dpkg-deb -x \"$deb\" \"$HOME/.local/mkpro_gui\" 2>/dev/null || true; " +
+                    "  done; " +
+                    "fi; " +
+                    "if [ ! -e " + xSocket + " ]; then " +
+                    "  setsid Xvfb " + disp + " -screen 0 " + screenWidth + "x" + screenHeight + "x24 -ac </dev/null >/tmp/mkpro_xvfb.log 2>&1 & " +
                     "  sleep 1; " +
                     "fi; " +
-                    "if ! pgrep -f 'openbox' >/dev/null 2>&1; then " +
-                    "  DISPLAY=" + disp + " nohup openbox >/tmp/mkpro_openbox.log 2>&1 & " +
+                    "if ! pgrep -x openbox >/dev/null 2>&1; then " +
+                    "  DISPLAY=" + disp + " setsid openbox </dev/null >/tmp/mkpro_openbox.log 2>&1 & " +
                     "  sleep 0.5; " +
                     "fi; " +
-                    "pgrep -a Xvfb || true";
+                    "[ -e " + xSocket + " ] && echo XVFB_READY || true";
 
             SshSessionManager.CommandResult res = ssh.executeCommand(resolved, bootstrapScript, 120);
             this.mode = "vm";
@@ -346,9 +393,10 @@ public class VmDesktopSandbox {
         if (sshConnected) {
             try {
                 String disp = sanitizeDisplay(this.display);
+                String xSocket = displaySocketPath(disp);
                 SshSessionManager.CommandResult check = ssh.executeCommand(
                         resolved,
-                        "pgrep -f 'Xvfb " + disp + "' >/dev/null 2>&1 && echo RUNNING || echo STOPPED",
+                        vmEnvPrefix(disp) + "[ -e " + xSocket + " ] && echo RUNNING || echo STOPPED",
                         10
                 );
                 xvfbRunning = check.getStdout() != null && check.getStdout().contains("RUNNING");
@@ -408,9 +456,9 @@ public class VmDesktopSandbox {
                 SshSessionManager ssh = SshSessionManager.getInstance();
                 String disp = sanitizeDisplay(this.display);
                 String remoteTmp = "/tmp/mkpro_vm_screen.png";
-                String captureCmd = String.format(
-                        "DISPLAY=%s scrot -o %s 2>/dev/null || DISPLAY=%s import -window root %s",
-                        disp, remoteTmp, disp, remoteTmp
+                String captureCmd = vmEnvPrefix(disp) + String.format(
+                        "DISPLAY=%s maim %s 2>/dev/null || DISPLAY=%s scrot -o %s 2>/dev/null || DISPLAY=%s import -window root %s",
+                        disp, remoteTmp, disp, remoteTmp, disp, remoteTmp
                 );
                 SshSessionManager.CommandResult cmdRes = ssh.executeCommand(resolved, captureCmd, 20);
                 if (!cmdRes.isSuccess()) {
@@ -712,7 +760,11 @@ public class VmDesktopSandbox {
         try {
             if (isVmConnected(resolved)) {
                 String disp = sanitizeDisplay(this.display);
-                String runCmd = String.format("DISPLAY=%s nohup %s >/tmp/mkpro_app.log 2>&1 & sleep 1", disp, command.trim());
+                String cleanCmd = command.trim().replaceAll("&\\s*$", "").trim();
+                String runCmd = vmEnvPrefix(disp) + String.format(
+                        "DISPLAY=%s setsid %s </dev/null >/tmp/mkpro_app.log 2>&1 & sleep 1",
+                        disp, cleanCmd
+                );
                 SshSessionManager.getInstance().executeCommand(resolved, runCmd, 15);
             } else {
                 new ProcessBuilder("sh", "-c", command.trim()).start();

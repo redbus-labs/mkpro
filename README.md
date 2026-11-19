@@ -111,7 +111,7 @@ agents:
     tools: [file_read, file_write, safe_write, clipboard, shell, selenium, vision, audio]
 ```
 
-Available tool names: `file_read`, `file_write`, `safe_write` (includes surgical `replace_in_file`), `clipboard`, `shell`, `image`, `vision` (`analyze_image`), `audio` (`transcribe_audio`), `codebase_search`, `multi_project_search`, `git_tools`, `mcp_scan`, `graph_memory`, `fetch_url`, `stats`, `selenium`, `scripting`, `verify_fact`, `ssh`, `ssh_exec`, `ssh_file_transfer`, `ssh_list_sessions`, `screen_capture`, `ask_peer_agent`, `request_knowledge`, `central_memory`, `index_codebase`.
+Available tool names: `file_read`, `file_write`, `safe_write` (includes surgical `replace_in_file`), `clipboard`, `shell`, `image`, `vision` (`analyze_image`), `audio` (`transcribe_audio`), `codebase_search`, `multi_project_search`, `git_tools`, `mcp_scan`, `graph_memory`, `fetch_url`, `stats`, `selenium`, `scripting`, `verify_fact`, `ssh`, `ssh_exec`, `ssh_file_transfer`, `ssh_list_sessions`, `computer_use` (`computer_init_vm`, `computer_screenshot`, `computer_click`, `computer_move_or_drag`, `computer_type`, `computer_key`, `computer_scroll`, `computer_launch_app`), `browser_use` (`browser_open`, `browser_snapshot`, `browser_act`, `browser_extract_markdown`, `browser_close`), `screen_capture`, `ask_peer_agent`, `request_knowledge`, `central_memory`, `index_codebase`.
 
 ---
 
@@ -257,6 +257,14 @@ Powered by the Google ADK `SmartEventFilterPlugin`, `mkpro` maintains optimal co
 - **High-Speed Bidirectional SFTP**: Transfer files seamlessly between local workspaces and remote sandboxes using `ssh_file_transfer` or `/ssh transfer`.
 - **Remote Security Policies**: Enforced `RemoteCommandPolicy` and `RemotePathValidator` preventing dangerous operations (e.g., destructive deletions or root-level modifications) on remote systems.
 
+## 🖥️ VM-First Computer Use & Set-of-Mark Browser Use
+
+Empower agents (`Coder`, `SysAdmin`, `Tester`, `UbuntuOps`) and users to autonomously operate full GUI desktops and visually grounded web browsers safely inside an isolated virtual display — see **[VM-First Computer Use & Set-of-Mark Browser Use Guide](docs/COMPUTER_AND_BROWSER_USE.md)** for full details:
+- **VM-First Virtual Desktop (`DISPLAY=:99`, `1280×800×24`)**: Runs `Xvfb` + `openbox` over persistent `SshSessionManager` sessions with **zero-sudo user-space provisioning** (`~/.local/mkpro_gui` via `apt-get download` + `dpkg-deb -x` for `Xvfb`, `openbox`, `xdotool`, `maim`, `scrot`, `xclip`), plus an optional `"local"` `java.awt.Robot` fallback protected by an 8px 4-corner emergency failsafe.
+- **Visual Grounding (`ScreenGridAnnotator`)**: Overlays a normalized `0..1000` coordinate grid and red target crosshair on desktop screenshots, and injects numbered **Set-of-Mark `[1..N]`** bounding boxes onto interactive browser DOM elements.
+- **Declarative Tool Suites**: `ComputerUseTools` (`computer_init_vm`, `computer_screenshot`, `computer_click`, `computer_move_or_drag`, `computer_type`, `computer_key`, `computer_scroll`, `computer_launch_app`) and `BrowserUseTools` (`browser_open`, `browser_snapshot`, `browser_act`, `browser_extract_markdown`, `browser_close`).
+- **CLI & Live Interactive Web UI**: Manage directly via `/computer status|init|mode|screenshot|click|type|key|launch|open` or open the **`🖥️ VM Screen`** modal in both Academic and Classic views for live click-through control backed by `/api/computer/*`.
+
 ## 🌐 REST API
 
 When running with `--web`, mkpro exposes a full HTTP REST API alongside the WebSocket chat. No additional configuration needed.
@@ -294,6 +302,10 @@ When running with `--web`, mkpro exposes a full HTTP REST API alongside the WebS
 | `POST` | `/api/edit/approve` | Approve pending file edit |
 | `POST` | `/api/edit/reject` | Reject pending file edit |
 | `GET` | `/api/edit/pending` | List pending edit proposals |
+| `GET` | `/api/computer/status` | VM/Local Computer Use status, Xvfb state, and latest Base64 frame |
+| `POST` | `/api/computer/init` | Provision (zero-sudo if needed) and start remote `Xvfb :99` + `openbox` |
+| `GET` / `POST` | `/api/computer/screenshot` | Capture annotated `0..1000` grid screenshot |
+| `POST` | `/api/computer/action` | Dispatch click, drag, move, type, key, scroll, launch, mode, or open_url action |
 | `GET` | `/api/db` | MapDB store browser (all stores as JSON) |
 
 ### Usage Examples
@@ -380,6 +392,7 @@ On first launch, select your execution runner (InMemory, MapDB, or Postgres). Us
 
 ## 📚 Additional Documentation
 
+- **[VM-First Computer Use & Set-of-Mark Browser Use](docs/COMPUTER_AND_BROWSER_USE.md)** — Remote `DISPLAY=:99` virtual desktop architecture, zero-sudo `~/.local/mkpro_gui` provisioning, `ScreenGridAnnotator` (`0..1000` grid + SoM `[1..N]`), agent tool suites, `/computer` CLI, `🖥️ VM Screen` UI, and `/api/computer/*` endpoints.
 - **[Agent Architecture & Developer Guide](AGENTS.md)** — Overview of the multi-agent architecture, build commands, package structure, v4.9.0 capabilities, and operational rules.
 - **[Knowledge Scheduler](README_knowledge.md)** — Autonomous topic-based knowledge accumulation, TF-IDF search, topic discovery, confidence scoring, and the self-improving flywheel.
 - **[Markov Chain Router](README_markov.md)** — Intent classification, transition probability matrix, learned patterns, stall prediction, and training pipeline.

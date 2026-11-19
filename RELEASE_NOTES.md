@@ -8,7 +8,7 @@
 
 We are thrilled to announce **MkPro v5.0.0**, a major milestone release that elevates `mkpro` into a self-verifying, concurrent, and deeply observable AI software engineering platform.
 
-**MkPro 5.0.0** introduces an **Autonomous Self-Healing Verification Gate** (`AutoVerifyGate` & `/verify`), **Batch Diff Review & One-Click Turn Rollback**, an **Incremental Codebase Symbol Graph** (`SymbolIndexTool`), **Live Agent Telemetry & Cost/Latency Breakdown** (`📊 Telemetry`), **Parallel Sub-Agent Fan-Out** (`ask_parallel_agents`), **Persistent Scheduled & Event-Driven Background Jobs** (`🐇 Jobs` & `JobScheduleManager`), **Auto-Updating `@[Task]` Lifecycle**, rich **LaTeX/KaTeX & Mermaid Diagram Rendering** across the Academic and Classic Web UIs, **Multi-Session Project Management**, and critical **Core Reliability & Provider Fixes** including native Gemini `/compact` context compaction.
+**MkPro 5.0.0** introduces an **Autonomous Self-Healing Verification Gate** (`AutoVerifyGate` & `/verify`), **Batch Diff Review & One-Click Turn Rollback**, an **Incremental Codebase Symbol Graph** (`SymbolIndexTool`), **Live Agent Telemetry & Cost/Latency Breakdown** (`📊 Telemetry`), **Parallel Sub-Agent Fan-Out** (`ask_parallel_agents`), **Persistent Scheduled & Event-Driven Background Jobs** (`🐇 Jobs` & `JobScheduleManager`), **VM-First Computer Use & Set-of-Mark Browser Use** (`VmDesktopSandbox`, `ScreenGridAnnotator`, `/computer`, & `🖥️ VM Screen`), **Auto-Updating `@[Task]` Lifecycle**, rich **LaTeX/KaTeX & Mermaid Diagram Rendering** across the Academic and Classic Web UIs, **Multi-Session Project Management**, and critical **Core Reliability & Provider Fixes** including native Gemini `/compact` context compaction.
 
 ---
 
@@ -155,6 +155,25 @@ Publication-grade mathematical typesetting, resilient diagram visualization, and
 
 ---
 
+### 10. 🖥️ VM-First Computer Use & Set-of-Mark Browser Use
+
+Full GUI desktop automation and visually grounded web browsing executed safely on an isolated remote virtual display (`DISPLAY=:99`) with an optional local failsafe fallback — see **[docs/COMPUTER_AND_BROWSER_USE.md](docs/COMPUTER_AND_BROWSER_USE.md)** for full documentation.
+
+- **VM-First Virtual Desktop (`VmDesktopSandbox`) & Zero-Sudo Provisioning**:
+  - Runs `Xvfb :99` (`1280×800×24`) + `openbox` over persistent `SshSessionManager` sessions, with automatic **zero-sudo user-space provisioning** into `~/.local/mkpro_gui` via `apt-get download` + `dpkg-deb -x` (with Ubuntu archive mirror fallback) for `Xvfb`, `openbox`, `xdotool`, `maim`, `scrot`, and `xclip`.
+  - Supports optional `"local"` mode via `java.awt.Robot` protected by an **8px 4-corner emergency failsafe**.
+- **Visual Grounding (`ScreenGridAnnotator`)**:
+  - Draws a resolution-independent **`0..1000` normalized coordinate grid** and high-contrast **red click crosshair** + action-label pill on desktop screenshots, and overlays numbered **Set-of-Mark `[1..N]`** bounding boxes on interactive browser DOM elements—automatically attaching annotated PNG frames inline for Vision-capable LLMs.
+- **Declarative Agent Tool Suites (`computer_use` & `browser_use`)**:
+  - **`ComputerUseTools`**: `computer_init_vm`, `computer_screenshot`, `computer_click`, `computer_move_or_drag`, `computer_type`, `computer_key`, `computer_scroll`, `computer_launch_app`.
+  - **`BrowserUseTools`**: `browser_open`, `browser_snapshot`, `browser_act`, `browser_extract_markdown`, `browser_close`.
+  - Enabled by default for `Coder`, `SysAdmin`, `Tester`, and `UbuntuOps` in `teams/default.yaml`.
+- **Interactive `/computer` CLI, Live `🖥️ VM Screen` Modal & `/api/computer/*` REST API**:
+  - Manage via `/computer status|init|mode|screenshot|click|type|key|launch|open`.
+  - Open the **`🖥️ VM Screen`** modal in both Academic (`/`) and Classic (`/classic`) Web UIs for live auto-refreshing frames, interactive click-through (`Left`/`Double`/`Right`/`Move`), URL launching, text typing, key shortcuts, and scrolling.
+
+---
+
 ## 🌐 New & Updated REST API Endpoints in v5.0.0
 
 | Method | Endpoint | Description |
@@ -170,6 +189,10 @@ Publication-grade mathematical typesetting, resilient diagram visualization, and
 | `GET` | `/api/mq/results` | Fetch recent completed/failed background worker task results |
 | `GET / POST / DELETE` | `/api/mq/schedules` | List, create, toggle, trigger, or delete recurring interval and `onEdit` background job schedules |
 | `GET / POST` | `/api/sessions` | List project sessions or create/switch/rename/delete named sessions (`/api/sessions/new`, `/switch`, `/rename`, `/delete`) |
+| `GET` | `/api/computer/status` | Query VM/Local Computer Use status, Xvfb state, last action, and latest Base64 frame |
+| `POST` | `/api/computer/init` | Provision (zero-sudo if needed) and start remote `Xvfb :99` (`1280×800×24`) + `openbox` |
+| `GET / POST` | `/api/computer/screenshot` | Capture an annotated `0..1000` coordinate grid screenshot and return Base64 frame |
+| `POST` | `/api/computer/action` | Execute desktop/browser actions (`mode`, `click`, `double_click`, `right_click`, `move`, `drag`, `type`, `key`, `scroll`, `launch`, `open_url`) |
 
 ---
 
